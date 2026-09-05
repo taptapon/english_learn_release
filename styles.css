@@ -1,0 +1,1712 @@
+/* ===== English Learn ===== */
+
+:root {
+  /* Obsidian 移动端底部导航栏高度（含安全区）：主题面板等页面底部留白用它。
+     注意导航栏自身已含安全区，再叠 env() 会重复计算；学习页已改用独立更小的让位值 */
+  --el-mobile-nav-h: calc(76px + env(safe-area-inset-bottom, 0px));
+
+  /* ===== 设计令牌：样式规范唯一来源，改样式先改这里 ===== */
+
+  /* 圆角：xs 进度条/kbd 等微元素 · sm 提示浮层 · md 按钮/输入/列表项 · lg 卡片/磁贴 · xl 大卡片/弹窗 · full 胶囊 */
+  --el-radius-xs: 4px;
+  --el-radius-sm: 6px;
+  --el-radius-md: 8px;
+  --el-radius-lg: 10px;
+  --el-radius-xl: 14px;
+  --el-radius-full: 999px;
+
+  /* 间距：1=4 · 2=6 · 3=8 · 4=12 · 5=16 · 6=20 · 7=28（组件级留白；≤3px 视觉微调、页面级大留白 ≥24px 可用字面量） */
+  --el-space-1: 4px;
+  --el-space-2: 6px;
+  --el-space-3: 8px;
+  --el-space-4: 12px;
+  --el-space-5: 16px;
+  --el-space-6: 20px;
+  --el-space-7: 28px;
+
+  /* 字号：xs 微标签/图表轴 · sm 辅助说明 · md 次要正文 · base 正文 · lg 释义/强调 · xl 统计数字 · display 词卡主词 */
+  --el-font-xs: 11px;
+  --el-font-sm: 12.5px;
+  --el-font-md: 13.5px;
+  --el-font-base: 15px;
+  --el-font-lg: 16px;
+  --el-font-xl: 20px;
+  --el-font-display: 38px;
+
+  /* 按钮内边距四档（配字号：lg/md=base · sm=sm · xs=xs）；无边框图标按钮不在此列 */
+  --el-btn-lg: 12px 20px;  /* 主操作：显示答案 / 移动端评分 */
+  --el-btn-md: 8px 16px;   /* 常规：评分按钮等 */
+  --el-btn-sm: 3px 12px;   /* 胶囊/工具条：AI 按钮 */
+  --el-btn-xs: 1px 8px;    /* 表格行内/浮层内小按钮 */
+
+  /* 状态色与底色：跟随 Obsidian 主题，暗色自动适配 */
+  --el-c-ok: var(--text-success);
+  --el-c-warn: var(--color-yellow, #e0b060);
+  --el-c-good: var(--color-green, #7ec48a);
+  --el-c-bad: var(--text-error);
+  --el-c-ok-soft: rgba(126, 196, 138, 0.12);
+  --el-c-bad-soft: rgba(220, 100, 100, 0.1);
+  --el-accent-soft: color-mix(in srgb, var(--interactive-accent) 10%, transparent);
+
+  /* 浮层阴影：tooltip / 悬浮提示 */
+  --el-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+}
+
+/* —— 状态栏 —— */
+.el-status {
+  cursor: pointer;
+}
+
+body:not(.is-mobile) .el-status:hover {
+  color: var(--text-normal);
+}
+
+/* —— 主题面板 —— */
+.el-panel {
+  padding: var(--el-space-5) var(--el-space-6);
+}
+
+.el-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--el-space-4);
+  flex-wrap: wrap;
+  margin-bottom: var(--el-space-4);
+}
+
+.el-header h3 {
+  margin: 0;
+}
+
+.el-actions {
+  display: flex;
+  gap: var(--el-space-3);
+  flex-wrap: wrap;
+}
+
+.el-totals {
+  color: var(--text-muted);
+  font-size: var(--el-font-sm);
+  margin-bottom: var(--el-space-4);
+}
+
+.el-theme-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--el-space-3);
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.el-theme-item {
+  position: relative; /* 置顶钉 📌 锚定卡片右上角 */
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--el-space-4);
+  padding: var(--el-space-4);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--el-radius-lg);
+}
+
+/* 置顶钉：未置顶淡显（hover 提示可点），置顶后常亮；切换即时反馈，不加过渡 */
+.el-theme-pin {
+  position: absolute;
+  top: var(--el-space-2);
+  right: var(--el-space-2);
+  height: auto;
+  background: none;
+  border: none;
+  box-shadow: none;
+  cursor: pointer;
+  font-size: var(--el-font-md);
+  line-height: 1;
+  padding: var(--el-space-2);
+  opacity: 0.35;
+}
+
+/* 图钉不做 hover 提亮：点击后列表会在鼠标下重排，邻近图钉会被 hover 误点亮，看起来像被一起置顶 */
+.el-theme-pin.is-pinned {
+  opacity: 1;
+}
+
+.el-theme-name {
+  font-weight: 600;
+  font-size: var(--el-font-base);
+}
+
+.el-meta {
+  color: var(--text-muted);
+  font-size: var(--el-font-sm);
+  margin-top: 3px;
+}
+
+.el-keywords {
+  margin-top: var(--el-space-2);
+  display: flex;
+  gap: var(--el-space-2);
+  flex-wrap: wrap;
+}
+
+.el-chip {
+  font-size: var(--el-font-xs);
+  padding: 1px var(--el-space-3);
+  border-radius: var(--el-radius-full);
+  background: var(--background-modifier-hover);
+  color: var(--text-muted);
+}
+
+.el-theme-actions {
+  display: flex;
+  gap: var(--el-space-2);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--background-modifier-border);
+  padding-top: var(--el-space-4);
+}
+
+.el-theme-actions button {
+  flex: 1 1 auto;
+  min-width: 72px;
+}
+
+.el-theme-info {
+  cursor: pointer;
+  min-width: 0;
+}
+
+body:not(.is-mobile) .el-theme-info:hover .el-theme-name {
+  color: var(--text-accent);
+}
+
+
+.el-word-ico {
+  margin-right: 2px;
+  font-size: var(--el-font-xs);
+}
+
+/* —— 主题词表弹窗 —— */
+.el-wordlist-modal {
+  width: min(640px, 90vw);
+}
+
+.el-wordlist-search {
+  width: 100%;
+  margin-bottom: var(--el-space-3);
+  font-size: var(--el-font-md);
+}
+
+.el-wordlist-scroll {
+  max-height: 70vh;
+  overflow: auto;
+}
+
+.el-wordlist {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--el-font-sm);
+}
+
+.el-wordlist th {
+  position: sticky;
+  top: 0;
+  background: var(--background-secondary);
+  text-align: left;
+  padding: var(--el-space-2) var(--el-space-4);
+  border-bottom: 1px solid var(--background-modifier-border);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.el-wordlist td {
+  padding: var(--el-space-1) var(--el-space-4);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.el-wordlist-row {
+  cursor: pointer;
+}
+
+body:not(.is-mobile) .el-wordlist-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.el-wordlist-st {
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: var(--el-font-sm);
+}
+
+.el-wordlist-row.st-due .el-wordlist-st,
+.el-wordlist-row.st-hard .el-wordlist-st {
+  color: var(--el-c-bad);
+  font-weight: 600;
+}
+
+.el-wordlist-row.st-hard {
+  background: var(--background-modifier-error-hover);
+}
+
+.el-wordlist-row.st-mastered {
+  opacity: 0.55;
+}
+
+.el-wordlist-row.st-ignored .el-wordlist-word,
+.el-wordlist-row.st-ignored .el-wordlist-gloss {
+  text-decoration: line-through;
+}
+
+.el-wordlist-row.st-ignored .el-wordlist-st {
+  color: var(--text-faint);
+}
+
+.el-wordlist-op {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.el-wordlist-btn {
+  height: auto;
+  font-size: var(--el-font-xs);
+  padding: var(--el-btn-xs);
+  cursor: pointer;
+}
+
+/* 词表弹窗头部操作行（导出等） */
+.el-wordlist-actions {
+  display: flex;
+  gap: var(--el-space-2);
+  margin-bottom: var(--el-space-2);
+}
+
+.el-wordlist-word {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.el-wordlist-phon {
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.el-wordlist-gloss {
+  color: var(--text-muted);
+}
+
+/* 移动端：表格列放不下，改为卡片式（状态+词一行，释义独占整行，操作右上角） */
+body.is-mobile .el-wordlist-modal {
+  width: 100vw;
+  max-width: none;
+}
+
+body.is-mobile .el-wordlist,
+body.is-mobile .el-wordlist tbody,
+body.is-mobile .el-wordlist tr,
+body.is-mobile .el-wordlist td {
+  display: block;
+}
+
+body.is-mobile .el-wordlist thead {
+  display: none;
+}
+
+body.is-mobile .el-wordlist-scroll {
+  max-height: none;
+}
+
+body.is-mobile .el-wordlist td {
+  padding: 2px 0;
+  border-bottom: none;
+}
+
+body.is-mobile .el-wordlist-row {
+  position: relative;
+  padding: var(--el-space-4);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+body.is-mobile .el-wordlist-st {
+  display: inline;
+  margin-right: var(--el-space-3);
+}
+
+body.is-mobile .el-wordlist-word {
+  display: inline;
+  font-size: var(--el-font-base);
+}
+
+body.is-mobile .el-wordlist-phon {
+  display: inline;
+  margin-left: var(--el-space-2);
+}
+
+body.is-mobile .el-wordlist-gloss {
+  margin-top: var(--el-space-1);
+  white-space: normal;
+}
+
+body.is-mobile .el-wordlist-op {
+  position: absolute;
+  right: var(--el-space-4);
+  top: var(--el-space-4);
+}
+
+body.is-mobile .el-wordlist-btn {
+  padding: var(--el-btn-sm);
+}
+
+.el-note-del {
+  height: auto;
+  font-size: var(--el-font-sm);
+  padding: 0 3px;
+  margin-left: auto;
+  background: none;
+  border: none;
+  cursor: pointer;
+  opacity: 0.45;
+  box-shadow: none;
+}
+
+body:not(.is-mobile) .el-note-del:hover {
+  opacity: 1;
+  color: var(--el-c-bad);
+}
+
+.el-progress-right {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--el-space-4);
+}
+
+.el-exit {
+  height: auto;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-faint);
+  font-size: var(--el-font-md);
+  padding: 2px var(--el-space-3);
+  line-height: 1;
+  box-shadow: none;
+}
+
+body:not(.is-mobile) .el-exit:hover {
+  color: var(--el-c-bad);
+}
+
+.el-empty {
+  color: var(--text-muted);
+  padding: 40px 0;
+  text-align: center;
+}
+
+/* 说明/辅助文案统一类：颜色 + 字号一起定，避免各处继承弹窗默认大字 */
+.el-muted {
+  color: var(--text-muted);
+  font-size: var(--el-font-sm);
+}
+
+/* —— 学习会话 —— */
+.el-learn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--el-space-4);
+  /* 顶部收紧给主卡让空间；桌面底部留白收最小让按钮贴底（移动端由下方覆写为导航高度） */
+  padding: var(--el-space-4) var(--el-space-6) var(--el-space-3);
+  height: 100%;
+  box-sizing: border-box;
+}
+
+/* Obsidian 移动端底部导航栏遮挡内容：学习页与主题面板都加高底部留白 */
+/* Obsidian 移动端底部导航栏让位：导航栏自身已含安全区（实测 ~48px+安全区），
+   之前用整个 --el-mobile-nav-h（76px+安全区）多算了一截，全成了按钮下的空档 */
+body.is-mobile .el-learn {
+  padding-bottom: calc(48px + env(safe-area-inset-bottom, 0px));
+}
+
+.el-progress-info {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  max-width: 640px;
+  color: var(--text-muted);
+  font-size: var(--el-font-sm);
+}
+
+.el-progress-bar {
+  width: 100%;
+  max-width: 640px;
+  height: 5px;
+  border-radius: var(--el-radius-xs);
+  background: var(--background-modifier-border);
+  overflow: hidden;
+}
+
+.el-progress-fill {
+  height: 100%;
+  background: var(--interactive-accent);
+  transition: width 0.25s ease;
+}
+
+/* 快捷键清单（进度行 ? 按钮切换，桌面/移动端都显示） */
+.el-kbd-help {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--el-space-1) var(--el-space-4);
+  width: 100%;
+  max-width: 640px;
+  margin-top: var(--el-space-2);
+  padding: var(--el-space-1) var(--el-space-3);
+  border-radius: var(--el-radius-sm);
+  background: var(--background-secondary);
+  font-size: var(--el-font-sm);
+  color: var(--text-muted);
+}
+
+.el-kbd-help b {
+  color: var(--text-normal);
+  font-weight: 600;
+}
+
+/* 确认弹窗（confirmOk）：保留消息换行，按钮靠右 */
+.el-confirm-msg {
+  white-space: pre-line;
+  margin: 0 0 var(--el-space-4);
+}
+
+.el-confirm-btns {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--el-space-2);
+}
+
+.el-card {
+  width: 100%;
+  max-width: 640px;
+  text-align: center;
+  padding: var(--el-space-7) 24px var(--el-space-6);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--el-radius-xl);
+  background: var(--background-primary);
+  /* 学习中占满剩余高度、内容多时卡内滚动；完成页不参与拉伸 */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.el-card.el-end {
+  flex: 0 0 auto;
+  overflow-y: visible;
+}
+
+.el-word {
+  font-size: var(--el-font-display);
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.el-word-link {
+  cursor: pointer;
+}
+
+body:not(.is-mobile) .el-word-link:hover {
+  color: var(--interactive-accent);
+}
+
+/* 标题旁 ✏️ 编辑提示（整块标题可点；移动端无 hover title，靠它示意可编辑） */
+.el-word-edit {
+  font-size: var(--el-font-sm);
+  margin-left: var(--el-space-2);
+  opacity: 0.55;
+  line-height: 1;
+}
+
+body:not(.is-mobile) .el-word-link:hover .el-word-edit {
+  opacity: 1;
+}
+
+.el-phonetic {
+  color: var(--text-muted);
+  font-size: var(--el-font-base);
+  margin-top: var(--el-space-1);
+}
+
+.el-tts {
+  margin-top: var(--el-space-4);
+  font-size: var(--el-font-lg);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+/* 词卡上的 AI 操作按钮：图标 + 文字，便于区分动作 */
+.el-ai-btn {
+  height: auto;
+  font-size: var(--el-font-sm);
+  margin-top: var(--el-space-4);
+  padding: var(--el-btn-sm);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--el-radius-full);
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.el-ai-btn:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.el-translation {
+  font-size: var(--el-font-lg);
+  margin-top: var(--el-space-5);
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.el-senses {
+  font-size: var(--el-font-lg);
+  margin-top: var(--el-space-5);
+  line-height: 1.6;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: center;
+}
+
+/* 义项强制单行：超长截断省略号（prompt 已限制每行近义表述数量，此为兜底），title 保留全文 */
+.el-sense {
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.el-sense-more {
+  margin-top: var(--el-space-1);
+  font-size: var(--el-font-sm);
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.el-examples {
+  margin-top: var(--el-space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--el-space-2);
+  counter-reset: el-ex;
+}
+
+.el-example {
+  font-size: var(--el-font-md);
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: var(--el-radius-xs);
+  padding: 2px var(--el-space-1);
+  margin: 0 -4px;
+  transition: background 0.15s;
+}
+
+/* 例句列表：左对齐 + 前置序号（反复习卡的单条挖空线索不在此列表内，保持居中无序号） */
+.el-examples .el-example {
+  text-align: left;
+}
+
+.el-examples .el-example::before {
+  counter-increment: el-ex;
+  content: counter(el-ex) ". ";
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+body:not(.is-mobile) .el-example:hover {
+  background: var(--background-modifier-hover);
+}
+
+.el-example b,
+.el-example strong {
+  color: var(--text-normal);
+}
+
+.el-example-src {
+  font-size: var(--el-font-sm);
+  opacity: 0.8;
+}
+
+.el-example-tts {
+  font-size: var(--el-font-md); /* 与例句正文同号，视觉协调 */
+  line-height: 1; /* 锁定行高，emoji 字体自身行框偏高会撑行 */
+  height: 1em;
+  vertical-align: -0.12em; /* 基线光学对齐，不再上浮 */
+  padding: 0 3px;
+  margin-left: var(--el-space-1);
+  background: none;
+  border: none;
+  cursor: pointer;
+  opacity: 0.55;
+  box-shadow: none;
+}
+
+body:not(.is-mobile) .el-example-tts:hover {
+  opacity: 1;
+}
+
+/* 例句删除：与朗读钮同字号同透明度（同尺寸基线），hover 才变红醒目，避免误触也避免视觉噪音 */
+.el-example-del {
+  font-size: var(--el-font-md);
+  line-height: 1;
+  height: 1em; /* 覆盖 Obsidian 的 button 强制 30px 行高，与正文行框一致 */
+  vertical-align: -0.12em;
+  padding: 0 3px;
+  margin-left: var(--el-space-3); /* 与朗读钮拉开距离，避免误触 */
+  background: none;
+  border: none;
+  cursor: pointer;
+  opacity: 0.55;
+  box-shadow: none;
+  color: var(--text-muted);
+}
+
+body:not(.is-mobile) .el-example-del:hover {
+  opacity: 1;
+  color: var(--el-c-bad);
+}
+
+.el-rel {
+  color: var(--text-normal);
+  border-bottom: 1px dashed var(--text-faint);
+  cursor: pointer;
+}
+
+/* 例句点词下划线常显：已收录灰虚线（点读发音）、未收录绿实线（点弹收录）、同主题同已收录 */
+.el-tok {
+  cursor: pointer;
+  border-bottom: 1px dashed var(--text-faint);
+}
+
+.el-tok-new {
+  border-bottom: 1px solid var(--el-c-good);
+}
+
+/* 例句 >3 条时的展开/收起 */
+.el-ex-more {
+  margin-top: var(--el-space-2);
+  background: none;
+  border: none;
+  box-shadow: none;
+  cursor: pointer;
+  color: var(--text-faint);
+  font-size: var(--el-font-sm);
+  padding: 0;
+  height: auto;
+}
+
+body:not(.is-mobile) .el-ex-more:hover {
+  color: var(--text-muted);
+}
+
+/* 词笔记阅读视图顶部的发音+进度条 */
+.el-note-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--el-space-4);
+  flex-wrap: wrap;
+  padding: var(--el-space-3) var(--el-space-4);
+  margin: 0 0 var(--el-space-4);
+  border-radius: var(--el-radius-md);
+  background: var(--background-secondary);
+  font-size: var(--el-font-sm);
+}
+
+.el-note-phonetic,
+.el-note-progress {
+  color: var(--text-muted);
+}
+
+/* 编辑态注入版：挂在 view content 顶部，留出与编辑器一致的内边距 */
+.el-note-bar-edit {
+  margin: var(--el-space-3) var(--el-space-4) 0;
+  flex-shrink: 0;
+}
+
+.el-reveal {
+  padding: var(--el-btn-lg);
+  font-size: var(--el-font-base);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.el-study-btns {
+  display: flex;
+  gap: var(--el-space-4);
+  flex-shrink: 0;
+}
+
+.el-grade-btns {
+  display: flex;
+  gap: var(--el-space-4);
+  flex-shrink: 0;
+}
+
+.el-grade {
+  display: flex;
+  align-items: center;
+  gap: var(--el-space-3);
+  padding: var(--el-btn-md);
+  font-size: var(--el-font-base);
+  cursor: pointer;
+  border-radius: var(--el-radius-md);
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+}
+
+/* 快捷键键帽：所有按钮上的数字统一淡色小键帽（高亮钮内反色见下方 .el-reveal-ok/.el-grade-ok） */
+.el-kbd {
+  font-size: var(--el-font-xs);
+  color: var(--text-faint);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--el-radius-xs);
+  padding: 0 var(--el-space-1);
+}
+
+/* 主行动高亮（显示答案/认识/记住了/继续）：实心强调色，其余按钮统一默认配色 */
+.el-reveal-ok,
+.el-grade-ok {
+  background: var(--interactive-accent);
+  border: 1px solid var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+body:not(.is-mobile) .el-reveal-ok:hover,
+body:not(.is-mobile) .el-grade-ok:hover {
+  background: var(--interactive-accent-hover);
+  border-color: var(--interactive-accent-hover);
+  color: var(--text-on-accent);
+}
+
+/* 高亮钮内的快捷键提示反色；半透明暗底键帽保证浅色强调色下数字也清晰 */
+.el-reveal-ok .el-kbd,
+.el-grade-ok .el-kbd {
+  color: var(--text-on-accent);
+  border-color: transparent;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.el-end h2 {
+  margin: var(--el-space-3) 0 var(--el-space-4);
+}
+
+.el-end-emoji {
+  font-size: var(--el-font-display);
+}
+
+.el-end-stats {
+  display: flex;
+  gap: var(--el-space-5);
+  color: var(--text-muted);
+  justify-content: center;
+  margin-bottom: var(--el-space-4);
+  flex-wrap: wrap;
+}
+
+.el-end-mastered {
+  font-size: var(--el-font-sm);
+  color: var(--el-c-ok);
+  margin-bottom: var(--el-space-4);
+}
+
+/* 完成页「未巩固」：答错词清单，弱于新掌握的绿 */
+.el-end-weak {
+  color: var(--el-c-bad);
+}
+
+/* —— 自测与巩固测试 —— */
+.el-hint {
+  color: var(--text-faint);
+  font-size: var(--el-font-sm);
+  margin-bottom: var(--el-space-4);
+}
+
+.el-quiz-question {
+  font-size: var(--el-font-lg);
+  line-height: 1.8;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* —— 拼写题 —— */
+.el-spell {
+  display: flex;
+  align-items: center;
+  gap: var(--el-space-3);
+  margin-top: var(--el-space-4);
+}
+
+.el-spell-in {
+  flex: 1;
+  padding: var(--el-space-3) var(--el-space-4);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--el-radius-md);
+  background: var(--background-primary);
+  font-size: var(--el-font-lg);
+  letter-spacing: 0.06em; /* 拼写输入逐字母可辨 */
+}
+
+.el-spell-in:focus {
+  border-color: var(--interactive-accent);
+  outline: none;
+}
+
+/* 听写题的大喇叭：题面就是发音，要醒目可点 */
+.el-spell-audio {
+  font-size: 44px;
+  line-height: 1;
+  background: none;
+  border: none;
+  box-shadow: none;
+  cursor: pointer;
+  padding: var(--el-space-5);
+  margin: var(--el-space-3) 0;
+}
+
+.el-spell-audio:active {
+  transform: scale(0.94);
+}
+
+/* 听写降级入口：弱化文字钮，听不见 TTS 的场景有逃生门 */
+.el-spell-degrade {
+  margin-top: var(--el-space-3);
+  background: none;
+  border: none;
+  box-shadow: none;
+  cursor: pointer;
+  color: var(--text-faint);
+  font-size: var(--el-font-sm);
+  padding: 0;
+  height: auto;
+}
+
+body:not(.is-mobile) .el-spell-degrade:hover {
+  color: var(--text-normal);
+}
+
+.el-spell-go {
+  flex-shrink: 0;
+}
+
+.el-spell-hint {
+  margin-top: var(--el-space-3);
+  background: none;
+  border: none;
+  box-shadow: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: var(--el-font-sm);
+  letter-spacing: 0.2em; /* 长度格子 ·· 分辨更清 */
+  padding: 0;
+  height: auto;
+}
+
+body:not(.is-mobile) .el-spell-hint:hover {
+  color: var(--text-normal);
+}
+
+.el-quiz-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--el-space-3);
+  width: 100%;
+  max-width: 640px;
+  flex-shrink: 0;
+}
+
+/* 窄屏（手机）改单列：长释义选项不再挤压/溢出屏幕 */
+@media (max-width: 520px) {
+  .el-quiz-options {
+    grid-template-columns: 1fr;
+  }
+}
+
+.el-opt {
+  display: flex;
+  align-items: center;
+  gap: var(--el-space-3);
+  padding: var(--el-space-4);
+  border-radius: var(--el-radius-md);
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  cursor: pointer;
+  text-align: left;
+  font-size: var(--el-font-md);
+  line-height: 1.4;
+  min-width: 0; /* 允许网格轨道收缩到内容以下，长文本才能换行不撑宽 */
+}
+
+.el-opt:disabled {
+  cursor: default;
+  opacity: 0.9;
+}
+
+.el-opt.is-correct {
+  border-color: var(--el-c-good);
+  background: var(--el-c-ok-soft);
+}
+
+.el-opt.is-wrong {
+  border-color: var(--el-c-bad);
+  background: var(--el-c-bad-soft);
+}
+
+.el-opt .el-kbd {
+  flex-shrink: 0;
+}
+
+.el-opt-text {
+  overflow-wrap: anywhere;
+}
+
+.el-quiz-reveal {
+  margin-top: var(--el-space-5);
+  font-size: var(--el-font-md);
+  color: var(--text-normal);
+  white-space: pre-line;
+}
+
+.el-example-zh,
+.el-cand-sent-zh {
+  font-size: var(--el-font-sm);
+  color: var(--text-faint);
+  white-space: pre-line;
+}
+
+/* —— 词卡弹窗：例句点已收录词弹出对应词卡 —— */
+.el-wordcard-modal {
+  width: 480px;
+  max-width: 92vw;
+}
+
+/* 学习页词卡的排版靠 .el-card 的 text-align:center，弹窗里没有这层容器——在此复刻同一套
+   语义：主体内容（词/音标/按钮/义项/同反义）居中，例句/助记各自的 text-align:left 继续生效；
+   Obsidian 会把弹窗内按钮撑满整行，还原成自然宽度（卡片里按钮本就是行内排布） */
+.el-wordcard-modal .modal-content {
+  text-align: center;
+}
+
+.el-wordcard-modal .modal-content button {
+  width: auto;
+}
+
+/* —— 扩词弹窗 —— */
+.el-expand-modal {
+  width: 720px;
+  max-width: 92vw;
+}
+
+/* 弹窗浮于移动端导航之上，底部无需预留导航高度；仅保留 iOS 底部安全区 */
+body.is-mobile .el-wordlist-modal,
+body.is-mobile .el-expand-modal {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* 弹窗布局：内容区自己滚动，底部操作栏常驻其下，互不遮挡 */
+.el-expand-modal .modal-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--el-space-4);
+  overflow: hidden;
+}
+
+.el-expand {
+  display: flex;
+  flex-direction: column;
+  gap: var(--el-space-4);
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.el-kw-input {
+  width: 100%;
+  font-size: var(--el-font-sm);
+}
+
+/* 关键词输入的包裹行（与下方候选区留出间距） */
+.el-expand-kw {
+  margin-bottom: var(--el-space-2);
+}
+
+.el-expand-actions {
+  display: flex;
+  gap: var(--el-space-3);
+  flex-wrap: wrap;
+}
+
+.el-expand-tabs {
+  display: flex;
+  gap: 2px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+/* 下划线式页签：与下方实心动作按钮（mod-cta）在视觉上区分 */
+.el-tab {
+  height: auto;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--text-muted);
+  padding: var(--el-space-1) var(--el-space-4);
+  margin-bottom: -1px;
+  cursor: pointer;
+}
+
+body:not(.is-mobile) .el-tab:hover {
+  color: var(--text-normal);
+  background: var(--background-secondary);
+}
+
+.el-tab.is-active {
+  color: var(--text-accent);
+  border-bottom-color: var(--text-accent);
+  font-weight: 600;
+}
+
+.el-expand-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--el-space-3);
+  font-size: var(--el-font-sm);
+  color: var(--text-muted);
+}
+
+.el-expand-status {
+  font-size: var(--el-font-sm);
+  min-height: 18px;
+}
+
+.el-expand-summary {
+  font-size: var(--el-font-sm);
+  color: var(--el-c-ok);
+}
+
+.el-cand-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--el-space-3);
+  font-size: var(--el-font-sm);
+}
+
+.el-cand-toolbar-btns {
+  display: flex;
+  gap: var(--el-space-2);
+}
+
+.el-cand-toolbar-btns button {
+  font-size: var(--el-font-sm);
+  padding: var(--el-btn-sm);
+}
+
+.el-cand-list {
+  max-height: 46vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--el-space-2);
+  padding-right: var(--el-space-1);
+}
+
+.el-cand {
+  display: flex;
+  gap: var(--el-space-4);
+  padding: var(--el-space-3) var(--el-space-4);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--el-radius-md);
+  cursor: pointer;
+  align-items: flex-start;
+}
+
+body:not(.is-mobile) .el-cand:hover {
+  background: var(--background-modifier-hover);
+}
+
+.el-cand.is-checked {
+  border-color: var(--interactive-accent);
+  background: var(--el-accent-soft);
+}
+
+.el-cand input {
+  margin-top: 3px;
+}
+
+.el-cand-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.el-cand-head {
+  display: flex;
+  align-items: center;
+  gap: var(--el-space-3);
+}
+
+.el-cand-word {
+  font-weight: 600;
+  font-size: var(--el-font-md);
+}
+
+.el-cand-trans {
+  font-size: var(--el-font-sm);
+  margin-top: 2px;
+}
+
+.el-cand-sent {
+  font-size: var(--el-font-sm);
+  color: var(--text-muted);
+  margin-top: 3px;
+  line-height: 1.5;
+}
+
+.el-expand-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--el-space-4);
+  padding: var(--el-space-4) 0 0;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.el-dict-status {
+  margin: -10px 0 var(--el-space-4);
+  font-size: var(--el-font-sm);
+}
+
+/* —— AI 补例句弹窗 —— */
+.el-backfill-modal {
+  width: min(480px, 92vw);
+}
+
+.el-bf-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--el-space-3);
+  margin-bottom: var(--el-space-4);
+}
+
+.el-bf-tile {
+  text-align: center;
+  padding: var(--el-space-4) var(--el-space-2) var(--el-space-3);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--el-radius-lg);
+  background: var(--background-secondary);
+}
+
+.el-bf-tile-v {
+  font-size: var(--el-font-xl);
+  font-weight: 700;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.el-bf-tile-l {
+  font-size: var(--el-font-xs);
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.el-bf-tile.is-ok .el-bf-tile-v {
+  color: var(--el-c-ok);
+}
+
+.el-bf-tile.is-miss .el-bf-tile-v {
+  color: var(--el-c-bad);
+}
+
+.el-bf-dist {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--el-space-2);
+  margin-bottom: var(--el-space-4);
+  font-size: var(--el-font-sm);
+  color: var(--text-muted);
+}
+
+.el-bf-dist.is-empty {
+  color: var(--el-c-ok);
+}
+
+.el-bf-dist-label {
+  color: var(--text-faint);
+  margin-right: 2px;
+}
+
+.el-bf-summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--el-space-3);
+  font-size: var(--el-font-sm);
+  padding: var(--el-space-4);
+  margin-bottom: var(--el-space-1);
+  border-radius: var(--el-radius-md);
+  border: 1px solid color-mix(in srgb, var(--interactive-accent) 30%, var(--background-modifier-border));
+  background: var(--el-accent-soft);
+}
+
+.el-bf-progress {
+  display: none;
+  height: 5px;
+  border-radius: var(--el-radius-xs);
+  background: var(--background-modifier-border);
+  overflow: hidden;
+}
+
+.el-bf-progress.is-active {
+  display: block;
+}
+
+.el-bf-progress-fill {
+  height: 100%;
+  width: 0;
+  border-radius: var(--el-radius-xs);
+  background: var(--interactive-accent);
+  transition: width 0.3s ease;
+}
+
+/* —— 移动端（Obsidian 为 body 加 is-mobile）—— */
+body.is-mobile .el-kbd {
+  display: none;
+}
+
+body.is-mobile .el-grade {
+  padding: var(--el-btn-lg);
+}
+
+body.is-mobile .el-panel {
+  padding: var(--el-space-4);
+  /* Obsidian 移动端底部导航栏遮挡内容：给面板底部留出导航高度 */
+  padding-bottom: var(--el-mobile-nav-h);
+}
+
+.el-chip-hard {
+  color: var(--el-c-bad);
+  font-weight: 600;
+}
+
+.el-related-row {
+  margin-top: var(--el-space-4);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--el-space-3);
+  align-items: center;
+  justify-content: center;
+  font-size: var(--el-font-sm);
+  color: var(--text-faint);
+  line-height: 1.2;
+}
+
+/* 行内 emoji 标签（🔀 同义 / ↔️ 反义）：span 锁 1 倍行高——emoji 字体行框 ~1.35em，
+   继承 1.2 仍会把整行撑高；锁 1 后字形溢出绘制、不再参与行高 */
+.el-related-row > span {
+  line-height: 1;
+}
+
+.el-related-w {
+  height: auto; /* Obsidian 默认按钮高 30px（--input-height），紧凑按钮须还原 */
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: var(--el-font-sm);
+  box-shadow: none;
+  line-height: 1.2;
+}
+
+body:not(.is-mobile) .el-related-w:hover {
+  color: var(--text-accent);
+  text-decoration: underline;
+}
+
+.el-related-ant {
+  font-style: italic;
+}
+
+/* 词形变化行内中文标签（went 过去式）：内联可见（移动端无 hover），不随按钮 hover 变色 */
+.el-wf-tag {
+  font-size: var(--el-font-xs);
+  color: var(--text-faint);
+  margin-left: 2px;
+}
+body:not(.is-mobile) .el-related-w:hover .el-wf-tag {
+  color: inherit;
+}
+
+/* —— 助记（用户自己的记忆关联） —— */
+.el-memo {
+  margin: var(--el-space-4) auto 0;
+  max-width: 34em;
+  padding: var(--el-space-2) var(--el-space-4);
+  border-left: 3px solid var(--interactive-accent);
+  border-radius: var(--el-radius-xs);
+  background: var(--background-secondary);
+  font-size: var(--el-font-sm);
+  color: var(--text-muted);
+  text-align: left;
+  cursor: pointer;
+  line-height: 1.5;
+}
+
+body:not(.is-mobile) .el-memo:hover {
+  background: var(--background-modifier-hover);
+}
+
+.el-memo-add {
+  height: auto; /* Obsidian 默认按钮高 30px（--input-height），紧凑按钮须还原 */
+  margin-top: var(--el-space-3);
+  background: none;
+  border: none;
+  padding: 0 var(--el-space-2);
+  cursor: pointer;
+  box-shadow: none;
+  font-size: var(--el-font-sm);
+  color: var(--text-faint);
+  line-height: 1;
+}
+
+body:not(.is-mobile) .el-memo-add:hover {
+  color: var(--text-accent);
+}
+
+.el-memo-in {
+  width: 100%;
+  font-size: var(--el-font-md);
+  resize: vertical;
+}
+
+/* 「清空助记」低调化：普通按钮但文字弱化 */
+.el-memo-clear {
+  color: var(--text-faint);
+}
+
+/* 「✨ AI 助记」与保存/清空同行，靠左；候选生成后填充在输入框与按钮行之间 */
+.el-memo-ai {
+  margin-right: auto;
+  font-size: var(--el-font-sm);
+}
+
+.el-memo-sugs:not(:empty) {
+  margin-top: var(--el-space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--el-space-1);
+}
+
+.el-memo-sug {
+  padding: var(--el-space-1) var(--el-space-3);
+  border-radius: var(--el-radius-sm);
+  background: var(--background-secondary);
+  font-size: var(--el-font-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  line-height: 1.5;
+}
+
+body:not(.is-mobile) .el-memo-sug:hover {
+  background: var(--el-accent-soft);
+  color: var(--text-normal);
+}
+
+.el-article-box {
+  margin-top: var(--el-space-1);
+}
+
+.el-article-input {
+  width: 100%;
+  font-size: var(--el-font-sm);
+  resize: vertical;
+}
+
+.el-article-url {
+  flex: 1;
+  min-width: 160px;
+  font-size: var(--el-font-sm);
+}
+
+/* —— 近 14 天学习量迷你图 —— */
+/* 配色经 CVD/对比度校验（蓝=复习 橙=新学），图表专属调色板，暗色主题单独选档 */
+.el-chart-wrap {
+  --c-new: #eb6834;
+  --c-rev: #2a78d6;
+  position: relative;
+  margin: 0 0 var(--el-space-5);
+}
+
+body.theme-dark .el-chart-wrap {
+  --c-new: #d95926;
+  --c-rev: #3987e5;
+}
+
+.el-chart-legend {
+  display: flex;
+  gap: var(--el-space-4);
+  align-items: center;
+  font-size: var(--el-font-xs);
+  color: var(--text-muted);
+  margin-bottom: var(--el-space-1);
+}
+
+.el-chart-legend .swatch {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  margin-right: var(--el-space-1);
+  vertical-align: -1px;
+}
+
+.swatch.sw-new {
+  background: var(--c-new);
+}
+
+.swatch.sw-rev {
+  background: var(--c-rev);
+}
+
+.el-chart-sum {
+  margin-left: auto;
+  color: var(--text-faint);
+}
+
+.el-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 44px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.el-chart-col {
+  flex: 1;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.seg {
+  width: 100%;
+}
+
+.seg+.seg {
+  margin-top: 2px;
+}
+
+.seg-top {
+  border-radius: var(--el-radius-xs) var(--el-radius-xs) 0 0;
+}
+
+.seg-new {
+  background: var(--c-new);
+}
+
+.seg-rev {
+  background: var(--c-rev);
+}
+
+.seg-none {
+  height: 2px;
+  background: var(--background-modifier-border);
+}
+
+.el-chart-x {
+  display: flex;
+  margin-top: 3px;
+}
+
+.el-chart-xlab {
+  flex: 1;
+  text-align: center;
+  font-size: var(--el-font-xs);
+  color: var(--text-faint);
+}
+
+.el-chart-tip {
+  position: absolute;
+  bottom: 58px;
+  transform: translateX(-50%);
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--el-radius-sm);
+  padding: var(--el-space-1) var(--el-space-3);
+  font-size: var(--el-font-xs);
+  color: var(--text-normal);
+  white-space: nowrap;
+  box-shadow: var(--el-shadow);
+  pointer-events: none;
+  z-index: 5;
+}
+
+.el-chart-col:focus {
+  outline: 1px solid var(--background-modifier-border);
+  outline-offset: -1px;
+  border-radius: 2px;
+}
+
+/* —— 打卡日历（近 12 周热力图）：sequential 蓝四档，浅/暗 ramp 各自过 dataviz ordinal 校验
+   （单调 L、相邻 ΔL≥0.06、浅端对表面对比 ≥2:1）；0 次用中性 track 色，不占 ramp —— */
+.el-heat {
+  --h0: var(--background-modifier-border);
+  --h1: #92b4e2;
+  --h2: #6d9bd8;
+  --h3: #4a80c8;
+  --h4: #2c5a9c;
+  margin: 0 0 var(--el-space-5);
+}
+
+body.theme-dark .el-heat {
+  --h1: #42567c;
+  --h2: #4f6996;
+  --h3: #6a93cc;
+  --h4: #adc9f0;
+}
+
+.el-heat-head {
+  display: flex;
+  align-items: center;
+  font-size: var(--el-font-xs);
+  color: var(--text-muted);
+  margin-bottom: var(--el-space-2);
+}
+
+.el-heat-legend {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.el-heat-sw {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  margin-left: 2px;
+}
+
+.el-heat-sw.h0 { background: var(--h0); }
+.el-heat-sw.h1 { background: var(--h1); }
+.el-heat-sw.h2 { background: var(--h2); }
+.el-heat-sw.h3 { background: var(--h3); }
+.el-heat-sw.h4 { background: var(--h4); }
+
+.el-heat-grid {
+  display: flex;
+  justify-content: center;
+  gap: 3px;
+}
+
+.el-heat-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.el-heat-mon {
+  height: 13px;
+  font-size: var(--el-font-xs);
+  color: var(--text-faint);
+  line-height: 13px;
+  white-space: nowrap;
+}
+
+.el-heat-cell {
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+  background: var(--h0);
+}
+
+.el-heat-cell.is-blank {
+  background: transparent;
+}
+
+.el-heat-cell.h1 { background: var(--h1); }
+.el-heat-cell.h2 { background: var(--h2); }
+.el-heat-cell.h3 { background: var(--h3); }
+.el-heat-cell.h4 { background: var(--h4); }
+
+/* 今天：accent 描边强调（不靠颜色深浅传达「今天」） */
+.el-heat-cell.is-today {
+  box-shadow: 0 0 0 1px var(--interactive-accent);
+}
+
+/* —— 编辑器内词库高亮 + 悬浮释义 —— */
+.cm-content .el-vocab {
+  border-bottom: 1px dotted var(--interactive-accent);
+}
+
+.el-vocab-tip {
+  max-width: 320px;
+  padding: var(--el-space-3) var(--el-space-4);
+  font-size: var(--el-font-sm);
+  line-height: 1.5;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--el-radius-md);
+  box-shadow: var(--el-shadow);
+}
+
+.el-vocab-tip .el-tts {
+  padding: 0 2px;
+  font-size: var(--el-font-md);
+  line-height: 1;
+  height: 1em;
+  vertical-align: -0.12em;
+}
+
+.el-vocab-tip-sub {
+  color: var(--text-muted);
+  font-size: var(--el-font-xs);
+}
+
+.el-vocab-tip-open {
+  height: auto;
+  margin-top: var(--el-space-2);
+  font-size: var(--el-font-xs);
+  padding: var(--el-btn-xs);
+  cursor: pointer;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--el-radius-xs);
+}
+
+body:not(.is-mobile) .el-vocab-tip-open:hover {
+  border-color: var(--interactive-accent);
+}
+
+/* —— Key 引导弹窗（硅基流动/DeepSeek 免费注册） —— */
+.el-keyguide .modal-content button {
+  width: auto; /* 弹窗内原生按钮默认撑满整行，还原自然宽度 */
+}
+
+.el-keyguide-steps {
+  white-space: pre-line; /* 步骤文案里的 \n 渲染成换行 */
+  margin: 0 0 var(--el-space-2);
+}
+
+.el-keyguide-row {
+  display: flex;
+  gap: var(--el-space-2);
+  align-items: center;
+  margin: var(--el-space-3) 0;
+}
+
+.el-keyguide-row input[type="text"] {
+  flex: 1;
+}
