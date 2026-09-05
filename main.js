@@ -6382,6 +6382,30 @@ ${text2}` : text2;
     this.contentEl.empty();
   }
 };
+var KEY_GUIDES = {
+  siliconflow: {
+    title: "\u514D\u8D39\u83B7\u53D6\u7845\u57FA\u6D41\u52A8 API Key",
+    steps: "\u2460 \u70B9\u300C\u6253\u5F00\u7845\u57FA\u6D41\u52A8\u300D\u2192 \u624B\u673A\u9A8C\u8BC1\u7801\u6216\u5FAE\u4FE1\u626B\u7801\u6CE8\u518C/\u767B\u5F55\uFF08\u81EA\u52A8\u5230\u5BC6\u94A5\u9875\uFF09\n\u2461 \u70B9\u300C\u65B0\u5EFA API \u5BC6\u94A5\u300D\u2192 \u590D\u5236\n\u2462 \u56DE\u6765\u7C98\u8D34\uFF0C\u4FDD\u5B58\u5373\u53EF",
+    note: "\u6CE8\u518C\u9001 2000 \u4E07 token \u989D\u5EA6\uFF0CQwen3-8B \u7B49\u5E38\u7528\u6A21\u578B\u514D\u8D39\uFF0C\u6269\u8BCD/\u4F8B\u53E5/\u52A9\u8BB0\u591F\u7528\u5F88\u4E45\u3002",
+    url: "https://cloud.siliconflow.cn/account/ak",
+    openText: "\u6253\u5F00\u7845\u57FA\u6D41\u52A8\uFF08\u6CE8\u518C/\u767B\u5F55\uFF09",
+    keyPrefix: "sk-"
+  },
+  zhipu: {
+    title: "\u514D\u8D39\u83B7\u53D6\u667A\u8C31 API Key",
+    steps: "\u2460 \u70B9\u300C\u6253\u5F00\u667A\u8C31\u5F00\u653E\u5E73\u53F0\u300D\u2192 \u624B\u673A\u53F7\u6216\u90AE\u7BB1\u6CE8\u518C/\u767B\u5F55\n\u2461 \u8FDB\u5165\u300CAPI \u5BC6\u94A5\u300D\u2192 \u65B0\u5EFA\u5E76\u590D\u5236\n\u2462 \u56DE\u6765\u7C98\u8D34\uFF0C\u4FDD\u5B58\u5373\u53EF",
+    note: "glm-4-flash \u6C38\u4E45\u514D\u8D39\uFF08\u4E0D\u9650\u91CF\uFF09\uFF0C\u53E6\u9001 2000 \u4E07 token \u53EF\u7528\u66F4\u5F3A\u7684\u6A21\u578B\u3002",
+    url: "https://open.bigmodel.cn/usercenter/apikeys",
+    openText: "\u6253\u5F00\u667A\u8C31\u5F00\u653E\u5E73\u53F0\uFF08\u6CE8\u518C/\u767B\u5F55\uFF09"
+  },
+  deepseek: {
+    title: "\u83B7\u53D6 DeepSeek API Key",
+    steps: "\u2460 \u70B9\u300C\u6253\u5F00 DeepSeek \u5F00\u653E\u5E73\u53F0\u300D\u2192 \u6CE8\u518C/\u767B\u5F55\n\u2461 \u5DE6\u4FA7\u300CAPI keys\u300D\u2192\u300C\u521B\u5EFA API key\u300D\u2192 \u590D\u5236\n\u2462 \u56DE\u6765\u7C98\u8D34\uFF0C\u4FDD\u5B58\u5373\u53EF",
+    url: "https://platform.deepseek.com/api_keys",
+    openText: "\u6253\u5F00 DeepSeek \u5F00\u653E\u5E73\u53F0",
+    keyPrefix: "sk-"
+  }
+};
 var KeyGuideModal = class extends import_obsidian8.Modal {
   constructor(app, provider, onPick) {
     super(app);
@@ -6389,26 +6413,18 @@ var KeyGuideModal = class extends import_obsidian8.Modal {
     this.onPick = onPick;
   }
   onOpen() {
-    const sf = this.provider === "siliconflow";
-    this.titleEl.setText(sf ? "\u514D\u8D39\u83B7\u53D6\u7845\u57FA\u6D41\u52A8 API Key" : "\u83B7\u53D6 DeepSeek API Key");
+    const g = KEY_GUIDES[this.provider];
+    this.titleEl.setText(g.title);
     const c = this.contentEl;
     c.addClass("el-keyguide");
-    c.createEl("p", {
-      text: sf ? "\u2460 \u70B9\u300C\u6253\u5F00\u7845\u57FA\u6D41\u52A8\u300D\u2192 \u624B\u673A\u9A8C\u8BC1\u7801\u6216\u5FAE\u4FE1\u626B\u7801\u6CE8\u518C/\u767B\u5F55\uFF08\u81EA\u52A8\u5230\u5BC6\u94A5\u9875\uFF09\n\u2461 \u70B9\u300C\u65B0\u5EFA API \u5BC6\u94A5\u300D\u2192 \u590D\u5236\n\u2462 \u56DE\u6765\u7C98\u8D34\uFF0C\u4FDD\u5B58\u5373\u53EF" : "\u2460 \u70B9\u300C\u6253\u5F00 DeepSeek \u5F00\u653E\u5E73\u53F0\u300D\u2192 \u6CE8\u518C/\u767B\u5F55\n\u2461 \u5DE6\u4FA7\u300CAPI keys\u300D\u2192\u300C\u521B\u5EFA API key\u300D\u2192 \u590D\u5236\n\u2462 \u56DE\u6765\u7C98\u8D34\uFF0C\u4FDD\u5B58\u5373\u53EF",
-      cls: "el-keyguide-steps"
-    });
-    if (sf) {
-      c.createEl("p", {
-        text: "\u6CE8\u518C\u9001 2000 \u4E07 token \u989D\u5EA6\uFF0CQwen3-8B \u7B49\u5E38\u7528\u6A21\u578B\u514D\u8D39\uFF0C\u6269\u8BCD/\u4F8B\u53E5/\u52A9\u8BB0\u591F\u7528\u5F88\u4E45\u3002",
-        cls: "el-muted"
-      });
-    }
-    new import_obsidian8.ButtonComponent(c).setButtonText(sf ? "\u6253\u5F00\u7845\u57FA\u6D41\u52A8\uFF08\u6CE8\u518C/\u767B\u5F55\uFF09" : "\u6253\u5F00 DeepSeek \u5F00\u653E\u5E73\u53F0").setCta().onClick(() => {
-      window.open(sf ? "https://cloud.siliconflow.cn/account/ak" : "https://platform.deepseek.com/api_keys");
+    c.createEl("p", { text: g.steps, cls: "el-keyguide-steps" });
+    if (g.note) c.createEl("p", { text: g.note, cls: "el-muted" });
+    new import_obsidian8.ButtonComponent(c).setButtonText(g.openText).setCta().onClick(() => {
+      window.open(g.url);
     });
     const row = c.createDiv("el-keyguide-row");
     const input = new import_obsidian8.TextComponent(row);
-    input.setPlaceholder("\u7C98\u8D34 sk- \u5F00\u5934\u7684\u5BC6\u94A5");
+    input.setPlaceholder(g.keyPrefix ? `\u7C98\u8D34 ${g.keyPrefix} \u5F00\u5934\u7684\u5BC6\u94A5` : "\u7C98\u8D34 API \u5BC6\u94A5");
     new import_obsidian8.ButtonComponent(row).setButtonText("\u7C98\u8D34").onClick(async () => {
       try {
         const t = (await navigator.clipboard.readText()).trim();
@@ -6422,8 +6438,8 @@ var KeyGuideModal = class extends import_obsidian8.Modal {
     new import_obsidian8.ButtonComponent(btns).setButtonText("\u53D6\u6D88").onClick(() => this.close());
     new import_obsidian8.ButtonComponent(btns).setButtonText("\u4FDD\u5B58\u5E76\u4F7F\u7528").setCta().onClick(() => {
       const key = input.inputEl.value.trim();
-      if (!key.startsWith("sk-")) {
-        new import_obsidian8.Notice("\u5BC6\u94A5\u5E94\u4EE5 sk- \u5F00\u5934\uFF0C\u8BF7\u68C0\u67E5\u662F\u5426\u590D\u5236\u5B8C\u6574");
+      if (g.keyPrefix ? !key.startsWith(g.keyPrefix) : key.length < 16) {
+        new import_obsidian8.Notice(g.keyPrefix ? `\u5BC6\u94A5\u5E94\u4EE5 ${g.keyPrefix} \u5F00\u5934\uFF0C\u8BF7\u68C0\u67E5\u662F\u5426\u590D\u5236\u5B8C\u6574` : "\u5BC6\u94A5\u770B\u8D77\u6765\u4E0D\u5B8C\u6574\uFF0C\u8BF7\u91CD\u65B0\u590D\u5236");
         return;
       }
       this.onPick(key);
@@ -17286,7 +17302,8 @@ var EnglishLearnSettingTab = class extends import_obsidian14.PluginSettingTab {
     const PRESETS = {
       ollama: { baseUrl: "http://localhost:11434/v1", apiKey: "ollama", model: "qwen2.5:3b" },
       deepseek: { baseUrl: "https://api.deepseek.com/v1", apiKey: "", model: "deepseek-v4-flash" },
-      siliconflow: { baseUrl: "https://api.siliconflow.cn/v1", apiKey: "", model: "Qwen/Qwen3-8B" }
+      siliconflow: { baseUrl: "https://api.siliconflow.cn/v1", apiKey: "", model: "Qwen/Qwen3-8B" },
+      zhipu: { baseUrl: "https://open.bigmodel.cn/api/paas/v4", apiKey: "", model: "glm-4-flash" }
     };
     let urlText = null;
     let keyText = null;
@@ -17320,6 +17337,7 @@ var EnglishLearnSettingTab = class extends import_obsidian14.PluginSettingTab {
         ollama: "Ollama\uFF08\u672C\u5730\uFF09",
         deepseek: "DeepSeek",
         siliconflow: "\u7845\u57FA\u6D41\u52A8\uFF08\u514D\u8D39\u989D\u5EA6\uFF09",
+        zhipu: "\u667A\u8C31 GLM\uFF08\u514D\u8D39\u6A21\u578B\uFF09",
         custom: "OpenAI \u517C\u5BB9\uFF08\u81EA\u5B9A\u4E49\uFF09"
       }).setValue(conf().provider).onChange((v) => {
         switchSource(v);
