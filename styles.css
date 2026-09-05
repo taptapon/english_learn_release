@@ -91,6 +91,44 @@ body:not(.is-mobile) .el-status:hover {
   margin-bottom: var(--el-space-4);
 }
 
+/* 新用户 AI 引导横幅：一次性（配置完成/暂不/× 后消失），常驻面板首屏统计行之上 */
+.el-guide-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--el-space-3);
+  padding: var(--el-space-2) var(--el-space-3);
+  margin-bottom: var(--el-space-4);
+  background: var(--el-accent-soft);
+  border-radius: var(--el-radius-md);
+  font-size: var(--el-font-md);
+}
+
+.el-guide-banner .el-guide-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.el-guide-banner button {
+  height: auto; /* 覆盖 Obsidian 对原生 button 的 30px 定高 */
+  padding: var(--el-btn-sm);
+  font-size: var(--el-font-sm);
+}
+
+.el-guide-banner .el-guide-close {
+  background: none;
+  border: none;
+  box-shadow: none;
+  height: auto;
+  line-height: 1; /* 无边框图标按钮标配；× 不用 emoji 但一并锁行框 */
+  padding: var(--el-space-1) var(--el-space-2);
+  font-size: var(--el-font-lg);
+  color: var(--text-muted);
+}
+
+body:not(.is-mobile) .el-guide-banner .el-guide-close:hover {
+  color: var(--text-normal);
+}
+
 .el-theme-list {
   display: flex;
   flex-direction: column;
@@ -110,11 +148,34 @@ body:not(.is-mobile) .el-status:hover {
   border-radius: var(--el-radius-lg);
 }
 
-/* 置顶钉：未置顶淡显（hover 提示可点），置顶后常亮；切换即时反馈，不加过渡 */
-.el-theme-pin {
+/* 卡片右上角角落按钮组：停用开关 + 置顶钉，间距由 gap 统一控制 */
+.el-theme-corner {
   position: absolute;
   top: var(--el-space-2);
   right: var(--el-space-2);
+  display: flex;
+  gap: var(--el-space-1);
+}
+
+/* 停用开关：与图钉同款无边框图标按钮，淡显提示可点；点击后整卡消失，无图钉那类重排误亮问题，可加 hover */
+.el-theme-toggle {
+  height: auto;
+  background: none;
+  border: none;
+  box-shadow: none;
+  cursor: pointer;
+  font-size: var(--el-font-md);
+  line-height: 1;
+  padding: var(--el-space-2);
+  opacity: 0.35;
+}
+
+body:not(.is-mobile) .el-theme-toggle:hover {
+  opacity: 1;
+}
+
+/* 置顶钉：未置顶淡显（hover 提示可点），置顶后常亮；切换即时反馈，不加过渡（定位由 .el-theme-corner 承担） */
+.el-theme-pin {
   height: auto;
   background: none;
   border: none;
@@ -506,26 +567,6 @@ body.is-mobile .el-learn {
   height: 100%;
   background: var(--interactive-accent);
   transition: width 0.25s ease;
-}
-
-/* 快捷键清单（进度行 ? 按钮切换，桌面/移动端都显示） */
-.el-kbd-help {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--el-space-1) var(--el-space-4);
-  width: 100%;
-  max-width: 640px;
-  margin-top: var(--el-space-2);
-  padding: var(--el-space-1) var(--el-space-3);
-  border-radius: var(--el-radius-sm);
-  background: var(--background-secondary);
-  font-size: var(--el-font-sm);
-  color: var(--text-muted);
-}
-
-.el-kbd-help b {
-  color: var(--text-normal);
-  font-weight: 600;
 }
 
 /* 确认弹窗（confirmOk）：保留消息换行，按钮靠右 */
@@ -1058,6 +1099,36 @@ body:not(.is-mobile) .el-spell-hint:hover {
   width: auto;
 }
 
+/* —— 新建主题弹窗：已停用主题快捷启用区 —— */
+/* Obsidian 会把弹窗内按钮撑满整行，还原成自然宽度 */
+.el-create-theme-modal .modal-content button {
+  width: auto;
+}
+
+/* 弹窗页签行：与扩词面板同款下划线页签（.el-tab） */
+.el-create-theme-modal .el-expand-tabs {
+  display: flex;
+  margin-bottom: var(--el-space-3);
+}
+
+.el-disabled-list {
+  margin-top: var(--el-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--el-space-2);
+}
+
+.el-disabled-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--el-space-3);
+}
+
+.el-btn-restore {
+  padding: var(--el-btn-xs);
+}
+
 /* —— 扩词弹窗 —— */
 .el-expand-modal {
   width: 720px;
@@ -1142,6 +1213,53 @@ body:not(.is-mobile) .el-tab:hover {
   gap: var(--el-space-3);
   font-size: var(--el-font-sm);
   color: var(--text-muted);
+}
+
+/* 行内问号说明图标：桌面 hover 原生 title，点按弹 Notice。
+   摆放规矩：一律跟在被注释对象后面——操作行放行尾（主按钮后）、设置页跟设置名后、弹窗标题/说明文字后 */
+.el-helptip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  border: 1px solid var(--text-faint);
+  border-radius: var(--el-radius-full);
+  color: var(--text-faint);
+  font-size: var(--el-font-xs);
+  line-height: 1;
+  vertical-align: -2px; /* 与前后文字基线对齐（flex 容器内自动失效） */
+  cursor: help;
+  user-select: none;
+}
+
+body:not(.is-mobile) .el-helptip:hover {
+  color: var(--text-muted);
+  border-color: var(--text-muted);
+}
+
+/* 非 flex 宿主（设置名、标题）里的问号：补与文字的间距 */
+.setting-item-name .el-helptip,
+h3 .el-helptip {
+  margin-left: var(--el-space-2);
+}
+
+/* 点按问号弹出的就地气泡（fixed 锚定问号，见 ui/help-tip.ts）；多行 tip 保留换行 */
+.el-tipbubble {
+  position: fixed;
+  z-index: var(--layer-notice, 100); /* 要盖过宿主可能是的弹窗 */
+  max-width: min(320px, calc(100vw - 16px));
+  padding: var(--el-space-2) var(--el-space-3);
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--el-radius-sm);
+  box-shadow: var(--el-shadow);
+  font-size: var(--el-font-xs);
+  line-height: 1.5;
+  color: var(--text-normal);
+  white-space: pre-wrap;
+  pointer-events: auto;
 }
 
 .el-expand-status {
@@ -1625,7 +1743,7 @@ body.theme-dark .el-chart-wrap {
   --h2: #6d9bd8;
   --h3: #4a80c8;
   --h4: #2c5a9c;
-  margin: 0 0 var(--el-space-5);
+  margin: var(--el-space-5) 0 0;
 }
 
 body.theme-dark .el-heat {

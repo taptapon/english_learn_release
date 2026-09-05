@@ -1,7 +1,7 @@
 {
   "id": "english-learn",
   "name": "English Learn",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "minAppVersion": "1.4.0",
   "description": "主题式英语词汇学习：多关键词扩词 + 艾宾浩斯复习 + TTS",
   "author": "jianghong",
