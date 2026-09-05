@@ -998,8 +998,9 @@ var WordStore = class {
       added: fm.added ? Date.parse(String(fm.added)) || void 0 : void 0,
       translation,
       examples,
-      synonyms: synonyms.length ? synonyms : void 0,
-      antonyms: antonyms.length ? antonyms : void 0,
+      // [] = 「抓过但无结果」的负缓存：必须原样保留，归一化回 undefined 会让缺口统计永远算它
+      synonyms: fm.synonyms != null ? synonyms : void 0,
+      antonyms: fm.antonyms != null ? antonyms : void 0,
       senses: senses.length ? senses : void 0,
       memo: memo || void 0
     };
@@ -2981,14 +2982,14 @@ function extractCandidates(articles, opts) {
 var { Map: Map_1 } = globals;
 function get_each_context(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[54] = list[i];
-  child_ctx[55] = list;
-  child_ctx[56] = i;
+  child_ctx[53] = list[i];
+  child_ctx[54] = list;
+  child_ctx[55] = i;
   return child_ctx;
 }
 function get_each_context_1(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[57] = list[i];
+  child_ctx[56] = list[i];
   return child_ctx;
 }
 function create_if_block_16(ctx) {
@@ -3019,13 +3020,13 @@ function create_if_block_16(ctx) {
             input,
             "input",
             /*input_input_handler*/
-            ctx[35]
+            ctx[34]
           ),
           listen(
             input,
             "keydown",
             /*keydown_handler*/
-            ctx[36]
+            ctx[35]
           )
         ];
         mounted = true;
@@ -3115,7 +3116,7 @@ function create_else_block_2(ctx) {
             textarea,
             "input",
             /*textarea_input_handler_1*/
-            ctx[42]
+            ctx[41]
           ),
           listen(
             button,
@@ -3235,13 +3236,13 @@ function create_if_block_15(ctx) {
             input,
             "input",
             /*input_input_handler_1*/
-            ctx[39]
+            ctx[38]
           ),
           listen(
             input,
             "keydown",
             /*keydown_handler_1*/
-            ctx[40]
+            ctx[39]
           ),
           listen(
             button0,
@@ -3253,7 +3254,7 @@ function create_if_block_15(ctx) {
             textarea,
             "input",
             /*textarea_input_handler*/
-            ctx[41]
+            ctx[40]
           ),
           listen(
             button1,
@@ -3453,7 +3454,7 @@ function create_if_block_11(ctx) {
         ctx[9] === void 0
       ) add_render_callback(() => (
         /*select_change_handler*/
-        ctx[37].call(select)
+        ctx[36].call(select)
       ));
       attr(div, "class", "el-expand-panel");
     },
@@ -3479,13 +3480,13 @@ function create_if_block_11(ctx) {
             select,
             "change",
             /*select_change_handler*/
-            ctx[37]
+            ctx[36]
           ),
           listen(
             select,
             "change",
             /*change_handler*/
-            ctx[38]
+            ctx[37]
           )
         ];
         mounted = true;
@@ -3534,9 +3535,9 @@ function create_each_block_1(ctx) {
     c() {
       option = element("option");
       option.textContent = `${/*n*/
-      ctx[57]} \u4E2A`;
+      ctx[56]} \u4E2A`;
       option.__value = option_value_value = /*n*/
-      ctx[57];
+      ctx[56];
       set_input_value(option, option.__value);
     },
     m(target, anchor) {
@@ -3578,7 +3579,7 @@ function create_else_block_1(ctx) {
           button,
           "click",
           /*openSettings*/
-          ctx[26]
+          ctx[25]
         );
         mounted = true;
       }
@@ -3815,7 +3816,7 @@ function create_if_block_1(ctx) {
   );
   const get_key = (ctx2) => (
     /*c*/
-    ctx2[54].word
+    ctx2[53].word
   );
   for (let i = 0; i < each_value.length; i += 1) {
     let child_ctx = get_each_context(ctx, each_value, i);
@@ -3881,13 +3882,13 @@ function create_if_block_1(ctx) {
             button0,
             "click",
             /*click_handler_5*/
-            ctx[43]
+            ctx[42]
           ),
           listen(
             button1,
             "click",
             /*click_handler_6*/
-            ctx[44]
+            ctx[43]
           )
         ];
         mounted = true;
@@ -3980,7 +3981,7 @@ function create_if_block_6(ctx) {
   let span;
   let t_value = levelLabel(
     /*c*/
-    ctx[54].level
+    ctx[53].level
   ) + "";
   let t;
   return {
@@ -3998,7 +3999,7 @@ function create_if_block_6(ctx) {
       if (dirty[0] & /*cands*/
       4 && t_value !== (t_value = levelLabel(
         /*c*/
-        ctx2[54].level
+        ctx2[53].level
       ) + "")) set_data(t, t_value);
     },
     d(detaching) {
@@ -4013,13 +4014,13 @@ function create_if_block_5(ctx) {
   let t0;
   let t1_value = (
     /*c*/
-    ctx[54].freq + ""
+    ctx[53].freq + ""
   );
   let t1;
   let t2;
   let t3_value = (
     /*c*/
-    ctx[54].coverage + ""
+    ctx[53].coverage + ""
   );
   let t3;
   return {
@@ -4041,10 +4042,10 @@ function create_if_block_5(ctx) {
     p(ctx2, dirty) {
       if (dirty[0] & /*cands*/
       4 && t1_value !== (t1_value = /*c*/
-      ctx2[54].freq + "")) set_data(t1, t1_value);
+      ctx2[53].freq + "")) set_data(t1, t1_value);
       if (dirty[0] & /*cands*/
       4 && t3_value !== (t3_value = /*c*/
-      ctx2[54].coverage + "")) set_data(t3, t3_value);
+      ctx2[53].coverage + "")) set_data(t3, t3_value);
     },
     d(detaching) {
       if (detaching) {
@@ -4057,7 +4058,7 @@ function create_if_block_4(ctx) {
   let div;
   let t_value = (
     /*c*/
-    ctx[54].translation + ""
+    ctx[53].translation + ""
   );
   let t;
   return {
@@ -4073,7 +4074,7 @@ function create_if_block_4(ctx) {
     p(ctx2, dirty) {
       if (dirty[0] & /*cands*/
       4 && t_value !== (t_value = /*c*/
-      ctx2[54].translation + "")) set_data(t, t_value);
+      ctx2[53].translation + "")) set_data(t, t_value);
     },
     d(detaching) {
       if (detaching) {
@@ -4086,21 +4087,21 @@ function create_if_block_2(ctx) {
   let div;
   let t0_value = (
     /*c*/
-    ctx[54].sentence + ""
+    ctx[53].sentence + ""
   );
   let t0;
   let span;
   let t1;
   let t2_value = (
     /*c*/
-    ctx[54].source + ""
+    ctx[53].source + ""
   );
   let t2;
   let t3;
   let if_block_anchor;
   let if_block = (
     /*c*/
-    ctx[54].sentenceZh && create_if_block_3(ctx)
+    ctx[53].sentenceZh && create_if_block_3(ctx)
   );
   return {
     c() {
@@ -4128,13 +4129,13 @@ function create_if_block_2(ctx) {
     p(ctx2, dirty) {
       if (dirty[0] & /*cands*/
       4 && t0_value !== (t0_value = /*c*/
-      ctx2[54].sentence + "")) set_data(t0, t0_value);
+      ctx2[53].sentence + "")) set_data(t0, t0_value);
       if (dirty[0] & /*cands*/
       4 && t2_value !== (t2_value = /*c*/
-      ctx2[54].source + "")) set_data(t2, t2_value);
+      ctx2[53].source + "")) set_data(t2, t2_value);
       if (
         /*c*/
-        ctx2[54].sentenceZh
+        ctx2[53].sentenceZh
       ) {
         if (if_block) {
           if_block.p(ctx2, dirty);
@@ -4162,7 +4163,7 @@ function create_if_block_3(ctx) {
   let div;
   let t_value = (
     /*c*/
-    ctx[54].sentenceZh + ""
+    ctx[53].sentenceZh + ""
   );
   let t;
   return {
@@ -4178,7 +4179,7 @@ function create_if_block_3(ctx) {
     p(ctx2, dirty) {
       if (dirty[0] & /*cands*/
       4 && t_value !== (t_value = /*c*/
-      ctx2[54].sentenceZh + "")) set_data(t, t_value);
+      ctx2[53].sentenceZh + "")) set_data(t, t_value);
     },
     d(detaching) {
       if (detaching) {
@@ -4196,7 +4197,7 @@ function create_each_block(key_1, ctx) {
   let span;
   let t1_value = (
     /*c*/
-    ctx[54].word + ""
+    ctx[53].word + ""
   );
   let t1;
   let t2;
@@ -4209,38 +4210,38 @@ function create_each_block(key_1, ctx) {
   let mounted;
   let dispose;
   function input_change_handler() {
-    ctx[45].call(
+    ctx[44].call(
       input,
       /*each_value*/
-      ctx[55],
+      ctx[54],
       /*c_index*/
-      ctx[56]
+      ctx[55]
     );
   }
   function click_handler_7() {
     return (
       /*click_handler_7*/
-      ctx[46](
+      ctx[45](
         /*c*/
-        ctx[54]
+        ctx[53]
       )
     );
   }
   let if_block0 = (
     /*c*/
-    ctx[54].level && create_if_block_6(ctx)
+    ctx[53].level && create_if_block_6(ctx)
   );
   let if_block1 = (
     /*c*/
-    ctx[54].freq && create_if_block_5(ctx)
+    ctx[53].freq && create_if_block_5(ctx)
   );
   let if_block2 = (
     /*c*/
-    ctx[54].translation && create_if_block_4(ctx)
+    ctx[53].translation && create_if_block_4(ctx)
   );
   let if_block3 = (
     /*c*/
-    ctx[54].sentence && create_if_block_2(ctx)
+    ctx[53].sentence && create_if_block_2(ctx)
   );
   return {
     key: key_1,
@@ -4276,7 +4277,7 @@ function create_each_block(key_1, ctx) {
         label,
         "is-checked",
         /*c*/
-        ctx[54].checked
+        ctx[53].checked
       );
       this.first = label;
     },
@@ -4284,7 +4285,7 @@ function create_each_block(key_1, ctx) {
       insert(target, label, anchor);
       append(label, input);
       input.checked = /*c*/
-      ctx[54].checked;
+      ctx[53].checked;
       append(label, t0);
       append(label, div1);
       append(div1, div0);
@@ -4314,14 +4315,14 @@ function create_each_block(key_1, ctx) {
       if (dirty[0] & /*cands*/
       4) {
         input.checked = /*c*/
-        ctx[54].checked;
+        ctx[53].checked;
       }
       if (dirty[0] & /*cands*/
       4 && t1_value !== (t1_value = /*c*/
-      ctx[54].word + "")) set_data(t1, t1_value);
+      ctx[53].word + "")) set_data(t1, t1_value);
       if (
         /*c*/
-        ctx[54].level
+        ctx[53].level
       ) {
         if (if_block0) {
           if_block0.p(ctx, dirty);
@@ -4336,7 +4337,7 @@ function create_each_block(key_1, ctx) {
       }
       if (
         /*c*/
-        ctx[54].freq
+        ctx[53].freq
       ) {
         if (if_block1) {
           if_block1.p(ctx, dirty);
@@ -4351,7 +4352,7 @@ function create_each_block(key_1, ctx) {
       }
       if (
         /*c*/
-        ctx[54].translation
+        ctx[53].translation
       ) {
         if (if_block2) {
           if_block2.p(ctx, dirty);
@@ -4366,7 +4367,7 @@ function create_each_block(key_1, ctx) {
       }
       if (
         /*c*/
-        ctx[54].sentence
+        ctx[53].sentence
       ) {
         if (if_block3) {
           if_block3.p(ctx, dirty);
@@ -4385,7 +4386,7 @@ function create_each_block(key_1, ctx) {
           label,
           "is-checked",
           /*c*/
-          ctx[54].checked
+          ctx[53].checked
         );
       }
     },
@@ -4404,100 +4405,72 @@ function create_each_block(key_1, ctx) {
 }
 function create_if_block(ctx) {
   let div;
-  let button0;
+  let button;
   let t0;
-  let button0_disabled_value;
   let t1;
-  let button1;
   let t2;
   let t3;
   let t4;
-  let t5;
-  let t6;
-  let button1_disabled_value;
+  let button_disabled_value;
   let mounted;
   let dispose;
   return {
     c() {
       div = element("div");
-      button0 = element("button");
-      t0 = text("AI \u8865\u4F8B\u53E5");
-      t1 = space();
-      button1 = element("button");
-      t2 = text("\u52A0\u5165\u300C");
-      t3 = text(
+      button = element("button");
+      t0 = text("\u52A0\u5165\u300C");
+      t1 = text(
         /*theme*/
         ctx[1]
       );
-      t4 = text("\u300D\uFF08");
-      t5 = text(
+      t2 = text("\u300D\uFF08");
+      t3 = text(
         /*checkedCount*/
         ctx[13]
       );
-      t6 = text("\uFF09");
-      button0.disabled = button0_disabled_value = /*busy*/
-      ctx[5] || !/*llmOn*/
-      ctx[12];
-      attr(button0, "title", "\u4E3A\u52FE\u9009\u4E2D\u65E0\u4F8B\u53E5\u7684\u8BCD\u751F\u6210\u4F8B\u53E5");
-      attr(button1, "class", "mod-cta");
-      button1.disabled = button1_disabled_value = /*busy*/
+      t4 = text("\uFF09");
+      attr(button, "class", "mod-cta");
+      button.disabled = button_disabled_value = /*busy*/
       ctx[5] || !/*checkedCount*/
       ctx[13];
       attr(div, "class", "el-expand-footer");
     },
     m(target, anchor) {
       insert(target, div, anchor);
-      append(div, button0);
-      append(button0, t0);
-      append(div, t1);
-      append(div, button1);
-      append(button1, t2);
-      append(button1, t3);
-      append(button1, t4);
-      append(button1, t5);
-      append(button1, t6);
+      append(div, button);
+      append(button, t0);
+      append(button, t1);
+      append(button, t2);
+      append(button, t3);
+      append(button, t4);
       if (!mounted) {
-        dispose = [
-          listen(
-            button0,
-            "click",
-            /*aiSentences*/
-            ctx[22]
-          ),
-          listen(
-            button1,
-            "click",
-            /*addChecked*/
-            ctx[20]
-          )
-        ];
+        dispose = listen(
+          button,
+          "click",
+          /*addChecked*/
+          ctx[20]
+        );
         mounted = true;
       }
     },
     p(ctx2, dirty) {
-      if (dirty[0] & /*busy, llmOn*/
-      4128 && button0_disabled_value !== (button0_disabled_value = /*busy*/
-      ctx2[5] || !/*llmOn*/
-      ctx2[12])) {
-        button0.disabled = button0_disabled_value;
-      }
       if (dirty[0] & /*theme*/
       2) set_data(
-        t3,
+        t1,
         /*theme*/
         ctx2[1]
       );
       if (dirty[0] & /*checkedCount*/
       8192) set_data(
-        t5,
+        t3,
         /*checkedCount*/
         ctx2[13]
       );
       if (dirty[0] & /*busy, checkedCount*/
-      8224 && button1_disabled_value !== (button1_disabled_value = /*busy*/
+      8224 && button_disabled_value !== (button_disabled_value = /*busy*/
       ctx2[5] || !/*checkedCount*/
       ctx2[13])) {
-        button1.disabled = button1_disabled_value;
+        button.disabled = button_disabled_value;
       }
     },
     d(detaching) {
@@ -4505,7 +4478,7 @@ function create_if_block(ctx) {
         detach(div);
       }
       mounted = false;
-      run_all(dispose);
+      dispose();
     }
   };
 }
@@ -4710,31 +4683,31 @@ function create_fragment(ctx) {
             button0,
             "click",
             /*click_handler*/
-            ctx[30]
+            ctx[29]
           ),
           listen(
             button1,
             "click",
             /*click_handler_1*/
-            ctx[31]
+            ctx[30]
           ),
           listen(
             button2,
             "click",
             /*click_handler_2*/
-            ctx[32]
+            ctx[31]
           ),
           listen(
             button3,
             "click",
             /*click_handler_3*/
-            ctx[33]
+            ctx[32]
           ),
           listen(
             button4,
             "click",
             /*click_handler_4*/
-            ctx[34]
+            ctx[33]
           )
         ];
         mounted = true;
@@ -5247,17 +5220,10 @@ function instance($$self, $$props, $$invalidate) {
     $$invalidate(5, busy = true);
     $$invalidate(4, status = `\u6B63\u5728\u52A0\u5165 0/${sel.length} \u4E2A\u8BCD\u2026`);
     try {
-      const needZh = sel.filter((c) => c.sentence && !c.sentenceZh);
-      if (needZh.length && llmOn) {
-        $$invalidate(4, status = `AI \u7FFB\u8BD1 ${needZh.length} \u6761\u539F\u6587\u4F8B\u53E5\u2026`);
-        const zh = await llmTranslateSentences(plugin.llmCfg, needZh.map((c) => c.sentence)).catch(() => []);
-        needZh.forEach((c, i) => {
-          if (zh[i]) c.sentenceZh = zh[i];
-        });
-      }
       let created = 0;
       let merged = 0;
       let done = 0;
+      const createdWords = [];
       await runPool(sel, 6, async (c) => {
         var _a2;
         const examples = ((_a2 = c.exs) === null || _a2 === void 0 ? void 0 : _a2.length) ? c.exs.map((e) => ({
@@ -5276,8 +5242,10 @@ function instance($$self, $$props, $$invalidate) {
           examples,
           skipOnline: true
         });
-        if (r === "created") created++;
-        else if (r === "merged") merged++;
+        if (r === "created") {
+          created++;
+          createdWords.push(c.word);
+        } else if (r === "merged") merged++;
         done++;
         $$invalidate(4, status = `\u6B63\u5728\u52A0\u5165 ${done}/${sel.length} \u4E2A\u8BCD\u2026`);
       });
@@ -5287,7 +5255,8 @@ function instance($$self, $$props, $$invalidate) {
       if (created + merged === 0) {
         $$invalidate(4, status = "\u6CA1\u6709\u8BCD\u6210\u529F\u52A0\u5165\uFF08\u8BCD\u5178\u4E0B\u8F7D\u5931\u8D25\u6216\u7F51\u7EDC\u95EE\u9898\uFF09\uFF0C\u8BF7\u91CD\u8BD5");
       } else {
-        $$invalidate(6, summary = `\u5DF2\u52A0\u5165\uFF1A\u65B0\u589E ${created}\uFF0C\u5408\u5E76 ${merged}`);
+        plugin.enrichWordsInBackground(createdWords);
+        $$invalidate(6, summary = `\u5DF2\u52A0\u5165\uFF1A\u65B0\u589E ${created}\uFF0C\u5408\u5E76 ${merged}${createdWords.length ? "\uFF08\u4F8B\u53E5/\u4E49\u9879/\u97F3\u6807/\u540C\u53CD\u4E49\u6B63\u5728\u540E\u53F0\u8865\u5168\uFF09" : ""}`);
         $$invalidate(4, status = "");
       }
       plugin.refreshStatusBar();
@@ -5299,29 +5268,6 @@ function instance($$self, $$props, $$invalidate) {
   function learnTheme() {
     onClose();
     void plugin.startSession(theme);
-  }
-  async function aiSentences() {
-    var _a2;
-    if (!llmOn) {
-      $$invalidate(4, status = "\u8BF7\u5148\u5728\u8BBE\u7F6E\u4E2D\u914D\u7F6E LLM");
-      return;
-    }
-    const need = cands.filter((c) => c.checked && !c.sentence);
-    if (!need.length) {
-      $$invalidate(4, status = "\u52FE\u9009\u7684\u8BCD\u90FD\u6709\u4F8B\u53E5\u4E86");
-      return;
-    }
-    $$invalidate(5, busy = true);
-    $$invalidate(4, status = `AI \u8865\u4F8B\u53E5\uFF08${need.length} \u8BCD\uFF09\u2026`);
-    try {
-      const m = await llmExamples(plugin.llmCfg, need.map((c) => c.word), plugin.topicOf(theme) || void 0, 3, (done, total) => $$invalidate(4, status = `AI \u8865\u4F8B\u53E5 ${done}/${total} \u6279\uFF08${need.length} \u8BCD\uFF09\u2026`), void 0, (missing) => $$invalidate(4, status = `\u8865\u4F8B\u53E5\u91CD\u8BD5\u4E2D\uFF08\u7F3A ${missing} \u8BCD\uFF09\u2026`));
-      const n = applyExamples(need, m);
-      $$invalidate(2, cands);
-      $$invalidate(4, status = n === need.length ? `\u8865\u4E0A ${n} \u4E2A\u4F8B\u53E5` : `\u8865\u4E0A ${n}/${need.length} \u4E2A\u4F8B\u53E5\uFF08\u5176\u4F59\u91CD\u8BD5\u4ECD\u5931\u8D25\uFF0C\u53EF\u518D\u70B9\u4E00\u6B21\uFF09`);
-    } catch (e) {
-      $$invalidate(4, status = "\u8865\u4F8B\u53E5\u5931\u8D25\uFF1A" + ((_a2 = e.message) !== null && _a2 !== void 0 ? _a2 : e));
-    }
-    $$invalidate(5, busy = false);
   }
   function toggleAll(v) {
     cands.forEach((c) => c.checked = v);
@@ -5340,10 +5286,7 @@ function instance($$self, $$props, $$invalidate) {
     $$invalidate(6, summary = "");
   }
   function openSettings() {
-    const setting = plugin.app.setting;
-    if (!setting) return;
-    setting.open();
-    setting.openTabById(plugin.manifest.id);
+    plugin.openSettings();
   }
   const click_handler = () => switchTab("llm");
   const click_handler_1 = () => switchTab("wiki");
@@ -5396,9 +5339,9 @@ function instance($$self, $$props, $$invalidate) {
   $$self.$$set = ($$props2) => {
     if ("plugin" in $$props2) $$invalidate(0, plugin = $$props2.plugin);
     if ("theme" in $$props2) $$invalidate(1, theme = $$props2.theme);
-    if ("onDone" in $$props2) $$invalidate(27, onDone = $$props2.onDone);
-    if ("onClose" in $$props2) $$invalidate(28, onClose = $$props2.onClose);
-    if ("initialTab" in $$props2) $$invalidate(29, initialTab = $$props2.initialTab);
+    if ("onDone" in $$props2) $$invalidate(26, onDone = $$props2.onDone);
+    if ("onClose" in $$props2) $$invalidate(27, onClose = $$props2.onClose);
+    if ("initialTab" in $$props2) $$invalidate(28, initialTab = $$props2.initialTab);
   };
   $$self.$$.update = () => {
     if ($$self.$$.dirty[0] & /*cands*/
@@ -5437,7 +5380,6 @@ function instance($$self, $$props, $$invalidate) {
     expandRelated,
     addChecked,
     learnTheme,
-    aiSentences,
     toggleAll,
     runActive,
     switchTab,
@@ -5476,9 +5418,9 @@ var ExpandPanel = class extends SvelteComponent {
       {
         plugin: 0,
         theme: 1,
-        onDone: 27,
-        onClose: 28,
-        initialTab: 29
+        onDone: 26,
+        onClose: 27,
+        initialTab: 28
       },
       null,
       [-1, -1]
@@ -6396,7 +6338,8 @@ var KEY_GUIDES = {
     title: "\u514D\u8D39\u83B7\u53D6\u667A\u8C31 API Key",
     steps: "\u2460 \u70B9\u300C\u6253\u5F00\u667A\u8C31\u5F00\u653E\u5E73\u53F0\u300D\u2192 \u624B\u673A\u53F7\u6216\u90AE\u7BB1\u6CE8\u518C/\u767B\u5F55\n\u2461 \u8FDB\u5165\u300CAPI \u5BC6\u94A5\u300D\u2192 \u65B0\u5EFA\u5E76\u590D\u5236\n\u2462 \u56DE\u6765\u7C98\u8D34\uFF0C\u4FDD\u5B58\u5373\u53EF",
     note: "glm-4-flash \u6C38\u4E45\u514D\u8D39\uFF08\u4E0D\u9650\u91CF\uFF09\uFF0C\u53E6\u9001 2000 \u4E07 token \u53EF\u7528\u66F4\u5F3A\u7684\u6A21\u578B\u3002",
-    url: "https://open.bigmodel.cn/usercenter/apikeys",
+    url: "https://bigmodel.cn/usercenter/proj-mgmt/apikeys",
+    // 2025 改版后老地址 open.bigmodel.cn/usercenter/apikeys 已 404
     openText: "\u6253\u5F00\u667A\u8C31\u5F00\u653E\u5E73\u53F0\uFF08\u6CE8\u518C/\u767B\u5F55\uFF09"
   },
   deepseek: {
@@ -16127,6 +16070,13 @@ var WordCardModal = class _WordCardModal extends import_obsidian13.Modal {
 };
 
 // src/main.ts
+var LLM_OLLAMA_PRESET = { baseUrl: "http://localhost:11434/v1", apiKey: "ollama", model: "qwen2.5:3b" };
+var LLM_PRESETS = {
+  ollama: LLM_OLLAMA_PRESET,
+  deepseek: { baseUrl: "https://api.deepseek.com/v1", apiKey: "", model: "deepseek-v4-flash" },
+  siliconflow: { baseUrl: "https://api.siliconflow.cn/v1", apiKey: "", model: "Qwen/Qwen3-8B" },
+  zhipu: { baseUrl: "https://open.bigmodel.cn/api/paas/v4", apiKey: "", model: "glm-4-flash" }
+};
 var DEFAULT_DATA = {
   settings: {
     root: "EnglishLearn",
@@ -16141,9 +16091,7 @@ var DEFAULT_DATA = {
     ttsSentenceRate: 0.85,
     autoBackup: true,
     llmProvider: "ollama",
-    llmBaseUrl: "http://localhost:11434/v1",
-    llmApiKey: "ollama",
-    llmModel: "qwen2.5:3b",
+    llmSaved: { ollama: { ...LLM_OLLAMA_PRESET } },
     exampleCount: 3,
     expandCount: 12
   },
@@ -16166,6 +16114,8 @@ var EnglishLearnPlugin = class extends import_obsidian14.Plugin {
     this.statusEl = null;
     /** 编辑态注入的词笔记顶栏（挂在宿主 markdown 视图上，不要求它一直是活动视图） */
     this.editBar = null;
+    /** 后台补全串行队列：连续几批入库不并发打同一批词，前一批跑完自动接下一批 */
+    this.enrichQueue = Promise.resolve();
   }
   /** 词笔记顶栏内容（阅读态 post-processor 与编辑态注入共用）：发音/音标/进度/主题/删除 */
   renderWordBar(bar, word, fm) {
@@ -16228,7 +16178,7 @@ var EnglishLearnPlugin = class extends import_obsidian14.Plugin {
     };
   }
   async onload() {
-    var _a, _b, _c, _d, _e, _f, _g;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n;
     const loaded = await this.loadData();
     const firstInstall = loaded === null;
     this.db = {
@@ -16240,15 +16190,30 @@ var EnglishLearnPlugin = class extends import_obsidian14.Plugin {
       progress: (_b = loaded == null ? void 0 : loaded.progress) != null ? _b : {},
       ignored: (_c = loaded == null ? void 0 : loaded.ignored) != null ? _c : {}
     };
-    if (!((_d = loaded == null ? void 0 : loaded.settings) == null ? void 0 : _d.llmProvider)) {
-      const url = this.db.settings.llmBaseUrl;
+    const legacy = loaded == null ? void 0 : loaded.settings;
+    if (!(legacy == null ? void 0 : legacy.llmProvider)) {
+      const url = (_d = legacy == null ? void 0 : legacy.llmBaseUrl) != null ? _d : "";
       this.db.settings.llmProvider = url.includes("11434") ? "ollama" : url.includes("deepseek") ? "deepseek" : "custom";
+    }
+    if (legacy) {
+      const s = this.db.settings;
+      const pool = s.llmSaved = (_e = s.llmSaved) != null ? _e : {};
+      const m = legacy.llmMobile;
+      if (m) {
+        for (const [k, v] of Object.entries((_f = m.saved) != null ? _f : {})) (_g = pool[k]) != null ? _g : pool[k] = v;
+        if (m.provider !== s.llmProvider) (_i = pool[_h = m.provider]) != null ? _i : pool[_h] = { baseUrl: m.baseUrl, apiKey: m.apiKey, model: m.model };
+        s.llmMobileProvider = m.provider;
+        delete s.llmMobile;
+      }
+      if (legacy.llmBaseUrl !== void 0) {
+        pool[s.llmProvider] = { baseUrl: legacy.llmBaseUrl, apiKey: (_j = legacy.llmApiKey) != null ? _j : "", model: (_k = legacy.llmModel) != null ? _k : "" };
+      }
     }
     this.store = new DataStore(this);
     this.words = new WordStore(this);
-    this.dict = new EcdictDict(this.app, (_e = this.manifest.dir) != null ? _e : "", () => this.db.settings.dictBase);
-    this.audio = new AudioCache(this.app, (_f = this.manifest.dir) != null ? _f : "");
-    setPreferredVoice((_g = this.db.settings.ttsVoice) != null ? _g : null);
+    this.dict = new EcdictDict(this.app, (_l = this.manifest.dir) != null ? _l : "", () => this.db.settings.dictBase);
+    this.audio = new AudioCache(this.app, (_m = this.manifest.dir) != null ? _m : "");
+    setPreferredVoice((_n = this.db.settings.ttsVoice) != null ? _n : null);
     this.registerView(THEME_VIEW_TYPE, (leaf) => new ThemeView(leaf, this));
     this.registerView(LEARN_VIEW_TYPE, (leaf) => new LearnView(leaf, this));
     this.registerEditorExtension([vocabHighlight(this), vocabHover(this), ...vocabTapTranslate(this)]);
@@ -16611,21 +16576,12 @@ var EnglishLearnPlugin = class extends import_obsidian14.Plugin {
   }
   // ———————— 词汇 ————————
   /** 当前 LLM 配置（设置页与各调用点共用，配置增删字段只改这里）。
-   *  移动端优先用独立配置 llmMobile（本地 Ollama 移动端连不上），未配置时回落桌面配置 */
+   *  配置池 llmSaved 各源一份、桌面/移动共用；两端各选启用的源，移动端未选时跟随桌面 */
   get llmCfg() {
+    var _a, _b;
     const s = this.db.settings;
-    const m = import_obsidian14.Platform.isMobile && s.llmMobile ? s.llmMobile : {
-      provider: s.llmProvider,
-      saved: s.llmSaved,
-      baseUrl: s.llmBaseUrl,
-      apiKey: s.llmApiKey,
-      model: s.llmModel
-    };
-    return {
-      baseUrl: m.baseUrl,
-      apiKey: m.apiKey,
-      model: m.model
-    };
+    const p = (_a = import_obsidian14.Platform.isMobile ? s.llmMobileProvider : void 0) != null ? _a : s.llmProvider;
+    return { baseUrl: "", apiKey: "", model: "", ...LLM_PRESETS[p], ...(_b = s.llmSaved) == null ? void 0 : _b[p] };
   }
   /** 主题语境串：主题名 + 关键词（AI 例句围绕该领域写，同主题词在语境中复现） */
   topicOf(theme) {
@@ -16645,20 +16601,26 @@ var EnglishLearnPlugin = class extends import_obsidian14.Plugin {
       await this.words.setRelWords(doc, { synonyms: entry.synonyms, antonyms: entry.antonyms });
       return { synonyms: (_e = entry.synonyms) != null ? _e : [], antonyms: (_f = entry.antonyms) != null ? _f : [] };
     }
-    const [syn, ant] = await Promise.all([
-      fetchSynonyms(doc.word).catch(() => void 0),
-      fetchAntonyms(doc.word).catch(() => void 0)
-    ]);
-    if (syn || ant) await this.words.setRelWords(doc, { synonyms: syn, antonyms: ant });
+    const [synR, antR] = await Promise.allSettled([fetchSynonyms(doc.word), fetchAntonyms(doc.word)]);
+    const syn = synR.status === "fulfilled" ? synR.value : void 0;
+    const ant = antR.status === "fulfilled" ? antR.value : void 0;
+    if ((syn == null ? void 0 : syn.length) || (ant == null ? void 0 : ant.length)) {
+      await this.words.setRelWords(doc, { synonyms: syn, antonyms: ant });
+      return { synonyms: syn != null ? syn : [], antonyms: ant != null ? ant : [] };
+    }
+    if (synR.status === "fulfilled" && antR.status === "fulfilled") {
+      await this.words.setRelWords(doc, { synonyms: [], antonyms: [] });
+    }
     return { synonyms: syn != null ? syn : [], antonyms: ant != null ? ant : [] };
   }
   /** 批量补同/反义词：为从未抓取过的词预填记忆关联，词卡同反义行开箱即有。
    *  只处理两侧都缺（从未抓取）的词——抓过但为空的词是负缓存语义，不重复请求；短语跳过。
-   *  单词解析复用 relWords（frontmatter → 词典 → Datamuse 级联），此处不再重复实现 */
-  async backfillRelWords(limit) {
+   *  单词解析复用 relWords（frontmatter → 词典 → Datamuse 级联），此处不再重复实现。
+   *  only：限定词集（新词入库后台补全用），不传 = 全库缺口 */
+  async backfillRelWords(limit, only) {
     await this.words.scan();
     const missing = this.words.all().filter(
-      (w) => w.synonyms === void 0 && w.antonyms === void 0 && !isPhrase(w.word)
+      (w) => w.synonyms === void 0 && w.antonyms === void 0 && !isPhrase(w.word) && (!only || only.has(w.word.toLowerCase()))
     );
     if (!missing.length) {
       new import_obsidian14.Notice("\u6240\u6709\u8BCD\u90FD\u6293\u53D6\u8FC7\u540C/\u53CD\u4E49\u8BCD\u4E86\uFF08\u65E0\u7ED3\u679C\u7684\u8BCD\u4E0D\u518D\u91CD\u590D\u8BF7\u6C42\uFF09");
@@ -16667,17 +16629,19 @@ var EnglishLearnPlugin = class extends import_obsidian14.Plugin {
     const batch = limit && limit > 0 ? missing.slice(0, limit) : missing;
     let done = 0;
     let processed = 0;
+    let netFail = 0;
     const prog = new import_obsidian14.Notice(`\u6293\u53D6\u540C/\u53CD\u4E49\u8BCD 0/${batch.length}\u2026`, 0);
     await runPool(batch, 6, async (doc) => {
       const r = await this.relWords(doc);
       if (r.synonyms.length || r.antonyms.length) done++;
+      else if (doc.synonyms === void 0 && doc.antonyms === void 0) netFail++;
       processed++;
       prog.setMessage(`\u6293\u53D6\u540C/\u53CD\u4E49\u8BCD ${processed}/${batch.length}\u2026`);
     });
     prog.hide();
     this.store.touch();
     new import_obsidian14.Notice(
-      `\u540C/\u53CD\u4E49\u8BCD\u8865\u5168\u5B8C\u6210\uFF1A${done}/${batch.length} \u8BCD\u8865\u5230` + (done < batch.length ? `\uFF08\u5176\u4F59\u5728\u8BCD\u5178\u4E0E Datamuse \u5747\u65E0\u6536\u5F55\u6216\u7F51\u7EDC\u5931\u8D25\uFF0C\u65E0\u6536\u5F55\u7684\u5DF2\u8BB0\u5F55\u4E0D\u518D\u91CD\u8BD5\uFF09` : "")
+      `\u540C/\u53CD\u4E49\u8BCD\u8865\u5168\u5B8C\u6210\uFF1A${done}/${batch.length} \u8BCD\u8865\u5230` + (netFail ? `\uFF08${netFail} \u8BCD\u7F51\u7EDC\u5931\u8D25\u672A\u8BB0\u5F55\uFF0C\u53EF\u91CD\u8DD1\u518D\u8BD5\uFF09` : done < batch.length ? `\uFF08\u5176\u4F59\u5728\u8BCD\u5178\u4E0E Datamuse \u5747\u65E0\u6536\u5F55\uFF0C\u5DF2\u8BB0\u5F55\u4E0D\u518D\u91CD\u8BD5\uFF09` : "")
     );
   }
   /** 负缓存读取（只认当前 starter 版本的条目：升版/重装/旧格式数据自动失配作废） */
@@ -16771,10 +16735,12 @@ var EnglishLearnPlugin = class extends import_obsidian14.Plugin {
       ).length
     };
   }
-  /** 为缺失释义或音标的词批量补全（离线词典优先，在线兜底） */
-  async backfillTranslations() {
+  /** 为缺失释义或音标的词批量补全（离线词典优先，在线兜底）。only：限定词集，不传 = 全库缺口 */
+  async backfillTranslations(only) {
     await this.words.scan();
-    const missing = this.words.all().filter((w) => (!w.translation || !w.phonetic) && !isPhrase(w.word) && !this.exhaustedWords()[w.word]);
+    const missing = this.words.all().filter(
+      (w) => (!w.translation || !w.phonetic) && !isPhrase(w.word) && !this.exhaustedWords()[w.word] && (!only || only.has(w.word.toLowerCase()))
+    );
     if (!missing.length) {
       new import_obsidian14.Notice("\u6CA1\u6709\u7F3A\u5931\u91CA\u4E49\u7684\u8BCD");
       return;
@@ -16812,8 +16778,9 @@ var EnglishLearnPlugin = class extends import_obsidian14.Plugin {
     void this.refreshStatusBar();
   }
   /** AI 补例句：为例句数不足 want（默认 exampleCount）的词批量生成。
-   *  limit：本次最多补多少词（例句最少的优先）；onProgress：完成数回调（弹窗进度显示用） */
-  async backfillExamples(wantOpt, limit, onProgress, shouldStop) {
+   *  limit：本次最多补多少词（例句最少的优先）；onProgress：完成数回调（弹窗进度显示用）；
+   *  only：限定词集（新词入库后台补全用），不传 = 全库缺口 */
+  async backfillExamples(wantOpt, limit, onProgress, shouldStop, only) {
     const cfg = this.llmCfg;
     if (!llmReady(cfg)) {
       new import_obsidian14.Notice("\u8BF7\u5148\u5728 \u8BBE\u7F6E \u2192 English Learn \u914D\u7F6E LLM API\uFF08\u672C\u5730 Ollama \u6216\u4E91\u7AEF\u5747\u53EF\uFF09");
@@ -16822,6 +16789,7 @@ var EnglishLearnPlugin = class extends import_obsidian14.Plugin {
     const want = Math.max(1, wantOpt != null ? wantOpt : this.db.settings.exampleCount || 3);
     await this.words.scan();
     let missing = this.words.all().filter((w) => w.examples.length < want);
+    if (only) missing = missing.filter((w) => only.has(w.word.toLowerCase()));
     if (!missing.length) {
       new import_obsidian14.Notice(`\u6240\u6709\u8BCD\u90FD\u5DF2\u6709\u81F3\u5C11 ${want} \u6761\u4F8B\u53E5\u4E86`);
       return;
@@ -16859,18 +16827,20 @@ var EnglishLearnPlugin = class extends import_obsidian14.Plugin {
     );
   }
   /** AI 批量补义项：为没有 AI 义项的词批量拆多义（带词性），写回 frontmatter，词卡 SenseList 优先渲染。
-   *  只补缺不覆盖；义项输出短、生成快，Notice 常驻进度即可，不必像例句回填那样开弹窗 */
-  async backfillSenses(limit) {
+   *  只补缺不覆盖；义项输出短、生成快，Notice 常驻进度即可，不必像例句回填那样开弹窗。
+   *  only：限定词集（新词入库后台补全用），不传 = 全库缺口 */
+  async backfillSenses(limit, only) {
     const cfg = this.llmCfg;
     if (!llmReady(cfg)) {
       new import_obsidian14.Notice("\u8BF7\u5148\u5728 \u8BBE\u7F6E \u2192 English Learn \u914D\u7F6E LLM API\uFF08\u672C\u5730 Ollama \u6216\u4E91\u7AEF\u5747\u53EF\uFF09");
       return;
     }
     await this.words.scan();
-    const missing = this.words.all().filter((w) => {
+    let missing = this.words.all().filter((w) => {
       var _a;
       return !((_a = w.senses) == null ? void 0 : _a.length);
     });
+    if (only) missing = missing.filter((w) => only.has(w.word.toLowerCase()));
     if (!missing.length) {
       new import_obsidian14.Notice("\u6240\u6709\u8BCD\u90FD\u5DF2\u6709 AI \u4E49\u9879\u4E86");
       return;
@@ -16902,21 +16872,23 @@ var EnglishLearnPlugin = class extends import_obsidian14.Plugin {
     }
   }
   /** AI 批量补例句翻译：为没有中文翻译的例句回填（手工添加/导入时未带翻译的例句）。
-   *  按词分批请求（一词条句一次），Notice 常驻进度；只补缺不动已有翻译 */
-  async backfillExampleTranslations(limit) {
+   *  按词分批请求（一词条句一次），Notice 常驻进度；只补缺不动已有翻译。
+   *  only：限定词集（新词入库后台补全用），不传 = 全库缺口 */
+  async backfillExampleTranslations(limit, only) {
     const cfg = this.llmCfg;
     if (!llmReady(cfg)) {
       new import_obsidian14.Notice("\u8BF7\u5148\u5728 \u8BBE\u7F6E \u2192 English Learn \u914D\u7F6E LLM API\uFF08\u672C\u5730 Ollama \u6216\u4E91\u7AEF\u5747\u53EF\uFF09");
       return;
     }
     await this.words.scan();
-    const targets = this.words.all().map((d) => ({
+    let targets = this.words.all().map((d) => ({
       doc: d,
       missing: d.examples.map((e, i) => {
         var _a;
         return ((_a = e.translation) == null ? void 0 : _a.trim()) ? -1 : i;
       }).filter((i) => i >= 0)
     })).filter((x) => x.missing.length);
+    if (only) targets = targets.filter((x) => only.has(x.doc.word.toLowerCase()));
     const total = targets.reduce((s, x) => s + x.missing.length, 0);
     if (!total) {
       new import_obsidian14.Notice("\u6240\u6709\u4F8B\u53E5\u90FD\u5DF2\u6709\u4E2D\u6587\u7FFB\u8BD1");
@@ -16950,6 +16922,64 @@ var EnglishLearnPlugin = class extends import_obsidian14.Plugin {
     } finally {
       prog.hide();
     }
+  }
+  /** 打开本插件设置页（AI 未配置等场景一键跳转） */
+  openSettings() {
+    const setting = this.app.setting;
+    if (!setting) return;
+    setting.open();
+    setting.openTabById(this.manifest.id);
+  }
+  /** 新词后台统一补全入口：入库只做快动作（本地词典释义+已有例句），勾选加入即返回；
+   *  例句/义项/音标/同反义/例句翻译全部转到这里后台跑，词卡数据随补齐自动出现 */
+  enrichWordsInBackground(words) {
+    if (!words.length) return;
+    this.enrichQueue = this.enrichQueue.then(() => this.enrichWordsNow(words)).catch(() => {
+    });
+  }
+  async enrichWordsNow(words) {
+    await this.words.scan();
+    const only = new Set(words.map((w) => w.toLowerCase()));
+    const docs = words.map((w) => this.words.get(w)).filter((d) => !!d);
+    if (!docs.length) return;
+    const wantEx = Math.max(1, this.db.settings.exampleCount || 3);
+    const gaps = {
+      trans: docs.some((d) => (!d.translation || !d.phonetic) && !isPhrase(d.word) && !this.exhaustedWords()[d.word]),
+      rel: docs.some((d) => d.synonyms === void 0 && d.antonyms === void 0 && !isPhrase(d.word)),
+      ex: docs.some((d) => d.examples.length < wantEx),
+      senses: docs.some((d) => {
+        var _a;
+        return !((_a = d.senses) == null ? void 0 : _a.length);
+      }),
+      zh: docs.some((d) => d.examples.some((e) => {
+        var _a;
+        return !((_a = e.translation) == null ? void 0 : _a.trim());
+      }))
+    };
+    const llm = llmReady(this.llmCfg);
+    if (!llm && (gaps.ex || gaps.senses || gaps.zh)) {
+      const frag = document.createDocumentFragment();
+      frag.append("\u5DF2\u5F00\u59CB\u540E\u53F0\u8865\u5168\u97F3\u6807/\u91CA\u4E49/\u540C\u53CD\u4E49\u8BCD\u3002");
+      const link = document.createElement("span");
+      link.textContent = "\u914D\u7F6E AI \u6A21\u578B";
+      link.className = "el-notice-link";
+      link.addEventListener("click", () => this.openSettings());
+      frag.append(link);
+      frag.append("\u540E\u4F8B\u53E5\u4E0E\u4E49\u9879\u5C06\u81EA\u52A8\u8865\u9F50");
+      new import_obsidian14.Notice(frag, 1e4);
+    }
+    const step = async (run2) => {
+      try {
+        await run2();
+      } catch (e) {
+        new import_obsidian14.Notice(`\u540E\u53F0\u8865\u5168\u51FA\u9519\uFF1A${e instanceof Error ? e.message : e}`);
+      }
+    };
+    if (gaps.trans) await step(() => this.backfillTranslations(only));
+    if (gaps.rel) await step(() => this.backfillRelWords(void 0, only));
+    if (llm && gaps.ex) await step(() => this.backfillExamples(void 0, void 0, void 0, void 0, only));
+    if (llm && gaps.senses) await step(() => this.backfillSenses(void 0, only));
+    if (llm && gaps.zh) await step(() => this.backfillExampleTranslations(void 0, only));
   }
   /** 词卡上手动为单个词补例句（每次 3 条，带主题语境），成功返回新增条数 */
   async aiExamplesFor(doc, count = 3) {
@@ -17243,115 +17273,73 @@ var EnglishLearnSettingTab = class extends import_obsidian14.PluginSettingTab {
       })
     );
     const mobile = import_obsidian14.Platform.isMobile;
+    const activeProvider = () => {
+      var _a;
+      const s2 = this.plugin.db.settings;
+      return (_a = mobile ? s2.llmMobileProvider : void 0) != null ? _a : s2.llmProvider;
+    };
     const conf = () => {
+      var _a;
       const s2 = this.plugin.db.settings;
-      const c = mobile ? s2.llmMobile : void 0;
-      return c != null ? c : {
-        provider: s2.llmProvider,
-        saved: s2.llmSaved,
-        baseUrl: s2.llmBaseUrl,
-        apiKey: s2.llmApiKey,
-        model: s2.llmModel
-      };
+      const p = activeProvider();
+      return { baseUrl: "", apiKey: "", model: "", ...LLM_PRESETS[p], ...(_a = s2.llmSaved) == null ? void 0 : _a[p] };
     };
-    const ensureMobileConf = () => {
+    const writeConf = (patch) => {
       const s2 = this.plugin.db.settings;
-      if (!mobile) return conf();
-      if (!s2.llmMobile) {
-        s2.llmMobile = {
-          provider: s2.llmProvider,
-          saved: s2.llmSaved,
-          baseUrl: s2.llmBaseUrl,
-          apiKey: s2.llmApiKey,
-          model: s2.llmModel
-        };
-      }
-      return s2.llmMobile;
-    };
-    const setConf = (patch) => {
-      const c = ensureMobileConf();
-      Object.assign(c, patch);
-      writeBack(c);
-    };
-    const writeBack = (c) => {
-      const s2 = this.plugin.db.settings;
-      if (mobile) s2.llmMobile = c;
-      else {
-        s2.llmProvider = c.provider;
-        s2.llmSaved = c.saved;
-        s2.llmBaseUrl = c.baseUrl;
-        s2.llmApiKey = c.apiKey;
-        s2.llmModel = c.model;
-      }
-    };
-    const PRESETS = {
-      ollama: { baseUrl: "http://localhost:11434/v1", apiKey: "ollama", model: "qwen2.5:3b" },
-      deepseek: { baseUrl: "https://api.deepseek.com/v1", apiKey: "", model: "deepseek-v4-flash" },
-      siliconflow: { baseUrl: "https://api.siliconflow.cn/v1", apiKey: "", model: "Qwen/Qwen3-8B" },
-      zhipu: { baseUrl: "https://open.bigmodel.cn/api/paas/v4", apiKey: "", model: "glm-4-flash" }
+      const p = activeProvider();
+      s2.llmSaved = { ...s2.llmSaved, [p]: { ...conf(), ...patch } };
+      this.plugin.store.touch();
     };
     let urlText = null;
     let keyText = null;
     let modelText = null;
     let keyGuideBtn = null;
     const syncKeyGuide = () => {
-      const p = conf().provider;
+      const p = activeProvider();
       if (keyGuideBtn) keyGuideBtn.extraSettingsEl.hidden = p === "ollama" || p === "custom";
     };
     const switchSource = (next) => {
-      var _a, _b;
-      const c = ensureMobileConf();
-      c.saved = (_a = c.saved) != null ? _a : {};
-      c.saved[c.provider] = { baseUrl: c.baseUrl, apiKey: c.apiKey, model: c.model };
-      c.provider = next;
-      const v = (_b = c.saved[next]) != null ? _b : PRESETS[next];
-      if (v) {
-        c.baseUrl = v.baseUrl;
-        c.apiKey = v.apiKey;
-        c.model = v.model;
-      }
-      writeBack(c);
-      urlText == null ? void 0 : urlText.setValue(c.baseUrl);
-      keyText == null ? void 0 : keyText.setValue(c.apiKey);
-      modelText == null ? void 0 : modelText.setValue(c.model);
+      const s2 = this.plugin.db.settings;
+      if (mobile) s2.llmMobileProvider = next;
+      else s2.llmProvider = next;
+      writeConf({});
+      urlText == null ? void 0 : urlText.setValue(conf().baseUrl);
+      keyText == null ? void 0 : keyText.setValue(conf().apiKey);
+      modelText == null ? void 0 : modelText.setValue(conf().model);
       syncKeyGuide();
-      this.plugin.store.touch();
     };
-    new import_obsidian14.Setting(containerEl).setName("AI \u6E90").setDesc(mobile ? "\u79FB\u52A8\u7AEF\u72EC\u7ACB\u914D\u7F6E\uFF08\u4E0E\u684C\u9762\u7AEF\u4E92\u4E0D\u5F71\u54CD\uFF09\u3002\u672C\u5730 Ollama \u624B\u673A\u8FDE\u4E0D\u4E0A\uFF0C\u5EFA\u8BAE\u7528\u7845\u57FA\u6D41\u52A8\u7B49\u4E91\u7AEF API\uFF08\u514D\u8D39\u989D\u5EA6\uFF0C\u65C1\u6709 \u{1F511} \u5F15\u5BFC\u6CE8\u518C\uFF09" : "\u684C\u9762\u7AEF\u914D\u7F6E\uFF1B\u79FB\u52A8\u7AEF\u53EF\u5728\u624B\u673A\u4E0A\u5355\u72EC\u914D\u7F6E\u53E6\u4E00\u5957\uFF08\u5982\u4E91\u7AEF API\uFF09\u3002Ollama \u4E3A\u672C\u5730\u6A21\u578B\uFF08\u9700\u5148 ollama pull qwen2.5:3b\uFF09\uFF1B\u7845\u57FA\u6D41\u52A8/DeepSeek \u9009\u540E\u70B9 Key \u680F \u{1F511} \u53EF\u5F15\u5BFC\u514D\u8D39\u6CE8\u518C").addDropdown(
+    new import_obsidian14.Setting(containerEl).setName("AI \u6E90").setDesc(mobile ? "\u624B\u673A\u542F\u7528\u54EA\u4E2A AI \u6E90\uFF08\u672A\u6539\u8FC7\u5219\u8DDF\u968F\u684C\u9762\u7AEF\uFF1B\u914D\u7F6E\u6C60\u4E24\u7AEF\u5171\u7528\uFF0C\u540C\u4E00\u6E90\u6539\u4E00\u5904\u4E24\u7AEF\u751F\u6548\uFF09\u3002\u672C\u5730 Ollama \u624B\u673A\u8FDE\u4E0D\u4E0A\uFF0C\u5EFA\u8BAE\u9009\u7845\u57FA\u6D41\u52A8\u7B49\u4E91\u7AEF API\uFF08\u514D\u8D39\u989D\u5EA6\uFF0C\u65C1\u6709 \u{1F511} \u5F15\u5BFC\u6CE8\u518C\uFF09" : "\u684C\u9762\u7AEF\u542F\u7528\u54EA\u4E2A AI \u6E90\uFF08\u624B\u673A\u9ED8\u8BA4\u8DDF\u968F\u6B64\u5904\uFF0C\u53EF\u5728\u624B\u673A\u4E0A\u53E6\u9009\uFF1B\u914D\u7F6E\u6C60\u4E24\u7AEF\u5171\u7528\uFF0C\u540C\u4E00\u6E90\u6539\u4E00\u5904\u4E24\u7AEF\u751F\u6548\uFF09\u3002Ollama \u4E3A\u672C\u5730\u6A21\u578B\uFF08\u9700\u5148 ollama pull qwen2.5:3b\uFF09\uFF1B\u7845\u57FA\u6D41\u52A8/DeepSeek \u9009\u540E\u70B9 Key \u680F \u{1F511} \u53EF\u5F15\u5BFC\u514D\u8D39\u6CE8\u518C").addDropdown(
       (d) => d.addOptions({
         ollama: "Ollama\uFF08\u672C\u5730\uFF09",
         deepseek: "DeepSeek",
         siliconflow: "\u7845\u57FA\u6D41\u52A8\uFF08\u514D\u8D39\u989D\u5EA6\uFF09",
         zhipu: "\u667A\u8C31 GLM\uFF08\u514D\u8D39\u6A21\u578B\uFF09",
         custom: "OpenAI \u517C\u5BB9\uFF08\u81EA\u5B9A\u4E49\uFF09"
-      }).setValue(conf().provider).onChange((v) => {
+      }).setValue(activeProvider()).onChange((v) => {
         switchSource(v);
       })
     );
     new import_obsidian14.Setting(containerEl).setName("API \u5730\u5740").addText((t) => {
       urlText = t;
       t.setValue(conf().baseUrl).onChange((v) => {
-        setConf({ baseUrl: v.trim() });
-        this.plugin.store.touch();
+        writeConf({ baseUrl: v.trim() });
       });
     });
     new import_obsidian14.Setting(containerEl).setName("API Key\uFF08\u672C\u5730\u6A21\u578B\u7559\u7A7A\u5373\u53EF\uFF09").addText((t) => {
       keyText = t;
       t.inputEl.type = "password";
       t.setValue(conf().apiKey).onChange((v) => {
-        setConf({ apiKey: v.trim() });
-        this.plugin.store.touch();
+        writeConf({ apiKey: v.trim() });
       });
     }).addExtraButton((b) => {
       keyGuideBtn = b;
       try {
         b.setIcon("key").setTooltip("\u514D\u8D39\u6CE8\u518C\uFF0C\u5F15\u5BFC\u83B7\u53D6 API Key").onClick(() => {
-          const p = conf().provider;
+          const p = activeProvider();
           if (p === "ollama" || p === "custom") return;
           new KeyGuideModal(this.app, p, (key) => {
-            setConf({ apiKey: key });
+            writeConf({ apiKey: key });
             keyText == null ? void 0 : keyText.setValue(key);
-            this.plugin.store.touch();
             new import_obsidian14.Notice("API Key \u5DF2\u4FDD\u5B58\uFF0C\u53EF\u70B9\u4E0B\u65B9\u300C\u6D4B\u8BD5\u8FDE\u63A5\u300D\u9A8C\u8BC1");
           }).open();
         });
@@ -17363,8 +17351,7 @@ var EnglishLearnSettingTab = class extends import_obsidian14.PluginSettingTab {
     new import_obsidian14.Setting(containerEl).setName("\u6A21\u578B").addText((t) => {
       modelText = t;
       t.setValue(conf().model).onChange((v) => {
-        setConf({ model: v.trim() });
-        this.plugin.store.touch();
+        writeConf({ model: v.trim() });
       });
     });
     new import_obsidian14.Setting(containerEl).setName("\u6D4B\u8BD5\u8FDE\u63A5").setDesc("\u5411\u5F53\u524D\u914D\u7F6E\u53D1\u9001\u4E00\u6761\u6D4B\u8BD5\u6D88\u606F").addButton(

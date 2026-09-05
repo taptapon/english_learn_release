@@ -407,6 +407,13 @@ body:not(.is-mobile) .el-exit:hover {
   font-size: var(--el-font-sm);
 }
 
+/* Notice 内可点击跳转链接（如「配置 AI 模型」直达设置页） */
+.el-notice-link {
+  color: var(--interactive-accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 /* —— 学习会话 —— */
 .el-learn {
   display: flex;
