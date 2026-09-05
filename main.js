@@ -22,6 +22,7 @@ var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "sy
 // src/main.ts
 var main_exports = {};
 __export(main_exports, {
+  EnglishLearnSettingTab: () => EnglishLearnSettingTab,
   default: () => EnglishLearnPlugin
 });
 module.exports = __toCommonJS(main_exports);
@@ -15507,16 +15508,9 @@ function create_fragment5(ctx) {
   );
   let t21;
   let t22;
-  let span;
   let t23;
-  let t24_value = (
-    /*plugin*/
-    ctx[0].manifest.version + ""
-  );
   let t24;
   let t25;
-  let t26;
-  let t27;
   let mounted;
   let dispose;
   let if_block0 = (
@@ -15589,20 +15583,16 @@ function create_fragment5(ctx) {
       if (if_block3) if_block3.c();
       t20 = text("\n    \xB7 \u8FDE\u7EED\u6253\u5361 ");
       t21 = text(t21_value);
-      t22 = text(" \u5929\n    ");
-      span = element("span");
-      t23 = text("v");
-      t24 = text(t24_value);
-      t25 = space();
+      t22 = text(" \u5929");
+      t23 = space();
       if (if_block4) if_block4.c();
-      t26 = space();
+      t24 = space();
       if (if_block5) if_block5.c();
-      t27 = space();
+      t25 = space();
       if_block6.c();
       attr(button1, "title", "\u6279\u91CF\u8865\u5168\uFF1A\u4F8B\u53E5 / \u4E49\u9879 / \u4F8B\u53E5\u7FFB\u8BD1 / \u540C\u53CD\u4E49\u8BCD");
       attr(div0, "class", "el-actions");
       attr(div1, "class", "el-header");
-      set_style(span, "float", "right");
       attr(div2, "class", "el-totals");
       attr(div3, "class", "el-panel");
     },
@@ -15638,14 +15628,11 @@ function create_fragment5(ctx) {
       append(div2, t20);
       append(div2, t21);
       append(div2, t22);
-      append(div2, span);
-      append(span, t23);
-      append(span, t24);
-      append(div3, t25);
+      append(div3, t23);
       if (if_block4) if_block4.m(div3, null);
-      append(div3, t26);
+      append(div3, t24);
       if (if_block5) if_block5.m(div3, null);
-      append(div3, t27);
+      append(div3, t25);
       if_block6.m(div3, null);
       if (!mounted) {
         dispose = [
@@ -15744,9 +15731,6 @@ function create_fragment5(ctx) {
       if (dirty[0] & /*plugin*/
       1 && t21_value !== (t21_value = /*plugin*/
       ctx2[0].db.stats.streak + "")) set_data(t21, t21_value);
-      if (dirty[0] & /*plugin*/
-      1 && t24_value !== (t24_value = /*plugin*/
-      ctx2[0].manifest.version + "")) set_data(t24, t24_value);
       if (!/*loading*/
       ctx2[6] && /*chartSum*/
       ctx2[10] > 0) {
@@ -15755,7 +15739,7 @@ function create_fragment5(ctx) {
         } else {
           if_block4 = create_if_block_74(ctx2);
           if_block4.c();
-          if_block4.m(div3, t26);
+          if_block4.m(div3, t24);
         }
       } else if (if_block4) {
         if_block4.d(1);
@@ -15769,7 +15753,7 @@ function create_fragment5(ctx) {
         } else {
           if_block5 = create_if_block_54(ctx2);
           if_block5.c();
-          if_block5.m(div3, t27);
+          if_block5.m(div3, t25);
         }
       } else if (if_block5) {
         if_block5.d(1);
@@ -17143,6 +17127,7 @@ var EnglishLearnSettingTab = class extends import_obsidian14.PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     const s = this.plugin.db.settings;
+    containerEl.createEl("div", { text: `English Learn v${this.plugin.manifest.version}`, cls: "el-muted" });
     new import_obsidian14.Setting(containerEl).setName("\u8BCD\u5E93\u6839\u76EE\u5F55").setDesc("\u8BCD\u7B14\u8BB0\u5B58\u653E\u7684 vault \u76EE\u5F55").addText(
       (t) => t.setValue(s.root).onChange(async (v) => {
         s.root = v.trim() || "EnglishLearn";
@@ -17311,7 +17296,7 @@ var EnglishLearnSettingTab = class extends import_obsidian14.PluginSettingTab {
     let keyGuideBtn = null;
     const syncKeyGuide = () => {
       const p = conf().provider;
-      if (keyGuideBtn) keyGuideBtn.buttonEl.hidden = p === "ollama" || p === "custom";
+      if (keyGuideBtn) keyGuideBtn.extraSettingsEl.hidden = p === "ollama" || p === "custom";
     };
     const switchSource = (next) => {
       var _a, _b;
@@ -17359,16 +17344,20 @@ var EnglishLearnSettingTab = class extends import_obsidian14.PluginSettingTab {
       });
     }).addExtraButton((b) => {
       keyGuideBtn = b;
-      b.setIcon("key").setTooltip("\u514D\u8D39\u6CE8\u518C\uFF0C\u5F15\u5BFC\u83B7\u53D6 API Key").onClick(() => {
-        const p = conf().provider;
-        if (p === "ollama" || p === "custom") return;
-        new KeyGuideModal(this.app, p, (key) => {
-          setConf({ apiKey: key });
-          keyText == null ? void 0 : keyText.setValue(key);
-          this.plugin.store.touch();
-          new import_obsidian14.Notice("API Key \u5DF2\u4FDD\u5B58\uFF0C\u53EF\u70B9\u4E0B\u65B9\u300C\u6D4B\u8BD5\u8FDE\u63A5\u300D\u9A8C\u8BC1");
-        }).open();
-      });
+      try {
+        b.setIcon("key").setTooltip("\u514D\u8D39\u6CE8\u518C\uFF0C\u5F15\u5BFC\u83B7\u53D6 API Key").onClick(() => {
+          const p = conf().provider;
+          if (p === "ollama" || p === "custom") return;
+          new KeyGuideModal(this.app, p, (key) => {
+            setConf({ apiKey: key });
+            keyText == null ? void 0 : keyText.setValue(key);
+            this.plugin.store.touch();
+            new import_obsidian14.Notice("API Key \u5DF2\u4FDD\u5B58\uFF0C\u53EF\u70B9\u4E0B\u65B9\u300C\u6D4B\u8BD5\u8FDE\u63A5\u300D\u9A8C\u8BC1");
+          }).open();
+        });
+      } catch (e) {
+        console.error("Key \u5F15\u5BFC\u6309\u94AE\u521D\u59CB\u5316\u5931\u8D25\uFF1A", e);
+      }
       syncKeyGuide();
     });
     new import_obsidian14.Setting(containerEl).setName("\u6A21\u578B").addText((t) => {
