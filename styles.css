@@ -816,6 +816,16 @@ body:not(.is-mobile) .el-example:hover {
   opacity: 0.8;
 }
 
+/* 来源标注的括号装饰统一在此定义（伪元素不进选区复制，正文复制不带来源），
+   各渲染点模板只写 {source}，新增渲染点自动一致 */
+.el-example-src::before {
+  content: "（";
+}
+
+.el-example-src::after {
+  content: "）";
+}
+
 .el-example-tts {
   font-size: var(--el-font-md); /* 与例句正文同号，视觉协调 */
   line-height: 1; /* 锁定行高，emoji 字体自身行框偏高会撑行 */
@@ -1184,6 +1194,20 @@ body:not(.is-mobile) .el-spell-hint:hover {
 /* 编号锚定 .modal 盒子：仅带编号的弹窗建立定位上下文，不影响未标注弹窗布局 */
 .modal:has(> .el-modal-tag) {
   position: relative;
+}
+
+/* —— 移动端键盘让位：带输入框的弹窗统一挂 .el-modal-kb —— */
+/* --el-kb-h 由 main.ts 随 visualViewport 写入（键盘高度，桌面恒 0）；键盘弹起时压缩弹窗
+   高度至可视区，内容区自身滚动兜底。靠顶用 flex 的 margin-bottom:auto 吸走下方剩余空间，
+   不依赖宿主 align-items 的具体值；顶部 env(safe-area-inset-top) 避让 iPhone 刘海，
+   max-height 同步减去同一份，保证 margin+高度恰好占满容器不溢出 */
+body.is-mobile .modal.el-modal-kb {
+  margin: calc(env(safe-area-inset-top, 0px) + var(--el-space-2)) auto var(--el-space-4);
+  align-self: flex-start;
+  max-height: calc(
+    100% - var(--el-kb-h, 0px) - env(safe-area-inset-top, 0px) - var(--el-space-2) -
+      var(--el-space-4)
+  );
 }
 
 /* —— 词卡弹窗：例句点已收录词弹出对应词卡 —— */
@@ -1684,14 +1708,34 @@ body:not(.is-mobile) .el-memo-add:hover {
   resize: vertical;
 }
 
+/* 弹窗按钮行：吸底常驻（移动端键盘压缩高度、内容滚动时保存/清空不被滚走），
+   不透明背景遮住从下方滚过的内容。grid 三列三段分布：清空左 · AI 中 · 保存右 */
+.el-memo-btns {
+  position: sticky;
+  bottom: 0;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  margin-top: var(--el-space-3);
+  padding: var(--el-space-2) 0;
+  background: var(--background-modals);
+}
+
+.el-memo-btns .el-memo-clear {
+  justify-self: start;
+}
+
+.el-memo-btns .el-memo-save {
+  justify-self: end;
+}
+
 /* 「清空助记」低调化：普通按钮但文字弱化 */
 .el-memo-clear {
   color: var(--text-faint);
 }
 
-/* 「✨ AI 助记」与保存/清空同行，靠左；候选生成后填充在输入框与按钮行之间 */
+/* 「✨ AI 助记」按钮：字号弱化（位置由 .el-memo-btns 的 grid 三段分布决定） */
 .el-memo-ai {
-  margin-right: auto;
   font-size: var(--el-font-sm);
 }
 

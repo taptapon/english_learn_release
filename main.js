@@ -201,13 +201,7 @@ function sortFreshByFreq(words, frq) {
   });
 }
 function isForm(token, word) {
-  const t = token.toLowerCase();
-  if (t === word) return true;
-  if (word.length >= 5) {
-    const stem = word.slice(0, word.length - 2);
-    return t.startsWith(stem) && Math.abs(t.length - word.length) <= 3;
-  }
-  return false;
+  return lemmaCandidates(token).includes(word.toLowerCase());
 }
 var IRREG_PAIRS_STR = "was be were be been be had have did do done do went go gone go made make said say told tell retold retell sold sell found find gave give given give took take taken take got get gotten get knew know known know thought think saw see seen see came come felt feel became become left leave meant mean kept keep began begin begun begin showed show shown show heard hear ran run brought bring wrote write written write sat sit stood stand understood understand withstood withstand lost lose paid pay met meet led lead spoke speak spoken speak spent spend grew grow grown grow won win bought buy sent send built build fell fall fallen fall drove drive driven drive broke break broken break rose rise arisen arise arose arise held hold upheld uphold withheld withhold beheld behold drew draw drawn draw shook shake shaken shake flew fly flown fly ate eat eaten eat drank drink drunk drink swam swim swum swim sang sing sung sing rang ring rung ring sprang spring sprung spring sank sink sunk sink wore wear worn wear swore swear sworn swear tore tear torn tear chose choose chosen choose froze freeze frozen freeze rode ride ridden ride forgot forget forgotten forget wove weave woven weave strove strive striven strive lay lie lain lie laid lay fled flee fed feed bled bleed dug dig struck strike hid hide hidden hide hung hang swung swing clung cling flung fling stung sting slid slide crept creep swept sweep wept weep knelt kneel slept sleep dealt deal dreamt dream sped speed bound bind wound wind ground grind sought seek fought fight caught catch taught teach bent bend lent lend burnt burn learnt learn better good best good worse bad worst bad more many most many less little least little further far farther far elder old eldest old";
 var IRREG_INFLECT = /* @__PURE__ */ new Map();
@@ -216,7 +210,7 @@ var IRREG_INFLECT = /* @__PURE__ */ new Map();
   for (let i = 0; i + 1 < pairs.length; i += 2) IRREG_INFLECT.set(pairs[i], pairs[i + 1]);
 }
 function lemmaCandidates(w) {
-  const s = w.toLowerCase();
+  const s = w.toLowerCase().replace(/['’]s?$/, "");
   const out = /* @__PURE__ */ new Set([s]);
   const add = (t) => {
     if (t.length >= 2) out.add(t);
@@ -237,6 +231,15 @@ function lemmaCandidates(w) {
   const inflected = IRREG_INFLECT.get(s);
   if (inflected) add(inflected);
   if (s.endsWith("ies") && s.length > 4) add(s.slice(0, -3) + "y");
+  if (s.endsWith("ses")) add(s.slice(0, -2) + "is");
+  if (s.endsWith("ices")) {
+    add(s.slice(0, -4) + "ex");
+    add(s.slice(0, -4) + "ix");
+  }
+  if (s.endsWith("a")) {
+    add(s.slice(0, -1) + "on");
+    add(s.slice(0, -1) + "um");
+  }
   if (s.endsWith("es")) {
     add(s.slice(0, -2));
     add(s.slice(0, -1));
@@ -325,7 +328,7 @@ function convertStarterEntries(entries) {
   }
   return shards;
 }
-async function installStarterDict(app, dir) {
+async function installStarterDict(app, dir, onUpgraded) {
   const metaFile = `${dir}/meta.json`;
   try {
     if (await app.vault.adapter.exists(metaFile)) {
@@ -368,6 +371,7 @@ async function installStarterDict(app, dir) {
       metaFile,
       JSON.stringify({ source: "starter", ver: STARTER_VER, installed: Date.now(), count })
     );
+    onUpgraded == null ? void 0 : onUpgraded();
     new import_obsidian.Notice(`English Learn\uFF1A\u57FA\u7840\u8BCD\u5178\u5C31\u7EEA\uFF08${count} \u8BCD\u6761\uFF0C\u542B\u97F3\u6807/\u540C\u53CD\u4E49\u8BCD/\u540C\u6839\u8BCD\uFF09`);
     return true;
   } catch (e) {
@@ -379,7 +383,6 @@ async function installStarterDict(app, dir) {
 
 // src/dict/ecdict.ts
 var SHARDS = "abcdefghijklmnopqrstuvwxyz0";
-var LRU_MAX = 8;
 var LEVEL_ORDER = ["zk", "gk", "cet4", "cet6", "ky", "toefl", "ielts", "gre"];
 function levelFromTag(tag) {
   if (!tag) return void 0;
@@ -517,6 +520,8 @@ var EcdictDict = class {
     this.pluginDir = pluginDir;
     this.shards = /* @__PURE__ */ new Map();
     this.loading = /* @__PURE__ */ new Map();
+    /** 分片代次：starter 升级重写文件时 +1——重写前出发的在途读取完成后不得回填缓存 */
+    this.shardGen = 0;
     this.starterPromise = null;
     this.starterFailedAt = 0;
     this.warned = false;
@@ -547,24 +552,37 @@ var EcdictDict = class {
     }
     return rankZhHits(hits, q).slice(0, limit);
   }
-  /** 安装内置基础词典（单飞；失败后 60 秒冷却，避免批量查词时每词都重撞下载超时） */
+  /** 安装内置基础词典（单飞；失败后 60 秒冷却，避免批量查词时每词都重撞下载超时）。
+   *  升级会重写分片文件：抬代次并清内存缓存，否则同会话内查词新旧混用直到重载；
+   *  在途的旧读取由代次拦截，不会在清空后又把旧内容填回来 */
   ensureStarter() {
     var _a;
     if (Date.now() - this.starterFailedAt < 6e4) return Promise.resolve(false);
-    (_a = this.starterPromise) != null ? _a : this.starterPromise = installStarterDict(this.app, this.dir).catch((e) => {
+    (_a = this.starterPromise) != null ? _a : this.starterPromise = installStarterDict(this.app, this.dir, () => {
+      this.shardGen++;
+      this.shards.clear();
+    }).catch((e) => {
       this.starterPromise = null;
       this.starterFailedAt = Date.now();
       throw e;
     });
     return this.starterPromise;
   }
-  /** 已安装词典的元信息（meta.json），未安装返回 null；ver 为旧版 starter 补默认 1 */
+  /** 已安装词典的元信息（meta.json），未安装返回 null；ver 为旧版 starter 补默认 1。
+   *  source 必须透传——starterNeedsUpgrade 靠它判定「自定义源数据永不动」 */
   async installedMeta() {
     try {
       const file = `${this.dir}/meta.json`;
       if (!await this.app.vault.adapter.exists(file)) return null;
       const meta = JSON.parse(await this.app.vault.adapter.read(file));
-      return typeof (meta == null ? void 0 : meta.count) === "number" ? { count: meta.count, installed: Number(meta.installed) || 0, ver: Number(meta.ver) || 1 } : null;
+      let installed = Number(meta.installed) || 0;
+      if (installed > 0 && installed < 1e12) installed *= 1e3;
+      return typeof (meta == null ? void 0 : meta.count) === "number" ? {
+        count: meta.count,
+        installed,
+        ver: Number(meta.ver) || 1,
+        source: typeof meta.source === "string" ? meta.source : void 0
+      } : null;
     } catch (e) {
       return null;
     }
@@ -573,7 +591,6 @@ var EcdictDict = class {
    *  只读已落地的分片，绝不触发词典下载——会话组装不能被 7MB 下载卡住；
    *  词典未安装/分片缺失的词静默跳过，由调用方回退到收录时间排序 */
   async freqRank(words) {
-    var _a;
     const byShard = /* @__PURE__ */ new Map();
     for (const w of words) {
       if (!w || isPhrase(w)) continue;
@@ -583,17 +600,21 @@ var EcdictDict = class {
       else byShard.set(shard, [w]);
     }
     const out = /* @__PURE__ */ new Map();
-    for (const [shard, ws] of byShard) {
+    await runPool([...byShard], 8, async ([shard, ws]) => {
+      var _a;
       try {
-        if (!await this.app.vault.adapter.exists(`${this.dir}/${shard}.json`)) continue;
-        const map = await this.loadShard(shard);
+        let map = this.shards.get(shard);
+        if (!map && await this.app.vault.adapter.exists(`${this.dir}/${shard}.json`)) {
+          map = await this.loadShard(shard);
+        }
+        if (!map) return;
         for (const w of ws) {
           const f = (_a = map[w]) == null ? void 0 : _a.frq;
           if (f && f > 0) out.set(w, f);
         }
       } catch (e) {
       }
-    }
+    });
     return out;
   }
   /** 反向查词：找释义包含中文关键词的常见英文词（离线兜底，语义精度一般） */
@@ -613,15 +634,12 @@ var EcdictDict = class {
     }
     return hits.sort((a, b) => b.score - a.score).slice(0, limit).map((h) => h.word);
   }
-  async loadShard(shard, force = false) {
+  async loadShard(shard) {
     const cached = this.shards.get(shard);
-    if (cached && !force) {
-      this.shards.delete(shard);
-      this.shards.set(shard, cached);
-      return cached;
-    }
+    if (cached) return cached;
     const pending = this.loading.get(shard);
     if (pending) return pending;
+    const gen = this.shardGen;
     const task = (async () => {
       const file = `${this.dir}/${shard}.json`;
       try {
@@ -643,13 +661,9 @@ var EcdictDict = class {
     })();
     this.loading.set(shard, task);
     const map = await task;
-    this.loading.delete(shard);
-    if (Object.keys(map).length) {
+    if (this.loading.get(shard) === task) this.loading.delete(shard);
+    if (gen === this.shardGen && Object.keys(map).length) {
       this.shards.set(shard, map);
-      if (this.shards.size > LRU_MAX) {
-        const oldest = this.shards.keys().next().value;
-        if (oldest !== void 0) this.shards.delete(oldest);
-      }
     }
     return map;
   }
@@ -1119,18 +1133,22 @@ var WordStore = class {
     /** 主题 → 词集合索引（rev 失效的惰性缓存）：例句高亮每次翻卡都查同主题词，全量扫描在大词库上是浪费 */
     this.themeIdx = null;
     this.themeIdxRev = -1;
+    /** 在跑的扫描：并发 scan 并入同一轮，中途的新请求结束后补跑一轮 */
+    this.scanTask = null;
+    this.scanAgain = false;
   }
   get(word) {
     return this.index.get(word.toLowerCase());
   }
-  /** token（可能为变形，如 networks/studied）→ 词库中的原形词：先精确后宽松词干。
-   *  O(n) 但只在点词这类低频交互调用，千词级词库无感 */
+  /** token（可能为变形，如 networks/studied/company's）→ 词库中的原形词：先精确查，
+   *  再按 lemmaCandidates 屈折候选逐个查——O(候选数) 不随词库大小涨 */
   resolveWord(token) {
     const lw = token.toLowerCase();
     const hit = this.index.get(lw);
     if (hit) return hit;
-    for (const d of this.index.values()) {
-      if (isForm(token, d.word)) return d;
+    for (const lem of lemmaCandidates(token)) {
+      const d = this.index.get(lem);
+      if (d) return d;
     }
     return void 0;
   }
@@ -1174,37 +1192,75 @@ var WordStore = class {
     this.index.delete(word.toLowerCase());
     this.rev++;
   }
-  /** 扫描词目录，增量重建内存索引（一次学习流程会 scan 多次，全量重读在大词库上很慢） */
+  /** 扫描词目录，增量重建内存索引（一次学习流程会 scan 多次，全量重读在大词库上很慢）。
+   *  重入安全：并发调用并入在跑的一轮并触发结束后补跑，等待者会等到补扫轮结束——
+   *  await scan() 拿到的索引快照不早于自己的调用时刻，也不会叠加并发扫描撕裂索引 */
   async scan() {
+    if (this.scanTask) {
+      this.scanAgain = true;
+      await this.scanTask;
+      if (this.scanTask) await this.scanTask;
+      return;
+    }
+    const task = this.doScan().finally(() => {
+      this.scanTask = null;
+      if (this.scanAgain) {
+        this.scanAgain = false;
+        void this.scan();
+      }
+    });
+    this.scanTask = task;
+    return task;
+  }
+  async doScan() {
     const { app } = this.plugin;
     const dir = `${this.plugin.db.settings.root}/words`;
     if (!await app.vault.adapter.exists(dir)) return;
     const files = app.vault.getMarkdownFiles().filter((f) => f.path.startsWith(dir + "/"));
     const live = new Set(files.map((f) => f.path));
+    let changed = false;
     for (const [path, c] of this.fileCache) {
       if (!live.has(path)) {
         this.index.delete(c.doc.word);
         this.fileCache.delete(path);
+        changed = true;
       }
     }
-    for (const file of files) {
+    await runPool(files, 8, async (file) => {
+      var _a;
       const c = this.fileCache.get(file.path);
       if (c && c.mtime === file.stat.mtime) {
-        this.index.set(c.doc.word, c.doc);
-        continue;
+        if (this.setIndex(c.doc)) changed = true;
+        return;
       }
-      if (c) this.index.delete(c.doc.word);
+      if (!app.metadataCache.getFileCache(file)) {
+        this.fileCache.delete(file.path);
+        return;
+      }
+      if (c && ((_a = this.index.get(c.doc.word)) == null ? void 0 : _a.path) === file.path) {
+        this.index.delete(c.doc.word);
+        changed = true;
+      }
       let doc;
       try {
         doc = await this.loadFile(file);
       } catch (e) {
         console.error("\u8BFB\u53D6\u8BCD\u7B14\u8BB0\u5931\u8D25\uFF0C\u672C\u8F6E\u8DF3\u8FC7:", file.path, e);
         this.fileCache.delete(file.path);
-        continue;
+        return;
       }
       this.fileCache.set(file.path, { mtime: file.stat.mtime, doc });
-    }
-    this.rev++;
+      changed = true;
+    });
+    if (changed) this.rev++;
+  }
+  /** 入索引，返回是否实际变更。同 word 多笔记（复制笔记/手改 frontmatter 造成）时固定
+   *  路径小者胜：胜者与 8 路并发的完成顺序无关，跨扫描稳定，编辑/删除始终落在同一份文件上 */
+  setIndex(doc) {
+    const prev = this.index.get(doc.word);
+    if (prev === doc || prev && prev.path < doc.path) return false;
+    this.index.set(doc.word, doc);
+    return true;
   }
   async loadFile(file) {
     var _a, _b, _c;
@@ -1231,7 +1287,7 @@ var WordStore = class {
       senses: senses.length ? senses : void 0,
       memo: memo || void 0
     };
-    this.index.set(word, doc);
+    this.setIndex(doc);
     return doc;
   }
   /** 创建词笔记；已存在则只合并主题（不覆盖内容） */
@@ -1266,7 +1322,7 @@ var WordStore = class {
       synonyms: ((_c = opts.synonyms) == null ? void 0 : _c.length) ? [...opts.synonyms] : void 0,
       antonyms: ((_d = opts.antonyms) == null ? void 0 : _d.length) ? [...opts.antonyms] : void 0
     };
-    this.index.set(key, doc);
+    this.setIndex(doc);
     this.fileCache.set(path, { mtime: created.stat.mtime, doc });
     this.rev++;
     return doc;
@@ -4171,13 +4227,12 @@ function create_if_block_2(ctx) {
   );
   let t0;
   let span;
-  let t1;
-  let t2_value = (
+  let t1_value = (
     /*c*/
     ctx[55].source + ""
   );
+  let t1;
   let t2;
-  let t3;
   let if_block_anchor;
   let if_block = (
     /*c*/
@@ -4188,9 +4243,8 @@ function create_if_block_2(ctx) {
       div = element("div");
       t0 = text(t0_value);
       span = element("span");
-      t1 = text("\u2014\u2014 ");
-      t2 = text(t2_value);
-      t3 = space();
+      t1 = text(t1_value);
+      t2 = space();
       if (if_block) if_block.c();
       if_block_anchor = empty();
       attr(span, "class", "el-example-src");
@@ -4201,8 +4255,7 @@ function create_if_block_2(ctx) {
       append(div, t0);
       append(div, span);
       append(span, t1);
-      append(span, t2);
-      insert(target, t3, anchor);
+      insert(target, t2, anchor);
       if (if_block) if_block.m(target, anchor);
       insert(target, if_block_anchor, anchor);
     },
@@ -4211,8 +4264,8 @@ function create_if_block_2(ctx) {
       4 && t0_value !== (t0_value = /*c*/
       ctx2[55].sentence + "")) set_data(t0, t0_value);
       if (dirty[0] & /*cands*/
-      4 && t2_value !== (t2_value = /*c*/
-      ctx2[55].source + "")) set_data(t2, t2_value);
+      4 && t1_value !== (t1_value = /*c*/
+      ctx2[55].source + "")) set_data(t1, t1_value);
       if (
         /*c*/
         ctx2[55].sentenceZh
@@ -4232,7 +4285,7 @@ function create_if_block_2(ctx) {
     d(detaching) {
       if (detaching) {
         detach(div);
-        detach(t3);
+        detach(t2);
         detach(if_block_anchor);
       }
       if (if_block) if_block.d(detaching);
@@ -5599,6 +5652,7 @@ var CreateThemeModal = class extends import_obsidian9.Modal {
     tagModal(this.modalEl, "Create");
     const { contentEl } = this;
     this.modalEl.addClass("el-create-theme-modal");
+    this.modalEl.addClass("el-modal-kb");
     contentEl.createEl("h3", { text: "\u65B0\u5EFA\u4E3B\u9898" });
     let name = "";
     let keywords = "";
@@ -5685,6 +5739,7 @@ var EditThemeModal = class extends import_obsidian9.Modal {
   onOpen() {
     var _a, _b;
     tagModal(this.modalEl, "Edit");
+    this.modalEl.addClass("el-modal-kb");
     const { contentEl } = this;
     contentEl.createEl("h3", { text: `\u7F16\u8F91\u4E3B\u9898 \u2014 ${this.theme}` });
     let name = this.theme;
@@ -5776,6 +5831,7 @@ var AddWordModal = class _AddWordModal extends import_obsidian9.Modal {
   }
   onOpen() {
     tagModal(this.modalEl, "Add");
+    this.modalEl.addClass("el-modal-kb");
     const { contentEl } = this;
     const names = Object.keys(this.plugin.db.themes);
     if (!names.length) {
@@ -5996,8 +6052,19 @@ var AddWordModal = class _AddWordModal extends import_obsidian9.Modal {
     this.renderZhList();
   }
   /** 渲染中文候选列表（renderZhSearch 出结果后调用；预览页「返回重选」也走这） */
+  /** 词典候选行模型（中查英 hits）：截断释义 + 已收录判定，整表渲染与联网拓展共用一处，
+   *  防两套行构建逻辑漂移 */
+  zhHitRow(e) {
+    var _a;
+    return {
+      word: e.word,
+      sense: ((_a = e.translation) != null ? _a : "").split(/[；;\n]/)[0].replace(/^[a-z]+\.\s*/i, "").trim().slice(0, 24),
+      owned: !!this.plugin.words.get(e.word),
+      direct: false
+    };
+  }
   renderZhList() {
-    var _a, _b;
+    var _a;
     if (!this.zhBack) return;
     const { q, mine, hits, raw, resolved } = this.zhBack;
     const seen = /* @__PURE__ */ new Set();
@@ -6009,12 +6076,7 @@ var AddWordModal = class _AddWordModal extends import_obsidian9.Modal {
     for (const e of hits) {
       if (seen.has(e.word)) continue;
       seen.add(e.word);
-      rows.push({
-        word: e.word,
-        sense: ((_b = e.translation) != null ? _b : "").split(/[；;\n]/)[0].replace(/^[a-z]+\.\s*/i, "").trim().slice(0, 24),
-        owned: !!this.plugin.words.get(e.word),
-        direct: false
-      });
+      rows.push(this.zhHitRow(e));
     }
     for (const w of raw) {
       if (resolved.has(w) || seen.has(w)) continue;
@@ -6034,19 +6096,21 @@ var AddWordModal = class _AddWordModal extends import_obsidian9.Modal {
     const moreBtn = this.previewEl.createEl("button", { text: "\u8054\u7F51\u62D3\u5C55" });
     moreBtn.style.cssText = "display:block;margin:10px auto 0;";
     moreBtn.onClickEvent(() => {
+      const snap = this.zhBack;
       moreBtn.disabled = true;
       moreBtn.setText("\u62D3\u5C55\u4E2D\u2026");
       void this.expandZhCandidates(q, known).then((entries) => {
         var _a2;
+        if (this.zhBack !== snap) return;
         moreBtn.remove();
         if (!entries.length) {
           moreBtn.setText("\u6CA1\u6709\u66F4\u591A\u4E86");
         } else {
+          (_a2 = this.zhBack) == null ? void 0 : _a2.hits.push(...entries);
           for (const e of entries) {
             known.add(e.word);
-            const sense = ((_a2 = e.translation) != null ? _a2 : "").split(/[；;\n]/)[0].replace(/^[a-z]+\.\s*/i, "").trim().slice(0, 24);
-            const ownedHit = !!this.plugin.words.get(e.word);
-            this.zhRow(e.word, sense, q, ownedHit, false, ownedHit ? "\u5DF2\u5728\u8BCD\u5E93" : "");
+            const r = this.zhHitRow(e);
+            this.zhRow(r.word, r.sense, q, r.owned, r.direct, r.owned ? "\u5DF2\u5728\u8BCD\u5E93" : "");
           }
           moreBtn.setText("\u518D\u62D3\u5C55");
           moreBtn.disabled = false;
@@ -6204,8 +6268,9 @@ var AddWordModal = class _AddWordModal extends import_obsidian9.Modal {
    *  后续加入/发音/AI 例句/去重判定都按原形走——词库只收原形，变形词入库即脏数据。
    *  Obsidian setValue 不触发 onChange，this.word 手动同步 */
   retargetLemma(lem) {
+    var _a;
     this.word = lem;
-    this.wordInput.setValue(lem);
+    (_a = this.wordInput) == null ? void 0 : _a.setValue(lem);
   }
   /** 预览落盘：带上 AI 例句一次性渲染，并把焦点交给「加入」（Enter 二段式第二段：再按 Enter 即收录） */
   flushPreview(lines) {
@@ -6269,6 +6334,7 @@ var ExpandModal = class extends import_obsidian9.Modal {
     tagModal(this.modalEl, "Expand");
     this.titleEl.setText(`\u6269\u8BCD \u2014 ${this.theme}`);
     this.modalEl.addClass("el-expand-modal");
+    this.modalEl.addClass("el-modal-kb");
     this.comp = new ExpandPanel_default({
       target: this.contentEl,
       props: {
@@ -6299,6 +6365,7 @@ var BackfillExamplesModal = class extends import_obsidian9.Modal {
     tagModal(this.modalEl, "BfEx");
     this.titleEl.setText("AI \u8865\u4F8B\u53E5");
     this.modalEl.addClass("el-backfill-modal");
+    this.modalEl.addClass("el-modal-kb");
     const { contentEl } = this;
     const docs = this.plugin.activeWords();
     let want = Math.max(1, this.plugin.db.settings.exampleCount || 3);
@@ -6505,6 +6572,7 @@ var WordListModal = class extends import_obsidian9.Modal {
   onOpen() {
     tagModal(this.modalEl, "List");
     this.modalEl.addClass("el-wordlist-modal");
+    this.modalEl.addClass("el-modal-kb");
     this.render();
   }
   /** 按当前排序模式取展示列表（搜索过滤后套排序） */
@@ -6668,6 +6736,7 @@ var MemoModal = class extends import_obsidian9.Modal {
   onOpen() {
     var _a;
     tagModal(this.modalEl, "Memo");
+    this.modalEl.addClass("el-modal-kb");
     const { contentEl } = this;
     const d = this.wordDoc;
     addHelpTip(
@@ -6696,11 +6765,13 @@ ${text2}` : text2;
       if (rem && !sugBox.childNodes.length) addSug(`\u{1F4D6} ${rem}`);
     }).catch(() => {
     });
-    const btns = contentEl.createDiv();
-    btns.style.display = "flex";
-    btns.style.gap = "8px";
-    btns.style.justifyContent = "flex-end";
-    btns.style.marginTop = "10px";
+    const btns = contentEl.createDiv("el-memo-btns");
+    new import_obsidian9.ButtonComponent(btns).setButtonText("\u6E05\u7A7A\u52A9\u8BB0").setClass("el-memo-clear").onClick(async () => {
+      var _a2;
+      await this.plugin.words.setMemo(d, "");
+      (_a2 = this.onSaved) == null ? void 0 : _a2.call(this);
+      this.close();
+    });
     const ai = new import_obsidian9.ButtonComponent(btns).setButtonText("\u2728 AI \u52A9\u8BB0").setClass("el-memo-ai");
     ai.buttonEl.addEventListener("click", async () => {
       var _a2, _b;
@@ -6721,17 +6792,11 @@ ${text2}` : text2;
         ai.setButtonText("\u2728 AI \u52A9\u8BB0").setDisabled(false);
       }
     });
-    const save = new import_obsidian9.ButtonComponent(btns).setButtonText("\u4FDD\u5B58").setCta();
+    const save = new import_obsidian9.ButtonComponent(btns).setButtonText("\u4FDD\u5B58").setCta().setClass("el-memo-save");
     save.buttonEl.addEventListener("click", async () => {
       var _a2;
       await this.plugin.words.setMemo(d, ta.value);
       new import_obsidian9.Notice("\u52A9\u8BB0\u5DF2\u4FDD\u5B58");
-      (_a2 = this.onSaved) == null ? void 0 : _a2.call(this);
-      this.close();
-    });
-    new import_obsidian9.ButtonComponent(btns).setButtonText("\u6E05\u7A7A\u52A9\u8BB0").setClass("el-memo-clear").onClick(async () => {
-      var _a2;
-      await this.plugin.words.setMemo(d, "");
       (_a2 = this.onSaved) == null ? void 0 : _a2.call(this);
       this.close();
     });
@@ -6776,6 +6841,7 @@ var KeyGuideModal = class extends import_obsidian9.Modal {
   }
   onOpen() {
     tagModal(this.modalEl, "Key");
+    this.modalEl.addClass("el-modal-kb");
     const g = KEY_GUIDES[this.provider];
     this.titleEl.setText(g.title);
     const c = this.contentEl;
@@ -6829,6 +6895,7 @@ var AiSetupModal = class extends import_obsidian9.Modal {
   }
   onOpen() {
     tagModal(this.modalEl, "AI");
+    this.modalEl.addClass("el-modal-kb");
     this.titleEl.setText("\u914D\u7F6E AI \u6E90");
     const c = this.contentEl;
     c.addClass("el-aisetup");
@@ -6926,83 +6993,6 @@ var AiSetupModal = class extends import_obsidian9.Modal {
     this.contentEl.empty();
   }
 };
-
-// src/tts.ts
-var voice = null;
-var voicePicked = false;
-var preferredVoice = null;
-function pickVoice() {
-  voicePicked = true;
-  const ens = window.speechSynthesis.getVoices().filter((v) => /^en[-_]/i.test(v.lang) || v.lang.toLowerCase() === "en");
-  if (!ens.length) return;
-  if (preferredVoice) {
-    const hit = ens.find((v) => v.name === preferredVoice);
-    if (hit) {
-      voice = hit;
-      return;
-    }
-  }
-  const score = (v) => (/enhanced|premium|natural|neural|google/i.test(v.name) ? 2 : 0) + (v.lang.replace("_", "-").toLowerCase() === "en-us" ? 1 : 0);
-  voice = ens.reduce((best, v) => score(v) > score(best) ? v : best);
-}
-function setPreferredVoice(name) {
-  preferredVoice = (name == null ? void 0 : name.trim()) || null;
-  voice = null;
-  voicePicked = false;
-}
-if (typeof window !== "undefined" && "speechSynthesis" in window) {
-  const synth = window.speechSynthesis;
-  const refresh = () => {
-    voice = null;
-    voicePicked = false;
-  };
-  if (typeof synth.addEventListener === "function")
-    synth.addEventListener("voiceschanged", refresh);
-  else synth.onvoiceschanged = refresh;
-}
-var speakSeq = 0;
-function speak(text2, rate = 1) {
-  if (!("speechSynthesis" in window)) return;
-  try {
-    if (!voicePicked || !voice) pickVoice();
-    play(text2, rate, 0);
-  } catch (e) {
-    console.error("TTS \u5931\u8D25:", e);
-  }
-}
-function play(text2, rate, attempt) {
-  var _a;
-  const synth = window.speechSynthesis;
-  const gen = ++speakSeq;
-  if (synth.speaking || synth.pending) synth.cancel();
-  const u = new SpeechSynthesisUtterance(text2);
-  if (voice && attempt < 3) u.voice = voice;
-  u.lang = (_a = voice == null ? void 0 : voice.lang) != null ? _a : "en-US";
-  u.rate = rate;
-  let started = false;
-  u.onstart = () => {
-    started = true;
-  };
-  u.onerror = (e) => {
-    const err = e.error;
-    if (err !== "canceled" && err !== "interrupted") console.error("TTS utterance error:", err);
-  };
-  synth.speak(u);
-  synth.resume();
-  setTimeout(() => {
-    if (gen !== speakSeq || started || synth.speaking) return;
-    if (attempt < 3) {
-      console.warn(
-        "TTS \u672A\u542F\u52A8\uFF0C\u91CD\u8BD5\u7B2C " + (attempt + 2) + " \u6B21" + (attempt === 2 ? "\uFF08\u6539\u7528\u7CFB\u7EDF\u9ED8\u8BA4\u58F0\u97F3\uFF09" : "")
-      );
-      setTimeout(() => {
-        if (gen === speakSeq) play(text2, rate, attempt + 1);
-      }, 100);
-    } else {
-      console.error("TTS \u8FDE\u7CFB\u7EDF\u9ED8\u8BA4\u58F0\u97F3\u90FD\u672A\u542F\u52A8\uFF0CspeechSynthesis \u53EF\u80FD\u5DF2\u5047\u6B7B\uFF0C\u8BF7\u91CD\u542F Obsidian");
-    }
-  }, 500);
-}
 
 // src/components/SenseList.svelte
 function get_each_context2(ctx, list, i) {
@@ -9384,28 +9374,25 @@ function create_each_block_12(ctx) {
 }
 function create_if_block_42(ctx) {
   let span;
-  let t0;
-  let t1_value = (
+  let t_1_value = (
     /*e*/
     ctx[62].source + ""
   );
-  let t1;
+  let t_1;
   return {
     c() {
       span = element("span");
-      t0 = text("\u2014\u2014 ");
-      t1 = text(t1_value);
+      t_1 = text(t_1_value);
       attr(span, "class", "el-example-src");
     },
     m(target, anchor) {
       insert(target, span, anchor);
-      append(span, t0);
-      append(span, t1);
+      append(span, t_1);
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*doc*/
-      1 && t1_value !== (t1_value = /*e*/
-      ctx2[62].source + "")) set_data(t1, t1_value);
+      1 && t_1_value !== (t_1_value = /*e*/
+      ctx2[62].source + "")) set_data(t_1, t_1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -9909,9 +9896,7 @@ function instance4($$self, $$props, $$invalidate) {
     void plugin.app.workspace.openLinkText(doc.path, "", true);
   }
   function readExample(text2) {
-    var _a;
-    if (plugin.muted) return;
-    speak(text2, (_a = plugin.db.settings.ttsSentenceRate) !== null && _a !== void 0 ? _a : plugin.db.settings.ttsRate);
+    plugin.speakSentence(text2);
   }
   function editMemo() {
     new MemoModal(plugin.app, plugin, doc, () => $$invalidate(0, doc)).open();
@@ -9967,11 +9952,12 @@ function instance4($$self, $$props, $$invalidate) {
       const tok = m[0];
       if (m.index > last) segs.push({ t: text2.slice(last, m.index) });
       const lw = tok.toLowerCase();
+      const cands = lemmaCandidates(lw);
       let kind;
-      if (lw === self || isForm(tok, self)) kind = "self";
+      if (cands.includes(self)) kind = "self";
       else if (isFrequentForm(lw)) kind = void 0;
-      else if (relatedList.includes(lw) || relatedList.some((w) => isForm(tok, w))) kind = "rel";
-      else if (lemmaCandidates(lw).some((lem) => plugin.words.get(lem))) kind = "lib";
+      else if (relatedList.some((w) => cands.includes(w))) kind = "rel";
+      else if (cands.some((lem) => plugin.words.get(lem))) kind = "lib";
       else if (!/['’](?:s|t|re|ve|ll|d|m)$/.test(lw)) kind = "new";
       segs.push({ t: tok, kind });
       last = m.index + tok.length;
@@ -18711,6 +18697,83 @@ var STARTER_PACKS = [
   }
 ];
 
+// src/tts.ts
+var voice = null;
+var voicePicked = false;
+var preferredVoice = null;
+function pickVoice() {
+  voicePicked = true;
+  const ens = window.speechSynthesis.getVoices().filter((v) => /^en[-_]/i.test(v.lang) || v.lang.toLowerCase() === "en");
+  if (!ens.length) return;
+  if (preferredVoice) {
+    const hit = ens.find((v) => v.name === preferredVoice);
+    if (hit) {
+      voice = hit;
+      return;
+    }
+  }
+  const score = (v) => (/enhanced|premium|natural|neural|google/i.test(v.name) ? 2 : 0) + (v.lang.replace("_", "-").toLowerCase() === "en-us" ? 1 : 0);
+  voice = ens.reduce((best, v) => score(v) > score(best) ? v : best);
+}
+function setPreferredVoice(name) {
+  preferredVoice = (name == null ? void 0 : name.trim()) || null;
+  voice = null;
+  voicePicked = false;
+}
+if (typeof window !== "undefined" && "speechSynthesis" in window) {
+  const synth = window.speechSynthesis;
+  const refresh = () => {
+    voice = null;
+    voicePicked = false;
+  };
+  if (typeof synth.addEventListener === "function")
+    synth.addEventListener("voiceschanged", refresh);
+  else synth.onvoiceschanged = refresh;
+}
+var speakSeq = 0;
+function speak(text2, rate = 1) {
+  if (!("speechSynthesis" in window)) return;
+  try {
+    if (!voicePicked || !voice) pickVoice();
+    play(text2, rate, 0);
+  } catch (e) {
+    console.error("TTS \u5931\u8D25:", e);
+  }
+}
+function play(text2, rate, attempt) {
+  var _a;
+  const synth = window.speechSynthesis;
+  const gen = ++speakSeq;
+  if (synth.speaking || synth.pending) synth.cancel();
+  const u = new SpeechSynthesisUtterance(text2);
+  if (voice && attempt < 3) u.voice = voice;
+  u.lang = (_a = voice == null ? void 0 : voice.lang) != null ? _a : "en-US";
+  u.rate = rate;
+  let started = false;
+  u.onstart = () => {
+    started = true;
+  };
+  u.onerror = (e) => {
+    const err = e.error;
+    if (err !== "canceled" && err !== "interrupted") console.error("TTS utterance error:", err);
+  };
+  synth.speak(u);
+  synth.resume();
+  setTimeout(() => {
+    if (gen !== speakSeq || started || synth.speaking) return;
+    if (attempt < 3) {
+      console.warn(
+        "TTS \u672A\u542F\u52A8\uFF0C\u91CD\u8BD5\u7B2C " + (attempt + 2) + " \u6B21" + (attempt === 2 ? "\uFF08\u6539\u7528\u7CFB\u7EDF\u9ED8\u8BA4\u58F0\u97F3\uFF09" : "")
+      );
+      setTimeout(() => {
+        if (gen === speakSeq) play(text2, rate, attempt + 1);
+      }, 100);
+    } else {
+      console.error("TTS \u8FDE\u7CFB\u7EDF\u9ED8\u8BA4\u58F0\u97F3\u90FD\u672A\u542F\u52A8\uFF0CspeechSynthesis \u53EF\u80FD\u5DF2\u5047\u6B7B\uFF0C\u8BF7\u91CD\u542F Obsidian");
+    }
+  }, 500);
+}
+
 // src/main.ts
 var DEFAULT_DATA = {
   settings: {
@@ -18779,12 +18842,12 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
       chip.setAttr("title", "\u70B9\u51FB\u4FEE\u6539\u6240\u5C5E\u4E3B\u9898");
       chip.style.cursor = "pointer";
       chip.onClickEvent(() => {
-        const doc = this.plugin.words.get(word);
+        const doc = this.words.get(word);
         if (!doc) {
           new import_obsidian15.Notice("\u8BCD\u5E93\u7D22\u5F15\u91CC\u6CA1\u6709\u8BE5\u8BCD\uFF0C\u91CD\u8F7D\u63D2\u4EF6\u6216\u91CD\u5F00\u7B14\u8BB0\u540E\u518D\u8BD5");
           return;
         }
-        new ThemePickModal(this.app, this.plugin, doc, () => this.rerenderWordBar(bar, word, fm)).open();
+        new ThemePickModal(this.app, this, doc, () => this.rerenderWordBar(bar, word, fm)).open();
       });
     }
     bar.createEl("button", { text: "\u{1F5D1}", cls: "el-note-del", attr: { title: "\u5220\u9664\u8BCD\u6761" } }).onClickEvent(async () => {
@@ -18797,7 +18860,7 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
    *  编辑态进度未变的顶栏也不会重建——这里统一就地刷新，bar 元素不变，阅读/编辑两态共用） */
   rerenderWordBar(bar, word, fm) {
     var _a;
-    const fresh = this.plugin.words.get(word);
+    const fresh = this.words.get(word);
     bar.empty();
     this.renderWordBar(bar, word, { ...fm, themes: (_a = fresh == null ? void 0 : fresh.themes) != null ? _a : fm.themes });
   }
@@ -18986,6 +19049,16 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
         });
       })
     );
+    const vv = window.visualViewport;
+    if (vv) {
+      const syncKb = () => {
+        const kb = Math.max(0, window.innerHeight - vv.offsetTop - vv.height);
+        document.body.style.setProperty("--el-kb-h", `${Math.round(kb)}px`);
+      };
+      this.registerDomEvent(vv, "resize", syncKb);
+      this.registerDomEvent(vv, "scroll", syncKb);
+      syncKb();
+    }
     this.app.workspace.onLayoutReady(() => {
       void (async () => {
         try {
@@ -19009,9 +19082,9 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
   }
   async ensureFolders() {
     const root = this.db.settings.root;
-    for (const dir of [root, `${root}/words`, `${root}/backup`]) {
-      await mkdirp(this.app, dir);
-    }
+    await Promise.all(
+      [root, `${root}/words`, `${root}/backup`].map((dir) => mkdirp(this.app, dir))
+    );
   }
   /** 首次安装：内置 3 个默认主题（关键词 + 自带释义词包，离线即可直接学） */
   async seedDefaultThemes() {
@@ -19833,7 +19906,10 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
   /** 词级发音统一入口：全局静音直接短路；标准发音缓存优先，未命中先等预下载落地（通常
    *  ~0.4s，超时 1.5s）拿到真人音，真拿不到才 TTS 兜底（下载继续在后台，下次起该词标准音） */
   speakWord(word, rate) {
-    if (this.muted) return;
+    if (this.muted) {
+      this.hintMutedOnce();
+      return;
+    }
     const w = word.trim().toLowerCase();
     void (async () => {
       if (await this.audio.play(w)) return;
@@ -19841,6 +19917,23 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
         return;
       speak(w, rate != null ? rate : this.db.settings.ttsRate);
     })();
+  }
+  /** 全局静音下点发音：首次提示点不响的原因（静音是每次启动的默认态，新用户第一次点发音
+   *  听不到声音易以为坏了），提示过即永久置位不再打扰（settings 落盘） */
+  hintMutedOnce() {
+    if (this.db.settings.muteHintShown) return;
+    this.db.settings.muteHintShown = true;
+    this.store.touch();
+    new import_obsidian15.Notice("\u5F53\u524D\u5904\u4E8E\u5168\u5C40\u9759\u97F3\uFF0C\u70B9\u4E3B\u9875 \u{1F507} \u6309\u94AE\u6216\u547D\u4EE4\u300C\u5207\u6362\u5168\u5C40\u9759\u97F3\u300D\u53EF\u5F00\u542F\u53D1\u97F3", 8e3);
+  }
+  /** 例句朗读统一入口：与 speakWord 同一静音策略（静音短路 + 首次提示），默认走例句语速 */
+  speakSentence(text2, rate) {
+    var _a;
+    if (this.muted) {
+      this.hintMutedOnce();
+      return;
+    }
+    speak(text2, (_a = rate != null ? rate : this.db.settings.ttsSentenceRate) != null ? _a : this.db.settings.ttsRate);
   }
   /** 词卡弹窗统一入口：例句点已收录词时弹出对应词卡（弹窗类独立文件，避免与词卡组件循环 import） */
   openWordCard(doc) {
