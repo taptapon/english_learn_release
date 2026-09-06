@@ -39,6 +39,9 @@
   --el-btn-sm: 3px 12px;   /* 胶囊/工具条：AI 按钮 */
   --el-btn-xs: 1px 8px;    /* 表格行内/浮层内小按钮 */
 
+  /* 图标：行内操作图标（Lucide SVG，setIcon 渲染）标准尺寸，一套管线一种大小 */
+  --el-icon-md: 18px;
+
   /* 状态色与底色：跟随 Obsidian 主题，暗色自动适配 */
   --el-c-ok: var(--text-success);
   --el-c-warn: var(--color-yellow, #e0b060);
@@ -98,13 +101,19 @@ body:not(.is-mobile) .el-status:hover {
 }
 
 .el-mute svg {
-  width: 18px; /* 图标自身尺寸，豁免令牌 */
-  height: 18px;
+  width: var(--el-icon-md);
+  height: var(--el-icon-md);
   display: block; /* 消除 svg 基线空隙 */
 }
 
 body:not(.is-mobile) .el-mute:hover {
   color: var(--text-normal);
+}
+
+/* 主题面板头部：静音钮与同排文字按钮等高（clickable-icon 规格），撤销上面的裸图标中和 */
+.el-header .el-mute {
+  height: var(--input-height);
+  padding: 0 var(--el-space-3);
 }
 
 .el-totals {
@@ -507,10 +516,25 @@ body:not(.is-mobile) .el-note-del:hover {
   color: var(--el-c-bad);
 }
 
-.el-progress-right {
-  display: inline-flex;
+/* 进度信息拆两行：上行「轮次标签 · 词位计数」两端对齐，下行操作按钮左对齐（同行太挤） */
+.el-progress-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--el-space-2);
+  width: 100%;
+  max-width: 640px;
+  color: var(--text-muted);
+  font-size: var(--el-font-sm);
+}
+
+.el-progress-row {
+  display: flex;
   align-items: center;
-  gap: var(--el-space-4);
+  justify-content: space-between;
+}
+
+.el-progress-btns {
+  justify-content: space-between;
 }
 
 .el-exit {
@@ -523,6 +547,13 @@ body:not(.is-mobile) .el-note-del:hover {
   padding: 2px var(--el-space-3);
   line-height: 1;
   box-shadow: none;
+}
+
+/* 删除/退出已换 Lucide SVG（trash-2/x）：与静音钮同一管线、同一标准尺寸 */
+.el-exit svg {
+  width: var(--el-icon-md);
+  height: var(--el-icon-md);
+  display: block; /* 消除 svg 基线空隙 */
 }
 
 body:not(.is-mobile) .el-exit:hover {
@@ -623,8 +654,10 @@ body.is-mobile .el-learn {
 .el-card {
   width: 100%;
   max-width: 640px;
+  min-width: 0; /* flex item 防内容把卡撑破出界 */
+  overflow-x: hidden; /* 任何内容都不产生横向滚动（词头已自适应缩字，此处只兜底） */
   text-align: center;
-  padding: var(--el-space-7) 24px var(--el-space-6);
+  padding: var(--el-space-5) 24px var(--el-space-6);
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--el-radius-xl);
   background: var(--background-primary);
@@ -643,6 +676,9 @@ body.is-mobile .el-learn {
   font-size: var(--el-font-display);
   font-weight: 700;
   letter-spacing: 0.5px;
+  max-width: 100%;
+  /* 单行放不下由 use:fitText 缩字号；缩到下限仍超的极长词在此断词换行兜底 */
+  overflow-wrap: anywhere;
 }
 
 .el-word-link {
@@ -651,18 +687,6 @@ body.is-mobile .el-learn {
 
 body:not(.is-mobile) .el-word-link:hover {
   color: var(--interactive-accent);
-}
-
-/* 标题旁 ✏️ 编辑提示（整块标题可点；移动端无 hover title，靠它示意可编辑） */
-.el-word-edit {
-  font-size: var(--el-font-sm);
-  margin-left: var(--el-space-2);
-  opacity: 0.55;
-  line-height: 1;
-}
-
-body:not(.is-mobile) .el-word-link:hover .el-word-edit {
-  opacity: 1;
 }
 
 .el-phonetic {
@@ -676,7 +700,17 @@ body:not(.is-mobile) .el-word-link:hover .el-word-edit {
   font-size: var(--el-font-lg);
   background: none;
   border: none;
+  box-shadow: none;
+  height: auto;
+  line-height: 1;
+  vertical-align: middle; /* 与同行胶囊按钮按中点对齐，基线对齐会让大小 emoji 中线错位 */
   cursor: pointer;
+}
+
+/* 👤（标准音角标）在 emoji 字体里天然比 🔊 小一圈，放大补齐视觉高度 */
+.el-ico-human {
+  font-size: 1.3em;
+  line-height: 1;
 }
 
 /* 词卡上的 AI 操作按钮：图标 + 文字，便于区分动作 */
@@ -689,6 +723,7 @@ body:not(.is-mobile) .el-word-link:hover .el-word-edit {
   border-radius: var(--el-radius-full);
   color: var(--text-muted);
   line-height: 1.5;
+  vertical-align: middle; /* 与旁边发音钮同用中点对齐，两者中线才齐平 */
 }
 
 .el-ai-btn:disabled {
@@ -828,6 +863,13 @@ body:not(.is-mobile) .el-example-del:hover {
 
 .el-tok-new {
   border-bottom: 1px solid var(--el-c-good);
+}
+
+/* 例句中的学习词自身：强调色加粗（点读发音），与灰虚线的可收录/查卡词区分开 */
+.el-tok-self {
+  color: var(--interactive-accent);
+  font-weight: 600;
+  cursor: pointer;
 }
 
 /* 例句 >3 条时的展开/收起 */
@@ -1128,13 +1170,17 @@ body:not(.is-mobile) .el-spell-hint:hover {
 }
 
 /* 学习页词卡的排版靠 .el-card 的 text-align:center，弹窗里没有这层容器——在此复刻同一套
-   语义：主体内容（词/音标/按钮/义项/同反义）居中，例句/助记各自的 text-align:left 继续生效；
-   Obsidian 会把弹窗内按钮撑满整行，还原成自然宽度（卡片里按钮本就是行内排布） */
+   语义：主体内容（词/音标/按钮/义项/同反义）居中，例句/助记各自的 text-align:left 继续生效。
+   容器锁回 block：宿主把弹窗内容当 flex 纵排时，按钮会逐行变成 flex item 被 stretch 撑满
+   整行（width:auto 治不了 stretch），锁 block 让按钮回到行内自然排布 */
 .el-wordcard-modal .modal-content {
+  display: block;
   text-align: center;
+  overflow-x: hidden; /* 同 .el-card：内容不产生横向滚动 */
 }
 
-.el-wordcard-modal .modal-content button {
+/* .modal 前缀凑满 3 类，压过宿主旧渲染层同级的 width:100% 按钮规则 */
+.modal.el-wordcard-modal .modal-content button {
   width: auto;
 }
 
