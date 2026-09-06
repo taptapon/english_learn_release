@@ -190,6 +190,16 @@ function shuffle(arr) {
   }
   return a;
 }
+function sortFreshByFreq(words, frq) {
+  words.sort((a, b) => {
+    var _a, _b, _c, _d;
+    const fa = (_a = frq.get(a.word)) != null ? _a : Infinity;
+    const fb = (_b = frq.get(b.word)) != null ? _b : Infinity;
+    if (fa !== fb) return fa - fb;
+    if (fa !== Infinity) return 0;
+    return ((_c = b.added) != null ? _c : 0) - ((_d = a.added) != null ? _d : 0);
+  });
+}
 function isForm(token, word) {
   const t = token.toLowerCase();
   if (t === word) return true;
@@ -198,6 +208,63 @@ function isForm(token, word) {
     return t.startsWith(stem) && Math.abs(t.length - word.length) <= 3;
   }
   return false;
+}
+var IRREG_PAIRS_STR = "was be were be been be had have did do done do went go gone go made make said say told tell retold retell sold sell found find gave give given give took take taken take got get gotten get knew know known know thought think saw see seen see came come felt feel became become left leave meant mean kept keep began begin begun begin showed show shown show heard hear ran run brought bring wrote write written write sat sit stood stand understood understand withstood withstand lost lose paid pay met meet led lead spoke speak spoken speak spent spend grew grow grown grow won win bought buy sent send built build fell fall fallen fall drove drive driven drive broke break broken break rose rise arisen arise arose arise held hold upheld uphold withheld withhold beheld behold drew draw drawn draw shook shake shaken shake flew fly flown fly ate eat eaten eat drank drink drunk drink swam swim swum swim sang sing sung sing rang ring rung ring sprang spring sprung spring sank sink sunk sink wore wear worn wear swore swear sworn swear tore tear torn tear chose choose chosen choose froze freeze frozen freeze rode ride ridden ride forgot forget forgotten forget wove weave woven weave strove strive striven strive lay lie lain lie laid lay fled flee fed feed bled bleed dug dig struck strike hid hide hidden hide hung hang swung swing clung cling flung fling stung sting slid slide crept creep swept sweep wept weep knelt kneel slept sleep dealt deal dreamt dream sped speed bound bind wound wind ground grind sought seek fought fight caught catch taught teach bent bend lent lend burnt burn learnt learn better good best good worse bad worst bad more many most many less little least little further far farther far elder old eldest old";
+var IRREG_INFLECT = /* @__PURE__ */ new Map();
+{
+  const pairs = IRREG_PAIRS_STR.split(/\s+/);
+  for (let i = 0; i + 1 < pairs.length; i += 2) IRREG_INFLECT.set(pairs[i], pairs[i + 1]);
+}
+function lemmaCandidates(w) {
+  const s = w.toLowerCase();
+  const out = /* @__PURE__ */ new Set([s]);
+  const add = (t) => {
+    if (t.length >= 2) out.add(t);
+  };
+  const IRREG = {
+    mice: "mouse",
+    lice: "louse",
+    feet: "foot",
+    teeth: "tooth",
+    geese: "goose",
+    men: "man",
+    women: "woman",
+    children: "child",
+    people: "person",
+    oxen: "ox"
+  };
+  if (IRREG[s]) add(IRREG[s]);
+  const inflected = IRREG_INFLECT.get(s);
+  if (inflected) add(inflected);
+  if (s.endsWith("ies") && s.length > 4) add(s.slice(0, -3) + "y");
+  if (s.endsWith("es")) {
+    add(s.slice(0, -2));
+    add(s.slice(0, -1));
+  }
+  if (s.endsWith("s") && !s.endsWith("ss")) add(s.slice(0, -1));
+  if (s.endsWith("ing")) {
+    add(s.slice(0, -3));
+    add(s.slice(0, -3) + "e");
+    const b = s.slice(0, -3);
+    if (b.length > 3 && /(.)\1$/.test(b)) add(b.slice(0, -1));
+  }
+  if (s.endsWith("ed")) {
+    add(s.slice(0, -2));
+    add(s.slice(0, -1));
+    const b = s.slice(0, -2);
+    if (b.length > 3 && /(.)\1$/.test(b)) add(b.slice(0, -1));
+  }
+  return [...out];
+}
+var SHOW_MODAL_TAG = true;
+var modalTagSeq = 0;
+function tagModal(modalEl, name) {
+  if (!SHOW_MODAL_TAG) return;
+  modalEl.createEl("span", {
+    text: `${name}#${String(++modalTagSeq).padStart(2, "0")}`,
+    cls: "el-modal-tag",
+    attr: { "aria-hidden": "true" }
+  });
 }
 async function runPool(items, concurrency, fn) {
   let i = 0;
@@ -218,14 +285,14 @@ var import_obsidian2 = require("obsidian");
 
 // src/dict/starter.ts
 var import_obsidian = require("obsidian");
-var STARTER_DICT_PATH = "taptapon/englishlearn-dict@de518a7413da5076d3967edaf29c3e770f036c6a/starter.json";
+var STARTER_DICT_PATH = "taptapon/englishlearn-dict@1aa92b207acb517804a1061f6016cd4c10e32d26/starter.json";
 var STARTER_DICT_URLS = [
   `https://cdn.jsdelivr.net/gh/${STARTER_DICT_PATH}`,
   `https://fastly.jsdelivr.net/gh/${STARTER_DICT_PATH}`,
   `https://gcore.jsdelivr.net/gh/${STARTER_DICT_PATH}`
 ];
 var STARTER_DICT_URL = STARTER_DICT_URLS[0];
-var STARTER_VER = 4;
+var STARTER_VER = 7;
 function starterNeedsUpgrade(meta) {
   if (!meta) return true;
   if (meta.source && meta.source !== "starter") return false;
@@ -250,6 +317,8 @@ function convertStarterEntries(entries) {
     if ((_h = e.rel) == null ? void 0 : _h.length) entry.rel = e.rel.filter(([x]) => x);
     if (e.rem) entry.rem = e.rem;
     if (e.wf) entry.wf = e.wf;
+    if (typeof e.collins === "number" && e.collins > 0) entry.collins = e.collins;
+    if (typeof e.frq === "number" && e.frq > 0) entry.frq = e.frq;
     if ((_i = e.ex) == null ? void 0 : _i[0]) entry.ex = e.ex;
     shard[word] = entry;
     shards.set(letter, shard);
@@ -267,7 +336,7 @@ async function installStarterDict(app, dir) {
       }
       if (!starterNeedsUpgrade(meta)) return true;
     }
-    new import_obsidian.Notice(`English Learn\uFF1A\u4E0B\u8F7D\u57FA\u7840\u8BCD\u5178 v${STARTER_VER}\uFF08\u7EA6 7MB\uFF0C\u4EC5\u6B64\u4E00\u6B21\uFF09\u2026`);
+    new import_obsidian.Notice(`English Learn\uFF1A\u4E0B\u8F7D\u57FA\u7840\u8BCD\u5178 v${STARTER_VER}\uFF08\u7EA6 17MB\uFF0C\u4EC5\u6B64\u4E00\u6B21\uFF09\u2026`);
     let entries = null;
     let lastErr = null;
     for (const url of STARTER_DICT_URLS) {
@@ -285,7 +354,7 @@ async function installStarterDict(app, dir) {
         new import_obsidian.Notice("English Learn\uFF1A\u57FA\u7840\u8BCD\u5178\u5347\u7EA7\u5931\u8D25\uFF0C\u6682\u7528\u65E7\u7248\u6570\u636E");
         return true;
       }
-      new import_obsidian.Notice("English Learn\uFF1A\u57FA\u7840\u8BCD\u5178\u4E0B\u8F7D\u5931\u8D25\uFF08\u5DF2\u5C1D\u8BD5\u591A\u4E2A CDN \u955C\u50CF\uFF09\u3002\u53EF\u5728\u8BBE\u7F6E\u4E2D\u586B\u5199\u81EA\u6258\u7BA1\u7684 ECDICT \u5206\u7247\u5730\u5740");
+      new import_obsidian.Notice("English Learn\uFF1A\u57FA\u7840\u8BCD\u5178\u4E0B\u8F7D\u5931\u8D25\uFF08\u5DF2\u5C1D\u8BD5\u591A\u4E2A CDN \u955C\u50CF\uFF09\uFF0C\u8BF7\u68C0\u67E5\u7F51\u7EDC\u540E\u91CD\u542F Obsidian \u91CD\u8BD5");
       return false;
     }
     const shards = convertStarterEntries(entries);
@@ -303,7 +372,7 @@ async function installStarterDict(app, dir) {
     return true;
   } catch (e) {
     console.error("\u57FA\u7840\u8BCD\u5178\u4E0B\u8F7D\u5931\u8D25:", e);
-    new import_obsidian.Notice("English Learn\uFF1A\u57FA\u7840\u8BCD\u5178\u4E0B\u8F7D\u5931\u8D25\u3002\u53EF\u5728\u8BBE\u7F6E\u4E2D\u586B\u5199\u81EA\u6258\u7BA1\u7684 ECDICT \u5206\u7247\u5730\u5740");
+    new import_obsidian.Notice("English Learn\uFF1A\u57FA\u7840\u8BCD\u5178\u4E0B\u8F7D\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u7F51\u7EDC\u540E\u91CD\u8BD5");
     return false;
   }
 }
@@ -361,34 +430,91 @@ function parseWf(word, wf) {
   }
   return forms.length ? { forms } : null;
 }
-async function lookupOnline(word) {
-  var _a, _b, _c, _d, _e;
-  if (isPhrase(word)) return null;
-  try {
-    const res = await (0, import_obsidian2.requestUrl)({
-      url: `https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`
-    });
-    const data = JSON.parse(res.text);
-    const first = Array.isArray(data) ? data[0] : null;
-    if (!first) return null;
-    const phonetics = (_a = first.phonetics) != null ? _a : [];
-    const withText = phonetics.find((p) => p == null ? void 0 : p.text);
-    const withAudio = phonetics.find((p) => p == null ? void 0 : p.audio);
-    const def = (_e = (_d = (_c = (_b = first.meanings) == null ? void 0 : _b[0]) == null ? void 0 : _c.definitions) == null ? void 0 : _d[0]) == null ? void 0 : _e.definition;
-    return {
-      phonetic: withText == null ? void 0 : withText.text,
-      definition: typeof def === "string" ? def : void 0,
-      audioUrl: (withAudio == null ? void 0 : withAudio.audio) || void 0
-    };
-  } catch (e) {
-    return null;
+async function translateZh2En(q) {
+  var _a, _b, _c;
+  const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(q)}&langpair=zh%7Cen`;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await (0, import_obsidian2.requestUrl)({ url });
+      const text2 = res.text.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "");
+      const t = String((_c = (_b = (_a = JSON.parse(text2)) == null ? void 0 : _a.responseData) == null ? void 0 : _b.translatedText) != null ? _c : "").toLowerCase().replace(/\(.*?\)/g, "").replace(/mymemory warning.*/i, "");
+      const words = [...new Set(t.split(/[^\w'-]+/).filter((w) => /^[a-z][\w'-]*$/.test(w)))].slice(0, 3);
+      if (words.length) return words;
+    } catch (e) {
+    }
   }
+  return [];
+}
+function rankZhHits(hits, q) {
+  const exactOf = (e) => {
+    var _a;
+    return ((_a = e.translation) != null ? _a : "").split(/[；;\n]/).some((s) => s.replace(/^[a-z]+\.\s*/i, "").trim() === q);
+  };
+  const cmp = (a, b) => {
+    var _a, _b, _c, _d;
+    return ((_a = a.frq) != null ? _a : Infinity) - ((_b = b.frq) != null ? _b : Infinity) || ((_c = b.collins) != null ? _c : 0) - ((_d = a.collins) != null ? _d : 0) || a.word.length - b.word.length;
+  };
+  const exact = [];
+  const part = [];
+  for (const e of hits) (exactOf(e) ? exact : part).push(e);
+  return [...exact.sort(cmp), ...part.sort(cmp)];
+}
+var API1_MAX_FAILS = 3;
+var API1_COOLDOWN_MS = 6e4;
+var api1Fails = 0;
+var api1CooldownUntil = 0;
+async function lookupOnline(word) {
+  var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l;
+  if (isPhrase(word)) return null;
+  const out = {};
+  if (Date.now() >= api1CooldownUntil) {
+    try {
+      const res = await (0, import_obsidian2.requestUrl)({
+        url: `https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`
+      });
+      api1Fails = 0;
+      const first = ((_a = JSON.parse(res.text)) != null ? _a : [])[0];
+      const phonetics = (_b = first == null ? void 0 : first.phonetics) != null ? _b : [];
+      out.phonetic = (_c = phonetics.find((p) => p == null ? void 0 : p.text)) == null ? void 0 : _c.text;
+      out.audioUrl = ((_d = phonetics.find((p) => p == null ? void 0 : p.audio)) == null ? void 0 : _d.audio) || void 0;
+      const def = (_h = (_g = (_f = (_e = first == null ? void 0 : first.meanings) == null ? void 0 : _e[0]) == null ? void 0 : _f.definitions) == null ? void 0 : _g[0]) == null ? void 0 : _h.definition;
+      if (typeof def === "string") out.definition = def;
+    } catch (e) {
+      if ((e == null ? void 0 : e.status) !== 404 && ++api1Fails >= API1_MAX_FAILS) {
+        api1CooldownUntil = Date.now() + API1_COOLDOWN_MS;
+        api1Fails = 0;
+      }
+    }
+  }
+  if (!out.definition) {
+    try {
+      const res = await (0, import_obsidian2.requestUrl)({
+        url: `https://api.datamuse.com/words?sp=${encodeURIComponent(word)}&md=d&max=1`,
+        headers: { "User-Agent": HTTP_UA }
+      });
+      const hit = ((_i = JSON.parse(res.text)) != null ? _i : []).find((d) => d.word === word.toLowerCase());
+      const def = (_j = hit == null ? void 0 : hit.defs) == null ? void 0 : _j[0];
+      if (def) out.definition = def.split("	").pop().trim();
+    } catch (e) {
+    }
+  }
+  if (!out.definition) {
+    try {
+      const res = await (0, import_obsidian2.requestUrl)({
+        url: `https://api.mymemory.translated.net/get?q=${encodeURIComponent(word)}&langpair=en%7Czh`
+      });
+      const data = JSON.parse(res.text);
+      const zh = String((_l = (_k = data == null ? void 0 : data.responseData) == null ? void 0 : _k.translatedText) != null ? _l : "").replace(/mymemory warning.*/i, "").replace(/\(.*?\)/g, "").trim();
+      if (!(data == null ? void 0 : data.quotaFinished) && /[一-鿿]/.test(zh) && zh.toLowerCase() !== word.toLowerCase()) out.zh = zh;
+    } catch (e) {
+    }
+  }
+  return out.phonetic || out.definition || out.zh || out.audioUrl ? out : null;
 }
 var EcdictDict = class {
-  constructor(app, pluginDir, getBase) {
+  constructor(app, pluginDir) {
     this.app = app;
     this.pluginDir = pluginDir;
-    this.getBase = getBase;
     this.shards = /* @__PURE__ */ new Map();
     this.loading = /* @__PURE__ */ new Map();
     this.starterPromise = null;
@@ -406,14 +532,20 @@ var EcdictDict = class {
     const map = await this.loadShard(shard);
     return (_a = map[key]) != null ? _a : null;
   }
-  /** 预下载全部分片，返回是否全部成功 */
-  async downloadAll() {
-    let ok = true;
+  /** 中查英：中文串在本地词典释义里反查英文词。扫全部分片（完整 ECDICT 用户首扫要读盘，秒级），
+   *  rankZhHits 排序后截前 limit 条 */
+  async searchByZh(query, limit = 20) {
+    var _a;
+    const q = query.trim();
+    if (!q) return [];
+    const hits = [];
     for (const ch of SHARDS) {
-      const map = await this.loadShard(ch, true);
-      if (!Object.keys(map).length) ok = false;
+      const map = await this.loadShard(ch);
+      for (const key in map) {
+        if ((_a = map[key].translation) == null ? void 0 : _a.includes(q)) hits.push(map[key]);
+      }
     }
-    return ok;
+    return rankZhHits(hits, q).slice(0, limit);
   }
   /** 安装内置基础词典（单飞；失败后 60 秒冷却，避免批量查词时每词都重撞下载超时） */
   ensureStarter() {
@@ -436,6 +568,33 @@ var EcdictDict = class {
     } catch (e) {
       return null;
     }
+  }
+  /** 批量取词频序（BNC frq，越小越高频）：新词学习排序用。
+   *  只读已落地的分片，绝不触发词典下载——会话组装不能被 7MB 下载卡住；
+   *  词典未安装/分片缺失的词静默跳过，由调用方回退到收录时间排序 */
+  async freqRank(words) {
+    var _a;
+    const byShard = /* @__PURE__ */ new Map();
+    for (const w of words) {
+      if (!w || isPhrase(w)) continue;
+      const shard = /^[a-z]/.test(w) ? w[0] : "0";
+      const list = byShard.get(shard);
+      if (list) list.push(w);
+      else byShard.set(shard, [w]);
+    }
+    const out = /* @__PURE__ */ new Map();
+    for (const [shard, ws] of byShard) {
+      try {
+        if (!await this.app.vault.adapter.exists(`${this.dir}/${shard}.json`)) continue;
+        const map = await this.loadShard(shard);
+        for (const w of ws) {
+          const f = (_a = map[w]) == null ? void 0 : _a.frq;
+          if (f && f > 0) out.set(w, f);
+        }
+      } catch (e) {
+      }
+    }
+    return out;
   }
   /** 反向查词：找释义包含中文关键词的常见英文词（离线兜底，语义精度一般） */
   async reverseLookup(zh, limit = 3) {
@@ -469,29 +628,15 @@ var EcdictDict = class {
         let text2 = null;
         if (await this.app.vault.adapter.exists(file)) {
           text2 = await this.app.vault.adapter.read(file);
+        } else if (await this.ensureStarter()) {
+          if (await this.app.vault.adapter.exists(file)) text2 = await this.app.vault.adapter.read(file);
         } else {
-          const base = this.getBase();
-          if (base) {
-            try {
-              const res = await (0, import_obsidian2.requestUrl)({ url: `${base.replace(/\/+$/, "")}/${shard}.json` });
-              await mkdirp(this.app, this.dir);
-              await this.app.vault.adapter.write(file, res.text);
-              text2 = res.text;
-            } catch (e) {
-              console.error("\u81EA\u5B9A\u4E49\u5206\u7247\u4E0B\u8F7D\u5931\u8D25:", shard, e);
-            }
-          }
-          if (text2 === null && await this.ensureStarter() && await this.app.vault.adapter.exists(file)) {
-            text2 = await this.app.vault.adapter.read(file);
-          }
-          if (text2 === null) {
-            this.warn();
-            return {};
-          }
+          this.warn();
+          return {};
         }
-        return JSON.parse(text2);
+        return text2 === null ? {} : JSON.parse(text2);
       } catch (e) {
-        console.error("ECDICT \u5206\u7247\u52A0\u8F7D\u5931\u8D25:", shard, e);
+        console.error("\u8BCD\u5178\u5206\u7247\u52A0\u8F7D\u5931\u8D25:", shard, e);
         this.warn();
         return {};
       }
@@ -511,7 +656,7 @@ var EcdictDict = class {
   warn() {
     if (this.warned) return;
     this.warned = true;
-    new import_obsidian2.Notice("\u8BCD\u5178\u4E0D\u53EF\u7528\uFF1A\u5185\u7F6E\u4E0B\u8F7D\u5931\u8D25\u4E14\u672A\u914D\u7F6E\u81EA\u5B9A\u4E49\u5206\u7247\u5730\u5740\uFF08\u8BE6\u89C1 README\uFF09");
+    new import_obsidian2.Notice("\u8BCD\u5178\u4E0D\u53EF\u7528\uFF1A\u57FA\u7840\u8BCD\u5178\u4E0B\u8F7D\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u7F51\u7EDC\u540E\u91CD\u8BD5");
   }
 };
 
@@ -821,6 +966,9 @@ var DataStore = class {
 var asStr = (v) => typeof v === "string" ? v : v == null ? void 0 : String(v);
 var asArr = (v) => Array.isArray(v) ? v.map(String) : v == null ? [] : [String(v)];
 var EMPTY_WORDS = /* @__PURE__ */ new Set();
+function hasTranslation(t) {
+  return !!t && t.trim() !== "" && !t.includes("\u5F85\u8865\u5145");
+}
 function parseBody(content) {
   const translation = extractSection(content, "\u91CA\u4E49");
   const exText = extractSection(content, "\u4F8B\u53E5");
@@ -2323,8 +2471,28 @@ var HelpTip_default = HelpTip;
 // src/modals.ts
 var import_obsidian9 = require("obsidian");
 
-// src/llm.ts
+// src/expand/datamuse.ts
 var import_obsidian6 = require("obsidian");
+async function fetchWords(code, keyword, limit) {
+  const res = await (0, import_obsidian6.requestUrl)({
+    url: `https://api.datamuse.com/words?${code}=${encodeURIComponent(keyword)}&max=${limit}`,
+    headers: { "User-Agent": HTTP_UA }
+  });
+  const data = JSON.parse(res.text);
+  return data.map((d) => String(d.word)).filter((w) => /^[a-z][a-z'-]{2,}$/.test(w));
+}
+function fetchRelatedWords(keyword, limit = 20) {
+  return fetchWords("ml", keyword, limit);
+}
+function fetchSynonyms(keyword, limit = 5) {
+  return fetchWords("rel_syn", keyword, limit);
+}
+function fetchAntonyms(keyword, limit = 5) {
+  return fetchWords("rel_ant", keyword, limit);
+}
+
+// src/llm.ts
+var import_obsidian7 = require("obsidian");
 var LLM_OLLAMA_PRESET = { baseUrl: "http://localhost:11434/v1", apiKey: "ollama", model: "qwen2.5:3b" };
 var LLM_PRESETS = {
   ollama: LLM_OLLAMA_PRESET,
@@ -2365,7 +2533,7 @@ async function llmChat(cfg, messages, temperature = 0.3) {
   var _a, _b, _c;
   const headers = { "Content-Type": "application/json" };
   if (cfg.apiKey) headers.Authorization = `Bearer ${cfg.apiKey}`;
-  const res = await (0, import_obsidian6.requestUrl)({
+  const res = await (0, import_obsidian7.requestUrl)({
     url: `${cfg.baseUrl.replace(/\/+$/, "")}/chat/completions`,
     method: "POST",
     headers,
@@ -2662,7 +2830,7 @@ ${batch.map((w, i) => `${i + 1}. ${w}`).join("\n")}
     await runPool(chunk(missing, 5), 2, ask);
     const still = missing.filter((w) => !m.has(w.toLowerCase()));
     if (still.length) {
-      await runPool(still, 2, ask);
+      await runPool(still.map((w) => [w]), 2, ask);
     }
   }
   if (!m.size && firstErr) throw firstErr;
@@ -2722,6 +2890,32 @@ ${idx.map((i, j) => `${j + 1}. ${texts[i]}`).join("\n")}
   await runPool(chunk(idxs, 15), 2, translate);
   return out;
 }
+async function llmTranslateZhToEn(cfg, words) {
+  const out = new Array(words.length).fill("");
+  const translate = async (idx) => {
+    const out2 = await llmChat(
+      cfg,
+      [
+        { role: "system", content: "\u4F60\u662F\u4E2D\u8BD1\u82F1\u8BCD\u5178\u3002\u53EA\u8F93\u51FA JSON\u3002" },
+        {
+          role: "user",
+          content: `\u628A\u4E0B\u5217\u4E2D\u6587\u8BCD\u5404\u8BD1\u6210\u4E00\u4E2A\u6700\u5E38\u7528\u7684\u82F1\u6587\u5355\u8BCD\uFF08\u4F18\u5148\u5355\u4E2A\u5355\u8BCD\uFF0C\u5176\u6B21\u5E38\u89C1\u77ED\u8BED\uFF09\uFF1A
+${idx.map((i, j) => `${j + 1}. ${words[i]}`).join("\n")}
+\u53EA\u8F93\u51FA JSON \u6570\u7EC4\uFF1A["\u82F1\u65871","\u82F1\u65872",...]\uFF0C\u6570\u7EC4\u957F\u5EA6\u5FC5\u987B\u7B49\u4E8E ${idx.length}\u3002`
+        }
+      ],
+      0.2
+    );
+    const arr = parseJsonArray(out2);
+    idx.forEach((origIdx, j) => {
+      const t = arr[j];
+      if (typeof t === "string" && t.trim()) out[origIdx] = t.trim();
+    });
+  };
+  const idxs = words.map((_, i) => i).filter((i) => words[i].trim());
+  await runPool(chunk(idxs, 10), 2, translate);
+  return out;
+}
 
 // src/dict/frequent-words.ts
 var set = null;
@@ -2746,15 +2940,15 @@ function isFrequentForm(w) {
   if (w.endsWith("est")) c.push(w.slice(0, -3), w.slice(0, -3) + "e", w.slice(0, -4));
   return c.some((x) => set.has(x));
 }
-var NGSL = "a abandon ability able abortion about above abroad absence absolute absolutely abstract abuse academic accept acceptable access accident accommodation accompany accomplish accord account accurate accuse achieve achievement acknowledge acquire acquisition across act action active activity actor actual actually ad adapt add addition additional address adequate adjust adjustment administration admire admit adopt adult advance advantage adventure advertise advertisement advice advise adviser advocate affair affect afford afraid after afternoon again against age agency agenda agent aggressive ago agree agreement agricultural ahead aid aim air aircraft airline alarm album alcohol alive all allege allow ally almost alone along alongside already alright also alter alternative although altogether always amaze amendment among amount analysis analyst analyze ancient and anger angle angry animal announce announcement annual another answer anticipate anxiety anxious any anybody anymore anyone anything anyway anywhere apart apartment apologize apparent apparently appeal appear appearance application apply appoint appointment appreciate approach appropriate approval approve approximately architecture area argue argument arise arm army around arrange arrangement arrest arrival arrive art article artist as ashamed aside ask assess assessment asset assign assist assistance assistant associate association assume assumption assure at athlete atmosphere attach attachment attack attempt attend attendance attention attitude attract attraction attractive attribute audience aunt author automatically autumn available average avoid award aware awareness away awful baby back background bad badly bag balance ball ban band bank bar barely barrier base basic basically basis bath battle be beach bear beat beautiful beauty because become bed bedroom beer before begin behave behavior behind belief believe bell belong below belt bend beneath benefit beside besides bet between beyond bias bid big bike bill billion bin bind biological bird birth bit bite black blame bless blind block blood bloody blow blue board boat body bomb bond bone book boom boost boot border bore borrow boss both bother bottle bottom boundary bowl box boy brain branch brand bread break breakfast breast breath breathe breed bridge brief briefly bright brilliant bring broad broadcast brother brown brush budget build bunch burden burn burst bury bus business busy but button buy buyer by cable cake calculate call calm camera camp campaign can cancel cancer cap capability capable capacity capital capture car carbon card care career careful carefully carpet carry case cash cast castle cat catalog catch category cause celebrate celebration cell cent center central century ceremony certain certainly chain chair chairman challenge chamber champion championship chance change channel chapter character characteristic characterize charge charity charm chart chase chat cheap check cheek cheese chemical chest chicken chief child childhood chip chocolate choice choose church cigarette circle circumstance cite citizen city civil civilian claim class classic classical clause clean clear clearly climate climb clinical clock close closely clothes clothing cloud club cluster coach coal coast coat code coffee coin cold collapse colleague collect collection college color column combination combine come comedy comfort comfortable command comment commercial commission commit commitment committee common communicate communication community company compare comparison compensation compete competition competitive competitor complain complaint complete completely complex complexity complicate component compose composition compound comprehensive comprise compromise compute computer concentrate concentration concept concern concert conclude conclusion concrete condition conduct confidence confident confirm conflict confuse confusion connect connection consequence consequently conservative consider considerable consideration consist consistent constant constantly constitute constraint construct construction consult consultant consume consumer contact contain contemporary content contest context continue continuous contract contrast contribute contribution control controversial convention conventional conversation convert convince cook cool cooperation cope copy core corner corporate corporation correct correspond cost cough could council counsel count counter country county couple course court cousin cover coverage cow crack craft crash crazy cream create creation creative creature credit crew crime criminal crisis criterion critic critical criticism criticize crop cross crowd crucial cry cultural culture cup curious currency current currently curtain curve custom customer cut cycle dad daily damage damn dance danger dangerous dare dark darkness data database date daughter day dead deal dealer dear death debate debt decade decide decision declare decline decrease dedicate deep deeply defeat defend defense deficit define definitely definition degree delay delight deliver delivery demand democracy democratic demonstrate demonstration density deny department depend dependent deposit depress depression depth derive describe description desert deserve design designer desire desk despite destroy destruction detail detect determination determine develop development device devote dialog die diet differ difference different differently difficult difficulty dig digital dimension dinner direct direction directly director dirty disagree disappear disappoint disaster discipline discount discover discovery discuss discussion disease dish disk dismiss disorder display dispute distance distant distinct distinction distinguish distribute district disturb diversity divide division divorce do doctor document dog dollar domestic dominate door double doubt down dozen draft drag drama dramatic dramatically draw dream dress drink drive driver drop drug dry due during dust duty each ear early earn earth ease easily east eastern easy eat economic economy edge edit edition editor educate education educational effect effective effectively efficiency efficient effort egg either elderly elect election electric electricity electronic element eliminate else elsewhere embarrass embrace emerge emergency emotion emotional emphasis emphasize empire employ employee employer employment empty enable encounter encourage end enemy energy engage engine engineer enhance enjoy enormous enough ensure enter enterprise entertain entertainment entire entirely entitle entrance entry envelope environment environmental episode equal equally equation equipment equivalent era error escape especially essay essential establish establishment estate estimate ethnic evaluate evaluation even evening event eventually ever every everybody everyday everyone everything everywhere evidence evil evolution evolve exact exactly exam examination examine example exceed excellent except exception excess exchange excite excitement exclude excuse executive exercise exhaust exhibit exhibition exist existence expand expansion expect expectation expenditure expense expensive experience experiment experimental expert explain explanation explore export expose exposure express expression extend extension extensive extent external extra extract extraordinary extreme extremely eye face facility fact factor factory fade fail failure fair fairly faith faithfully fall false familiar family famous fan fancy fantastic far farm farmer fascinate fashion fast fat father fault favor favorite fear feature federal fee feed feel fellow female fence festival few fiction field fifteen fifty fight figure file fill film filter final finally finance financial find fine finger finish fire firm firmly first firstly fish fit fix flag flash flat flexible flight float flood floor flow flower fly focus fold folk follow food fool foot football for force forecast foreign forest forever forget form formal format formation former formula forth fortunate fortune forward found foundation fragment frame framework free freedom freeze frequency frequent frequently fresh friend friendly friendship frighten from front fruit fuel fulfill full fully fun function functional fund fundamental funny furniture further furthermore future gain gallery game gap garden gas gate gather gay gaze gear gender gene general generally generate generation genetic gentle gentleman gently genuine gesture get giant gift girl give glad glance glass global go goal god gold golden golf good govern government governor grab grade gradually graduate grain grammar grand grandmother grant grass grateful gray great greatly green greet grin ground group grow growth guarantee guard guess guest guide guideline guilty guitar gun guy habit hair half hall hand handle hang happen happiness happy harbor hard hardly harm hat hate have he head health healthy hear heart heat heavily heavy height hell hello help helpful hence her here hero herself hesitate hi hide high highlight highly hill him himself hint hire his historian historic historical history hit hold holder hole holiday home honest honor hook hope hopefully horrible horse hospital host hot hotel hour house household how however huge human humor hunger hunt hurry hurt husband hypothesis i ice idea ideal identify identity if ignore ill illegal illness illustrate illustration image imagination imagine immediate immediately immigrant implement implementation implication imply import importance important impose impossible impress impression impressive improve improvement in incentive inch incident include income incorporate increase increasingly indeed independence independent index indicate indication individual industrial industry infant infection inflation influence inform information initial initially initiative injure injury inner innocent innovation input inquiry inside insight insist inspire install instance instead institution institutional instruction instrument insurance insure integrate intellectual intelligence intend intense intention interaction interest interior internal international interpret interpretation intervention interview into introduce introduction invent invest investigate investigation investment investor invitation invite involve involvement iron island isolate issue it item its itself jacket jail job join joint joke journal journalist journey joy judge judgment jump jury just justice justify keen keep key kick kid kill kind king kiss kitchen knee knife knock know knowledge label labor laboratory lack lady lake land landscape language large largely last late latter laugh laughter launch law lawyer lay layer lazy lead leader leadership league lean leap learn least leather leave lecture left leg legal legislation lend length less lesson let letter level liability liberal library license lie life lift light like likely limit limitation line link lip liquid list listen listener literally literary literature little live load loan local locate location lock log logic long look loose lose loss lot loud love lovely lover low luck lucky lunch luxury machine mad magazine magic mail main mainly maintain maintenance major majority make maker male man manage management manager manner manufacture manufacturer many map march margin mark market marriage marry mass massive master match mate material mathematics matter mature maximum may maybe mayor me meal mean meanwhile measure measurement meat mechanism medical medicine medium meet member membership memory mental mention menu mere merely mess message metal meter method middle might mile military milk mind mine minimum minister minor minority minute mirror miss mission mistake mix mixture mobile mode model moderate modern modify module mom moment money monitor month monthly mood moon moral more moreover morning mortgage most mostly mother motion motivate motivation motor mount mountain mouse mouth move movement movie much multiple murder muscle museum music musical musician must mutual my myself mystery name narrative narrow nation national native natural naturally nature near nearby nearly necessarily necessary neck need negative neglect negotiate negotiation neighbor neighborhood neither nerve nervous net network never nevertheless new newly news newspaper next nice night no nobody noise none nor normal normally north northern nose not note nothing notice notion noun novel now nowadays nowhere nuclear number numerous nurse object objective obligation observation observe obvious obviously occasion occasionally occupy occur ocean odd of off offense offer office officer official often oil okay old on once one online only onto open opera operate operation operator opinion opponent opportunity oppose opposite opposition option or orange order ordinary organic organization organize origin original originally other otherwise ought our ourselves out outcome outline output outside over overall overcome overseas owe own owner ownership pace pack package page pain paint pair pale panel panic paper paragraph parallel parent park part participant participate participation particular particularly partly partner partnership party pass passage passenger passion past path patient pattern pause pay payment peace peak peer pen penalty pension people per perceive percent percentage perception perfect perfectly perform performance perhaps period permanent permission permit person personal personality personally personnel perspective persuade phase phenomenon philosophy phone photo photograph phrase physical piano pick picture piece pig pile pilot pink pipe pitch place plain plan plane planet plant plastic plate platform play player pleasant please pleasure plenty plot plus pocket poem poet poetry point police policy political politician politics poll pollution pool poor pop popular population port portion portrait pose position positive possess possession possibility possible possibly post pot potato potential potentially pound pour poverty power powerful practical practice praise pray precise precisely predict prefer preference pregnancy pregnant premise preparation prepare presence present presentation preserve president presidential press pressure presumably pretend pretty prevent previous previously price pride primarily primary prime principal principle print printer prior priority prison prisoner private privilege prize pro probability probably problem procedure proceed process produce producer product production profession professional professor profile profit program progress project promise promote promotion prompt proof proper properly property proportion proposal propose prospect protect protection protein protest proud prove provide province provision psychological pub public publication publisher pull pump pupil purchase pure purpose pursue push put qualification qualify quality quantity quarter question quick quickly quiet quietly quite quote race racial radical radio rail rain raise random range rank rapid rapidly rare rarely rat rate rather ratio raw reach react reaction read reader ready real reality realize really rear reason reasonable reasonably recall receive recent recently reckon recognition recognize recommend recommendation record recover recovery recruit red reduce reduction refer reference reflect reflection reform refugee refuse regard regardless region regional register registration regret regular regularly regulate regulation reject relate relation relationship relative relatively relax release relevant reliable relief religion religious rely remain remark remarkable remember remind remote remove rent repair repeat replace reply report reporter represent representation representative reputation request require requirement rescue research researcher reserve resident resign resist resistance resolution resolve resort resource respect respectively respond response responsibility responsible rest restaurant restore restrict restriction result retail retain retire retirement return reveal revenue reverse review revise revolution reward rice rich rid ride right ring rise risk rival river road rock role roll romantic roof room root rough roughly round route routine row royal ruin rule run rural rush sad safe safety sail sake salary sale salt same sample sanction sand satisfaction satisfy save say scale scan scare scene schedule scheme scholar school science scientific scientist scope score scream screen sea seal search season seat second secondary secondly secret secretary section sector secure security see seed seek seem segment select selection self sell send senior sense sensitive sentence separate sequence series serious seriously servant serve server service session set settle settlement several severe sex sexual shade shadow shake shall shape share shareholder sharp she sheep sheet shelf shell shelter shift shine ship shirt shock shoe shoot shop shore short shot should shoulder shout show shower shut sick side sigh sight sign signal significance significant significantly silence silent silly silver similar similarly simple simply since sing singer single sink sir sister sit site situate situation size ski skill skin skirt sky slave sleep slice slide slight slightly slip slope slow slowly small smart smell smile smoke smooth snap snow so social society soft software soil soldier solid solution solve some somebody somehow someone something sometimes somewhat somewhere son song soon sorry sort soul sound source south southern space spare speak speaker special specialist specialize species specific specifically specify speech speed spell spend spin spirit split sponsor sport spot spread spring square stability stable staff stage stain stair stake stamp stand standard star stare start state statement station statistic status stay steady steal steel stem step stick still stimulate stir stock stomach stone stop storage store storm story straight strain strange stranger strategy stream street strength strengthen stress stretch strict strike string strip stroke strong strongly structural structure struggle student studio study stuff stupid style subject submit subsequent subsequently substance substantial substitute succeed success successful successfully such sudden suddenly suffer sufficient sugar suggest suggestion suit suitable sum summarize summary summer sun supplement supplier supply support supporter suppose sure surely surface surgery surprise surprisingly surround survey survival survive suspect suspend sustain swear sweep sweet swim swing switch symbol symptom system table tackle tail take tale talent talk tall tank tap tape target task taste tax taxi tea teach teacher team tear technical technique technology teenager telephone television tell temperature temporary tend tendency tender tennis tension tent term terrible territory terrorist test text than thank that the theater their them theme themselves then theoretical theory therapy there therefore these they thick thin thing think thirst this those though threat threaten throat through throughout throw thus ticket tie tight till time tiny tip tire tissue title to today together tomorrow tone tongue tonight too tool tooth top topic total totally touch tough tour tourism tourist toward tower town toy trace track trade tradition traditional traffic trail train transfer transform transition translate transport transportation trap travel treat treatment tree trend trial trick trigger trip troop trouble truck true truly trust truth try tube tune turn twice twin twist type typical typically ugly ultimately unable uncertainty uncle unclear under undergo underlie understand undertake unemployment unfortunately uniform union unique unit unite universal universe university unknown unless unlike unlikely until unusual up update upon upper upset urban urge us use useful user usual usually valley valuable value van variable variation variety various vary vast vegetable vehicle venture verb version versus very vessel veteran via vice victim victory video view village violence violent virtually virus visible vision visit visitor visual vital voice volume voluntary volunteer vote voter wage wait wake walk wall wander want war warm warn wash waste watch water wave way we weak weakness wealth wealthy weapon wear weather web wed week weekend weekly weigh weight weird welcome welfare well west western wet what whatever wheel when whenever where whereas wherever whether which while whilst whisper white who whole whom whose why wide widely wife wild will win wind window wine wing winner winter wipe wire wise wish with withdraw within without witness woman wonder wonderful wood wooden word work worker world worry worth would wound wrap write writer wrong yard year yellow yes yesterday yet yield you young your yourself youth zero zone";
+var NGSL = "a an abandon ability able abortion about above abroad absence absolute absolutely abstract abuse academic accept acceptable access accident accommodation accompany accomplish accord account accurate accuse achieve achievement acknowledge acquire acquisition across act action active activity actor actual actually ad adapt add addition additional address adequate adjust adjustment administration admire admit adopt adult advance advantage adventure advertise advertisement advice advise adviser advocate affair affect afford afraid after afternoon again against age agency agenda agent aggressive ago agree agreement agricultural ahead aid aim air aircraft airline alarm album alcohol alive all allege allow ally almost alone along alongside already alright also alter alternative although altogether always amaze amendment among amount analysis analyst analyze ancient and anger angle angry animal announce announcement annual another answer anticipate anxiety anxious any anybody anymore anyone anything anyway anywhere apart apartment apologize apparent apparently appeal appear appearance application apply appoint appointment appreciate approach appropriate approval approve approximately architecture area argue argument arise arm army around arrange arrangement arrest arrival arrive art article artist as ashamed aside ask assess assessment asset assign assist assistance assistant associate association assume assumption assure at athlete atmosphere attach attachment attack attempt attend attendance attention attitude attract attraction attractive attribute audience aunt author automatically autumn available average avoid award aware awareness away awful baby back background bad badly bag balance ball ban band bank bar barely barrier base basic basically basis bath battle be beach bear beat beautiful beauty because become bed bedroom beer before begin behave behavior behind belief believe bell belong below belt bend beneath benefit beside besides bet between beyond bias bid big bike bill billion bin bind biological bird birth bit bite black blame bless blind block blood bloody blow blue board boat body bomb bond bone book boom boost boot border bore borrow boss both bother bottle bottom boundary bowl box boy brain branch brand bread break breakfast breast breath breathe breed bridge brief briefly bright brilliant bring broad broadcast brother brown brush budget build bunch burden burn burst bury bus business busy but button buy buyer by cable cake calculate call calm camera camp campaign can cancel cancer cap capability capable capacity capital capture car carbon card care career careful carefully carpet carry case cash cast castle cat catalog catch category cause celebrate celebration cell cent center central century ceremony certain certainly chain chair chairman challenge chamber champion championship chance change channel chapter character characteristic characterize charge charity charm chart chase chat cheap check cheek cheese chemical chest chicken chief child childhood chip chocolate choice choose church cigarette circle circumstance cite citizen city civil civilian claim class classic classical clause clean clear clearly climate climb clinical clock close closely clothes clothing cloud club cluster coach coal coast coat code coffee coin cold collapse colleague collect collection college color column combination combine come comedy comfort comfortable command comment commercial commission commit commitment committee common communicate communication community company compare comparison compensation compete competition competitive competitor complain complaint complete completely complex complexity complicate component compose composition compound comprehensive comprise compromise compute computer concentrate concentration concept concern concert conclude conclusion concrete condition conduct confidence confident confirm conflict confuse confusion connect connection consequence consequently conservative consider considerable consideration consist consistent constant constantly constitute constraint construct construction consult consultant consume consumer contact contain contemporary content contest context continue continuous contract contrast contribute contribution control controversial convention conventional conversation convert convince cook cool cooperation cope copy core corner corporate corporation correct correspond cost cough could council counsel count counter country county couple course court cousin cover coverage cow crack craft crash crazy cream create creation creative creature credit crew crime criminal crisis criterion critic critical criticism criticize crop cross crowd crucial cry cultural culture cup curious currency current currently curtain curve custom customer cut cycle dad daily damage damn dance danger dangerous dare dark darkness data database date daughter day dead deal dealer dear death debate debt decade decide decision declare decline decrease dedicate deep deeply defeat defend defense deficit define definitely definition degree delay delight deliver delivery demand democracy democratic demonstrate demonstration density deny department depend dependent deposit depress depression depth derive describe description desert deserve design designer desire desk despite destroy destruction detail detect determination determine develop development device devote dialog die diet differ difference different differently difficult difficulty dig digital dimension dinner direct direction directly director dirty disagree disappear disappoint disaster discipline discount discover discovery discuss discussion disease dish disk dismiss disorder display dispute distance distant distinct distinction distinguish distribute district disturb diversity divide division divorce do doctor document dog dollar domestic dominate door double doubt down dozen draft drag drama dramatic dramatically draw dream dress drink drive driver drop drug dry due during dust duty each ear early earn earth ease easily east eastern easy eat economic economy edge edit edition editor educate education educational effect effective effectively efficiency efficient effort egg either elderly elect election electric electricity electronic element eliminate else elsewhere embarrass embrace emerge emergency emotion emotional emphasis emphasize empire employ employee employer employment empty enable encounter encourage end enemy energy engage engine engineer enhance enjoy enormous enough ensure enter enterprise entertain entertainment entire entirely entitle entrance entry envelope environment environmental episode equal equally equation equipment equivalent era error escape especially essay essential establish establishment estate estimate ethnic evaluate evaluation even evening event eventually ever every everybody everyday everyone everything everywhere evidence evil evolution evolve exact exactly exam examination examine example exceed excellent except exception excess exchange excite excitement exclude excuse executive exercise exhaust exhibit exhibition exist existence expand expansion expect expectation expenditure expense expensive experience experiment experimental expert explain explanation explore export expose exposure express expression extend extension extensive extent external extra extract extraordinary extreme extremely eye face facility fact factor factory fade fail failure fair fairly faith faithfully fall false familiar family famous fan fancy fantastic far farm farmer fascinate fashion fast fat father fault favor favorite fear feature federal fee feed feel fellow female fence festival few fiction field fifteen fifty fight figure file fill film filter final finally finance financial find fine finger finish fire firm firmly first firstly fish fit fix flag flash flat flexible flight float flood floor flow flower fly focus fold folk follow food fool foot football for force forecast foreign forest forever forget form formal format formation former formula forth fortunate fortune forward found foundation fragment frame framework free freedom freeze frequency frequent frequently fresh friend friendly friendship frighten from front fruit fuel fulfill full fully fun function functional fund fundamental funny furniture further furthermore future gain gallery game gap garden gas gate gather gay gaze gear gender gene general generally generate generation genetic gentle gentleman gently genuine gesture get giant gift girl give glad glance glass global go goal god gold golden golf good govern government governor grab grade gradually graduate grain grammar grand grandmother grant grass grateful gray great greatly green greet grin ground group grow growth guarantee guard guess guest guide guideline guilty guitar gun guy habit hair half hall hand handle hang happen happiness happy harbor hard hardly harm hat hate have he head health healthy hear heart heat heavily heavy height hell hello help helpful hence her hers here hero herself hesitate hi hide high highlight highly hill him himself hint hire his historian historic historical history hit hold holder hole holiday home honest honor hook hope hopefully horrible horse hospital host hot hotel hour house household how however huge human humor hunger hunt hurry hurt husband hypothesis i ice idea ideal identify identity if ignore ill illegal illness illustrate illustration image imagination imagine immediate immediately immigrant implement implementation implication imply import importance important impose impossible impress impression impressive improve improvement in incentive inch incident include income incorporate increase increasingly indeed independence independent index indicate indication individual industrial industry infant infection inflation influence inform information initial initially initiative injure injury inner innocent innovation input inquiry inside insight insist inspire install instance instead institution institutional instruction instrument insurance insure integrate intellectual intelligence intend intense intention interaction interest interior internal international interpret interpretation intervention interview into introduce introduction invent invest investigate investigation investment investor invitation invite involve involvement iron island isolate issue it item its itself jacket jail job join joint joke journal journalist journey joy judge judgment jump jury just justice justify keen keep key kick kid kill kind king kiss kitchen knee knife knock know knowledge label labor laboratory lack lady lake land landscape language large largely last late latter laugh laughter launch law lawyer lay layer lazy lead leader leadership league lean leap learn least leather leave lecture left leg legal legislation lend length less lesson let letter level liability liberal library license lie life lift light like likely limit limitation line link lip liquid list listen listener literally literary literature little live load loan local locate location lock log logic long look loose lose loss lot loud love lovely lover low luck lucky lunch luxury machine mad magazine magic mail main mainly maintain maintenance major majority make maker male man manage management manager manner manufacture manufacturer many map march margin mark market marriage marry mass massive master match mate material mathematics matter mature maximum may maybe mayor me meal mean meanwhile measure measurement meat mechanism medical medicine medium meet member membership memory mental mention menu mere merely mess message metal meter method middle might mile military milk mind mine minimum minister minor minority minute mirror miss mission mistake mix mixture mobile mode model moderate modern modify module mom moment money monitor month monthly mood moon moral more moreover morning mortgage most mostly mother motion motivate motivation motor mount mountain mouse mouth move movement movie much multiple murder muscle museum music musical musician must mutual my myself mystery name narrative narrow nation national native natural naturally nature near nearby nearly necessarily necessary neck need negative neglect negotiate negotiation neighbor neighborhood neither nerve nervous net network never nevertheless new newly news newspaper next nice night no nobody noise none nor normal normally north northern nose not note nothing notice notion noun novel now nowadays nowhere nuclear number numerous nurse object objective obligation observation observe obvious obviously occasion occasionally occupy occur ocean odd of off offense offer office officer official often oil okay old on once one online only onto open opera operate operation operator opinion opponent opportunity oppose opposite opposition option or orange order ordinary organic organization organize origin original originally other otherwise ought our ours ourselves out outcome outline output outside over overall overcome overseas owe own owner ownership pace pack package page pain paint pair pale panel panic paper paragraph parallel parent park part participant participate participation particular particularly partly partner partnership party pass passage passenger passion past path patient pattern pause pay payment peace peak peer pen penalty pension people per perceive percent percentage perception perfect perfectly perform performance perhaps period permanent permission permit person personal personality personally personnel perspective persuade phase phenomenon philosophy phone photo photograph phrase physical piano pick picture piece pig pile pilot pink pipe pitch place plain plan plane planet plant plastic plate platform play player pleasant please pleasure plenty plot plus pocket poem poet poetry point police policy political politician politics poll pollution pool poor pop popular population port portion portrait pose position positive possess possession possibility possible possibly post pot potato potential potentially pound pour poverty power powerful practical practice praise pray precise precisely predict prefer preference pregnancy pregnant premise preparation prepare presence present presentation preserve president presidential press pressure presumably pretend pretty prevent previous previously price pride primarily primary prime principal principle print printer prior priority prison prisoner private privilege prize pro probability probably problem procedure proceed process produce producer product production profession professional professor profile profit program progress project promise promote promotion prompt proof proper properly property proportion proposal propose prospect protect protection protein protest proud prove provide province provision psychological pub public publication publisher pull pump pupil purchase pure purpose pursue push put qualification qualify quality quantity quarter question quick quickly quiet quietly quite quote race racial radical radio rail rain raise random range rank rapid rapidly rare rarely rat rate rather ratio raw reach react reaction read reader ready real reality realize really rear reason reasonable reasonably recall receive recent recently reckon recognition recognize recommend recommendation record recover recovery recruit red reduce reduction refer reference reflect reflection reform refugee refuse regard regardless region regional register registration regret regular regularly regulate regulation reject relate relation relationship relative relatively relax release relevant reliable relief religion religious rely remain remark remarkable remember remind remote remove rent repair repeat replace reply report reporter represent representation representative reputation request require requirement rescue research researcher reserve resident resign resist resistance resolution resolve resort resource respect respectively respond response responsibility responsible rest restaurant restore restrict restriction result retail retain retire retirement return reveal revenue reverse review revise revolution reward rice rich rid ride right ring rise risk rival river road rock role roll romantic roof room root rough roughly round route routine row royal ruin rule run rural rush sad safe safety sail sake salary sale salt same sample sanction sand satisfaction satisfy save say scale scan scare scene schedule scheme scholar school science scientific scientist scope score scream screen sea seal search season seat second secondary secondly secret secretary section sector secure security see seed seek seem segment select selection self sell send senior sense sensitive sentence separate sequence series serious seriously servant serve server service session set settle settlement several severe sex sexual shade shadow shake shall shape share shareholder sharp she sheep sheet shelf shell shelter shift shine ship shirt shock shoe shoot shop shore short shot should shoulder shout show shower shut sick side sigh sight sign signal significance significant significantly silence silent silly silver similar similarly simple simply since sing singer single sink sir sister sit site situate situation size ski skill skin skirt sky slave sleep slice slide slight slightly slip slope slow slowly small smart smell smile smoke smooth snap snow so social society soft software soil soldier solid solution solve some somebody somehow someone something sometimes somewhat somewhere son song soon sorry sort soul sound source south southern space spare speak speaker special specialist specialize species specific specifically specify speech speed spell spend spin spirit split sponsor sport spot spread spring square stability stable staff stage stain stair stake stamp stand standard star stare start state statement station statistic status stay steady steal steel stem step stick still stimulate stir stock stomach stone stop storage store storm story straight strain strange stranger strategy stream street strength strengthen stress stretch strict strike string strip stroke strong strongly structural structure struggle student studio study stuff stupid style subject submit subsequent subsequently substance substantial substitute succeed success successful successfully such sudden suddenly suffer sufficient sugar suggest suggestion suit suitable sum summarize summary summer sun supplement supplier supply support supporter suppose sure surely surface surgery surprise surprisingly surround survey survival survive suspect suspend sustain swear sweep sweet swim swing switch symbol symptom system table tackle tail take tale talent talk tall tank tap tape target task taste tax taxi tea teach teacher team tear technical technique technology teenager telephone television tell temperature temporary tend tendency tender tennis tension tent term terrible territory terrorist test text than thank that the theater their them theme themselves then theoretical theory therapy there therefore these they thick thin thing think thirst this those though threat threaten throat through throughout throw thus ticket tie tight till time tiny tip tire tissue title to today together tomorrow tone tongue tonight too tool tooth top topic total totally touch tough tour tourism tourist toward tower town toy trace track trade tradition traditional traffic trail train transfer transform transition translate transport transportation trap travel treat treatment tree trend trial trick trigger trip troop trouble truck true truly trust truth try tube tune turn twice two twin twist type typical typically ugly ultimately unable uncertainty uncle unclear under undergo underlie understand undertake unemployment unfortunately uniform union unique unit unite universal universe university unknown unless unlike unlikely until unusual up update upon upper upset urban urge us use useful user usual usually valley valuable value van variable variation variety various vary vast vegetable vehicle venture verb version versus very vessel veteran via vice victim victory video view village violence violent virtually virus visible vision visit visitor visual vital voice volume voluntary volunteer vote voter wage wait wake walk wall wander want war warm warn wash waste watch water wave way we weak weakness wealth wealthy weapon wear weather web wed week weekend weekly weigh weight weird welcome welfare well west western wet what whatever wheel when whenever where whereas wherever whether which while whilst whisper white who whole whom whose why wide widely wife wild will win wind window wine wing winner winter wipe wire wise wish with withdraw within without witness woman wonder wonderful wood wooden word work worker world worry worth would wound wrap write writer wrong yard year yellow yes yesterday yet yield you young your yours yourself youth zero zone";
 
 // src/expand/fetcher.ts
-var import_obsidian7 = require("obsidian");
+var import_obsidian8 = require("obsidian");
 async function fetchWikiArticles(keyword, limit = 5, lang) {
   var _a, _b;
   const lg = lang != null ? lang : isZh(keyword) ? "zh" : "en";
   const url = `https://${lg}.wikipedia.org/w/api.php?action=query&format=json&prop=extracts&explaintext=1&exlimit=${limit}&redirects=1&generator=search&gsrsearch=${encodeURIComponent(keyword)}&gsrlimit=${limit}&origin=*`;
-  const res = await (0, import_obsidian7.requestUrl)({
+  const res = await (0, import_obsidian8.requestUrl)({
     url,
     headers: { "User-Agent": HTTP_UA }
   });
@@ -2766,7 +2960,7 @@ async function fetchArticleFromUrl(url) {
   var _a, _b, _c, _d;
   const u = url.trim();
   if (!/^https?:\/\//i.test(u)) throw new Error("\u8BF7\u8F93\u5165\u4EE5 http(s):// \u5F00\u5934\u7684\u6587\u7AE0\u94FE\u63A5");
-  const res = await (0, import_obsidian7.requestUrl)({ url: u, headers: { "User-Agent": HTTP_UA } });
+  const res = await (0, import_obsidian8.requestUrl)({ url: u, headers: { "User-Agent": HTTP_UA } });
   const doc = new DOMParser().parseFromString(res.text, "text/html");
   const root = (_c = (_b = (_a = doc.querySelector("article")) != null ? _a : doc.querySelector("[role='main']")) != null ? _b : doc.querySelector("main")) != null ? _c : doc.body;
   root.querySelectorAll("script,style,noscript,iframe,svg,nav,header,footer,aside,form,button").forEach((el) => el.remove());
@@ -2782,7 +2976,7 @@ async function fetchArticleFromUrl(url) {
 async function fetchOpenAlexAbstracts(keyword, limit = 5) {
   var _a;
   const url = `https://api.openalex.org/works?search=${encodeURIComponent(keyword)}&filter=language:en&per-page=${limit}`;
-  const res = await (0, import_obsidian7.requestUrl)({ url, headers: { "User-Agent": HTTP_UA } });
+  const res = await (0, import_obsidian8.requestUrl)({ url, headers: { "User-Agent": HTTP_UA } });
   const data = JSON.parse(res.text);
   const works = (_a = data == null ? void 0 : data.results) != null ? _a : [];
   return works.map((w) => {
@@ -2800,7 +2994,7 @@ async function crossLangKeyword(keyword) {
   const lg = isZh(keyword) ? "zh" : "en";
   const target = lg === "zh" ? "en" : "zh";
   const url = `https://${lg}.wikipedia.org/w/api.php?action=query&format=json&generator=search&gsrsearch=${encodeURIComponent(keyword)}&gsrlimit=1&prop=langlinks&lllang=${target}&redirects=1&origin=*`;
-  const res = await (0, import_obsidian7.requestUrl)({
+  const res = await (0, import_obsidian8.requestUrl)({
     url,
     headers: { "User-Agent": HTTP_UA }
   });
@@ -2814,7 +3008,7 @@ async function relatedTitles(title, limit = 2) {
   var _a, _b;
   const lg = isZh(title) ? "zh" : "en";
   const url = `https://${lg}.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent("morelike:" + title)}&srlimit=${limit + 1}&origin=*`;
-  const res = await (0, import_obsidian7.requestUrl)({
+  const res = await (0, import_obsidian8.requestUrl)({
     url,
     headers: { "User-Agent": HTTP_UA }
   });
@@ -2848,26 +3042,6 @@ async function collectWikiArticles(kws, onStatus) {
     throw new Error("OpenAlex \u4E0E Wikipedia \u5747\u4E0D\u53EF\u8FBE\uFF08\u5F53\u524D\u7F51\u7EDC\u53D7\u9650\uFF09\uFF0C\u53EF\u8BD5\u300C\u76F8\u5173\u8BCD\uFF08Datamuse\uFF09\u300D\u6216\u300CAI \u6269\u8BCD\u300D");
   }
   return articles;
-}
-
-// src/expand/datamuse.ts
-var import_obsidian8 = require("obsidian");
-async function fetchWords(code, keyword, limit) {
-  const res = await (0, import_obsidian8.requestUrl)({
-    url: `https://api.datamuse.com/words?${code}=${encodeURIComponent(keyword)}&max=${limit}`,
-    headers: { "User-Agent": HTTP_UA }
-  });
-  const data = JSON.parse(res.text);
-  return data.map((d) => String(d.word)).filter((w) => /^[a-z][a-z'-]{2,}$/.test(w));
-}
-function fetchRelatedWords(keyword, limit = 20) {
-  return fetchWords("ml", keyword, limit);
-}
-function fetchSynonyms(keyword, limit = 5) {
-  return fetchWords("rel_syn", keyword, limit);
-}
-function fetchAntonyms(keyword, limit = 5) {
-  return fetchWords("rel_ant", keyword, limit);
 }
 
 // src/expand/extract.ts
@@ -5072,7 +5246,7 @@ function instance2($$self, $$props, $$invalidate) {
       }
     } catch (e) {
       const msg = (_a2 = e.message) !== null && _a2 !== void 0 ? _a2 : String(e);
-      $$invalidate(5, status = /timed? ?out|timeout|30/i.test(msg) ? "AI \u6269\u8BCD\u5931\u8D25\uFF1A\u8BF7\u6C42\u8D85\u65F6\uFF08\u672C\u5730\u6A21\u578B\u592A\u6162\uFF09\u3002\u5EFA\u8BAE\u6362\u66F4\u5927\u7684\u6A21\u578B\uFF0C\u6216\u51CF\u5C11\u5173\u952E\u8BCD\u540E\u518D\u8BD5" : "AI \u6269\u8BCD\u5931\u8D25\uFF1A" + msg);
+      $$invalidate(5, status = /timed? ?out|timeout|30/i.test(msg) ? "AI \u6269\u8BCD\u5931\u8D25\uFF1A\u8BF7\u6C42\u8D85\u65F6\uFF08\u53D6\u51B3\u4E8E\u6A21\u578B\u901F\u5EA6\uFF09\u3002\u5EFA\u8BAE\u7A0D\u540E\u518D\u8BD5\uFF0C\u6216\u51CF\u5C11\u5173\u952E\u8BCD\u540E\u518D\u8BD5" : "AI \u6269\u8BCD\u5931\u8D25\uFF1A" + msg);
     }
     $$invalidate(6, busy = false);
   }
@@ -5361,6 +5535,7 @@ var ConfirmModal = class extends import_obsidian9.Modal {
     this.ok = false;
   }
   onOpen() {
+    tagModal(this.modalEl, "Confirm");
     this.contentEl.createEl("p", { text: this.message, cls: "el-confirm-msg" });
     const row = this.contentEl.createDiv("el-confirm-btns");
     new import_obsidian9.ButtonComponent(row).setButtonText("\u53D6\u6D88").onClick(() => this.close());
@@ -5388,6 +5563,7 @@ var SessionSwitchModal = class extends import_obsidian9.Modal {
     this.onPick = onPick;
   }
   onOpen() {
+    tagModal(this.modalEl, "Switch");
     this.titleEl.setText("\u6709\u8FDB\u884C\u4E2D\u7684\u5B66\u4E60\u4F1A\u8BDD");
     this.contentEl.createEl("p", {
       text: `\u300C${this.label}\u300D\u7684\u961F\u5217\u8FD8\u5728\u8FDB\u884C\u4E2D\uFF08\u5DF2\u8BC4\u5206\u7684\u8FDB\u5EA6\u5DF2\u4FDD\u5B58\uFF09\u3002`,
@@ -5420,6 +5596,7 @@ var CreateThemeModal = class extends import_obsidian9.Modal {
     this.ctaLabel = ctaLabel;
   }
   onOpen() {
+    tagModal(this.modalEl, "Create");
     const { contentEl } = this;
     this.modalEl.addClass("el-create-theme-modal");
     contentEl.createEl("h3", { text: "\u65B0\u5EFA\u4E3B\u9898" });
@@ -5507,6 +5684,7 @@ var EditThemeModal = class extends import_obsidian9.Modal {
   }
   onOpen() {
     var _a, _b;
+    tagModal(this.modalEl, "Edit");
     const { contentEl } = this;
     contentEl.createEl("h3", { text: `\u7F16\u8F91\u4E3B\u9898 \u2014 ${this.theme}` });
     let name = this.theme;
@@ -5585,10 +5763,19 @@ var AddWordModal = class _AddWordModal extends import_obsidian9.Modal {
     this.phraseZh = "";
     // 短语的 AI 翻译（词典查不到短语，查询时兜底）
     this.queryBusy = false;
+    // 查询防重入（Enter 连按/查询中点按钮不并发刷预览）
+    this.zhQuery = "";
+    this.wordInput = null;
+    // 发音/AI 例句行：中文查询态与初始隐藏，查出英文才亮
+    this.zhBack = null;
+    // 中文候选列表快照：点候选进英文预览后「返回重选」据此还原
+    this.backBtn = null;
+    // 「返回重选」按钮：有候选快照才亮
     this.addBtn = null;
     this.word = presetWord != null ? presetWord : "";
   }
   onOpen() {
+    tagModal(this.modalEl, "Add");
     const { contentEl } = this;
     const names = Object.keys(this.plugin.db.themes);
     if (!names.length) {
@@ -5609,17 +5796,19 @@ var AddWordModal = class _AddWordModal extends import_obsidian9.Modal {
       });
       return;
     }
-    contentEl.createEl("h3", { text: "\u6536\u5F55\u5355\u8BCD" });
+    this.buildForm(names);
+    if (this.word) this.query();
+  }
+  /** 构建查词表单（onOpen 与「返回候选列表」共用）：主题下拉默认值、输入行、预览区、加入区 */
+  buildForm(names) {
+    const { contentEl } = this;
+    contentEl.createEl("h3", { text: "\u67E5\u8BCD" });
     let theme = this.defaultTheme && names.includes(this.defaultTheme) ? this.defaultTheme : this.plugin.lastAddTheme && names.includes(this.plugin.lastAddTheme) ? this.plugin.lastAddTheme : names[0];
-    new import_obsidian9.Setting(contentEl).setName("\u52A0\u5165\u4E3B\u9898").addDropdown((d) => {
-      d.addOptions(Object.fromEntries(names.map((n) => [n, n])));
-      d.setValue(theme);
-      d.onChange((v) => theme = v);
-    });
     new import_obsidian9.Setting(contentEl).setName("\u5355\u8BCD").addText((t) => {
+      this.wordInput = t;
       t.setValue(this.word);
       t.inputEl.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") {
+        if (e.key === "Enter" && !e.isComposing) {
           e.preventDefault();
           void this.query();
         }
@@ -5627,15 +5816,16 @@ var AddWordModal = class _AddWordModal extends import_obsidian9.Modal {
       t.onChange((v) => {
         this.word = v.trim();
         this.phraseZh = "";
+        this.zhQuery = "";
         if (this.example || this.exampleZh) {
           this.example = "";
           this.exampleZh = "";
         }
       });
-    });
-    new import_obsidian9.Setting(contentEl).addButton(
-      (b) => b.setButtonText("\u67E5\u8BE2").onClick(() => this.query())
-    ).addButton((b) => {
+    }).addButton((b) => b.setButtonText("\u67E5\u8BE2").setCta().onClick(() => this.query()));
+    this.toolsRow = contentEl.createDiv();
+    this.toolsRow.style.display = "none";
+    new import_obsidian9.Setting(this.toolsRow).addButton((b) => {
       b.setButtonText("\u{1F50A} \u53D1\u97F3").onClick(() => {
         if (!this.word) return;
         this.plugin.speakWord(this.word);
@@ -5647,8 +5837,15 @@ var AddWordModal = class _AddWordModal extends import_obsidian9.Modal {
       (b) => b.setButtonText("AI \u4F8B\u53E5").onClick(() => this.genExample(b))
     );
     this.previewEl = contentEl.createDiv({ cls: "el-preview" });
-    this.previewEl.style.cssText = "min-height:40px;margin:8px 0;padding:8px 12px;border-radius:8px;background:var(--background-secondary);font-size:13px;color:var(--text-muted);white-space:pre-wrap;";
-    new import_obsidian9.Setting(contentEl).addButton((b) => {
+    this.previewEl.style.cssText = "min-height:40px;max-height:40vh;overflow-y:auto;margin:8px 0;padding:8px 12px;border-radius:8px;background:var(--background-secondary);font-size:13px;color:var(--text-muted);white-space:pre-wrap;";
+    this.addArea = contentEl.createDiv();
+    this.addArea.style.display = "none";
+    new import_obsidian9.Setting(this.addArea).setName("\u52A0\u5165\u4E3B\u9898").addDropdown((d) => {
+      d.addOptions(Object.fromEntries(names.map((n) => [n, n])));
+      d.setValue(theme);
+      d.onChange((v) => theme = v);
+    });
+    new import_obsidian9.Setting(this.addArea).addButton((b) => {
       this.addBtn = b;
       return b.setButtonText("\u52A0\u5165").setCta().onClick(async () => {
         var _a;
@@ -5657,14 +5854,21 @@ var AddWordModal = class _AddWordModal extends import_obsidian9.Modal {
           new import_obsidian9.Notice("\u8D85\u8FC7 5 \u4E2A\u8BCD\uFF0C\u7591\u4F3C\u6574\u53E5\u800C\u975E\u77ED\u8BED\uFF0C\u4E0D\u6536\u5F55");
           return;
         }
+        const tr = isPhrase(this.word) ? this.phraseZh : this.zhQuery;
+        const owned = this.plugin.words.get(this.word);
+        const backfill = !!owned && !hasTranslation(owned.translation) && !!tr;
+        if ((owned == null ? void 0 : owned.themes.includes(theme)) && !backfill) {
+          new import_obsidian9.Notice(`\u300C${this.word}\u300D\u5DF2\u5728\u300C${theme}\u300D\uFF0C\u65E0\u9700\u91CD\u590D\u52A0\u5165`);
+          return;
+        }
         let r;
         try {
           r = await this.plugin.addWord(
             this.word,
             theme,
             {
-              // 短语词典查不到，把查询时 AI 翻译的结果带上
-              translation: isPhrase(this.word) ? this.phraseZh || void 0 : void 0,
+              // 短语词典查不到，把查询时 AI 翻译的结果带上；中查英直加的词拿查询串当释义
+              translation: isPhrase(this.word) ? this.phraseZh || void 0 : this.zhQuery || void 0,
               examples: this.example ? [{ text: this.example, translation: this.exampleZh || void 0, source: "AI" }] : void 0
             }
           );
@@ -5677,16 +5881,21 @@ var AddWordModal = class _AddWordModal extends import_obsidian9.Modal {
           return;
         }
         this.plugin.lastAddTheme = theme;
+        if (backfill) new import_obsidian9.Notice(`\u5DF2\u56DE\u586B\u91CA\u4E49\uFF1A${tr}`);
         const doc = this.plugin.words.get(this.word);
         void this.plugin.audio.prefetch(this.word);
         this.plugin.refreshStatusBar();
         (_a = this.onDone) == null ? void 0 : _a.call(this);
         this.showDone(theme, r === "created", doc == null ? void 0 : doc.phonetic);
       });
-    });
-    if (this.word) this.query();
+    }).addButton((b) => {
+      this.backBtn = b;
+      b.setButtonText("\u8FD4\u56DE\u91CD\u9009").onClick(() => this.backToZhList());
+      b.buttonEl.style.display = "none";
+      return b;
+    }).addButton((b) => b.setButtonText("\u5173\u95ED").onClick(() => this.close()));
   }
-  /** 收录成功页：给出「现在学」入口，打通收词 → 学习闭环 */
+  /** 收录成功页：交代收录结果；中文查询过的话可「返回候选列表」换词重选 */
   showDone(theme, created, phonetic) {
     const { contentEl } = this;
     contentEl.empty();
@@ -5696,26 +5905,23 @@ var AddWordModal = class _AddWordModal extends import_obsidian9.Modal {
     line.setText(`${this.word}${phonetic ? "  " + phonetic : ""} \u2192 ${theme}`);
     const row = contentEl.createDiv();
     row.style.cssText = "display:flex;gap:8px;";
-    const ttsBtn = row.createEl("button", { text: "\u{1F50A}" });
-    void this.plugin.audio.badge(ttsBtn, this.word);
-    ttsBtn.onClickEvent(() => {
-      this.plugin.speakWord(this.word);
-      window.setTimeout(() => void this.plugin.audio.badge(ttsBtn, this.word), 1200);
-    });
-    const learnBtn = row.createEl("button", {
-      text: `\u73B0\u5728\u5B66\u300C${theme}\u300D`,
-      cls: "mod-cta"
-    });
-    learnBtn.onClickEvent(() => {
-      this.close();
-      void this.plugin.startSession(theme);
-    });
-    learnBtn.focus();
-    row.createEl("button", { text: "\u5173\u95ED" }).onClickEvent(() => this.close());
-    row.createEl("button", { text: "\u518D\u6536\u4E00\u4E2A" }).onClickEvent(() => {
+    if (this.zhBack) {
+      const listBtn = row.createEl("button", { text: "\u8FD4\u56DE\u5019\u9009\u5217\u8868" });
+      listBtn.onClickEvent(() => {
+        contentEl.empty();
+        this.buildForm(Object.keys(this.plugin.db.themes));
+        this.renderZhList();
+      });
+    }
+    const againBtn = row.createEl("button", { text: "\u518D\u67E5\u4E00\u4E2A" });
+    againBtn.onClickEvent(() => {
       this.close();
       new _AddWordModal(this.app, this.plugin, void 0, this.onDone, theme).open();
     });
+    againBtn.focus();
+    const closeBtn = row.createEl("button", { text: "\u5173\u95ED" });
+    closeBtn.style.marginLeft = "auto";
+    closeBtn.onClickEvent(() => this.close());
   }
   async query() {
     if (this.queryBusy) return;
@@ -5723,12 +5929,187 @@ var AddWordModal = class _AddWordModal extends import_obsidian9.Modal {
     if (!word) return;
     this.queryBusy = true;
     try {
-      await this.renderPreview(word);
+      if (/[一-鿿]/.test(word)) {
+        this.toolsRow.style.display = "none";
+        await this.renderZhSearch(word.trim());
+      } else {
+        this.toolsRow.style.display = "";
+        await this.renderPreview(word);
+      }
     } catch (e) {
       this.previewEl.setText(`\u67E5\u8BE2\u5931\u8D25\uFF1A${e instanceof Error ? e.message : e}`);
     } finally {
       this.queryBusy = false;
     }
+  }
+  /** 中查英：中文串先在本地词典释义里反查；没命中多半是释义用词不同（查「开心」库里写「快乐的」），
+   *  联网把中文译成英文再出候选——本地查得到的长释义行，查不到的照样列出（直加，释义用查询串）。
+   *  点候选回填单词框并走正常查询（含联网词典兜底） */
+  async renderZhSearch(q) {
+    var _a, _b;
+    this.previewEl.setText("\u672C\u5730\u8BCD\u5178\u53CD\u67E5\u4E2D\u2026");
+    this.addArea.style.display = "none";
+    this.zhQuery = "";
+    const mine = this.plugin.words.all().filter((d) => {
+      var _a2;
+      return hasTranslation(d.translation) && ((_a2 = d.translation) == null ? void 0 : _a2.includes(q));
+    });
+    let hits = await this.plugin.dict.searchByZh(q, 20);
+    let raw = [];
+    const resolved = /* @__PURE__ */ new Set();
+    if (!hits.length && !mine.length) {
+      this.previewEl.setText("\u672C\u5730\u6CA1\u67E5\u5230\uFF0C\u8054\u7F51\u7FFB\u8BD1\u6BD4\u5BF9\u4E2D\u2026");
+      const collectCands = async (words) => {
+        const cands2 = [];
+        const seen = /* @__PURE__ */ new Set();
+        for (const w of words) {
+          for (const lem of lemmaCandidates(w)) {
+            const e = await this.plugin.dict.lookup(lem);
+            if (e) {
+              resolved.add(w);
+              if (!seen.has(e.word)) {
+                seen.add(e.word);
+                cands2.push(e);
+              }
+              break;
+            }
+          }
+        }
+        return cands2;
+      };
+      raw = await translateZh2En(q);
+      let cands = await collectCands(raw);
+      if (!cands.length && llmReady(this.plugin.llmCfg)) {
+        this.previewEl.setText("\u7FFB\u8BD1\u63A5\u53E3\u6CA1\u7ED9\u51FA\u7ED3\u679C\uFF0CAI \u7FFB\u8BD1\u6BD4\u5BF9\u4E2D\u2026");
+        const en = (_a = (await llmTranslateZhToEn(this.plugin.llmCfg, [q]))[0]) != null ? _a : "";
+        raw = en ? en.toLowerCase().split(/\s+/).filter(Boolean) : [];
+        cands = await collectCands(raw);
+      }
+      hits = cands;
+    }
+    if (!hits.length && !mine.length && raw.every((w) => resolved.has(w))) {
+      this.previewEl.setText(`\u8BCD\u5178\u91CC\u6CA1\u627E\u5230\u300C${q}\u300D\uFF1A\u6362\u4E2A\u66F4\u77ED\u7684\u8BF4\u6CD5\u8BD5\u8BD5\uFF08\u5982\u67E5\u300C\u82F9\u679C\u300D\u800C\u975E\u300C\u82F9\u679C\u624B\u673A\u300D\uFF09\uFF0C\u6216\u76F4\u63A5\u8F93\u5165\u82F1\u6587\u5355\u8BCD`);
+      return;
+    }
+    this.zhBack = { q, mine, hits, raw, resolved };
+    (_b = this.backBtn) == null ? void 0 : _b.buttonEl.style.removeProperty("display");
+    this.renderZhList();
+  }
+  /** 渲染中文候选列表（renderZhSearch 出结果后调用；预览页「返回重选」也走这） */
+  renderZhList() {
+    var _a, _b;
+    if (!this.zhBack) return;
+    const { q, mine, hits, raw, resolved } = this.zhBack;
+    const seen = /* @__PURE__ */ new Set();
+    const rows = [];
+    for (const d of mine) {
+      seen.add(d.word);
+      rows.push({ word: d.word, sense: ((_a = d.translation) != null ? _a : "").split(/[；;\n]/)[0].slice(0, 20), owned: true, direct: false });
+    }
+    for (const e of hits) {
+      if (seen.has(e.word)) continue;
+      seen.add(e.word);
+      rows.push({
+        word: e.word,
+        sense: ((_b = e.translation) != null ? _b : "").split(/[；;\n]/)[0].replace(/^[a-z]+\.\s*/i, "").trim().slice(0, 24),
+        owned: !!this.plugin.words.get(e.word),
+        direct: false
+      });
+    }
+    for (const w of raw) {
+      if (resolved.has(w) || seen.has(w)) continue;
+      seen.add(w);
+      const owned = !!this.plugin.words.get(w);
+      rows.push({ word: w, sense: owned ? "\u91CA\u4E49\u5F85\u8865\uFF08\u8BCD\u5361\u5185\u53EF\u8865\uFF09" : "\u8BCD\u5178\u672A\u6536\u5F55 \xB7 \u76F4\u52A0\u540E\u91CA\u4E49\u7528\u67E5\u8BE2\u8BCD", owned, direct: !owned });
+    }
+    rows.sort((a, b) => Number(b.owned) - Number(a.owned));
+    this.previewEl.empty();
+    const head = this.previewEl.createDiv({ cls: "el-muted" });
+    head.style.margin = "0 0 6px";
+    head.setText(`\u300C${q}\u300D\u7684\u5019\u9009\u8BCD\uFF0C\u70B9\u4E00\u4E2A\u67E5\u770B\u8BE6\u60C5\uFF1A`);
+    for (const r of rows) {
+      this.zhRow(r.word, r.sense, q, r.owned, r.direct, r.owned ? "\u5DF2\u5728\u8BCD\u5E93" : "");
+    }
+    const known = seen;
+    const moreBtn = this.previewEl.createEl("button", { text: "\u8054\u7F51\u62D3\u5C55" });
+    moreBtn.style.cssText = "display:block;margin:10px auto 0;";
+    moreBtn.onClickEvent(() => {
+      moreBtn.disabled = true;
+      moreBtn.setText("\u62D3\u5C55\u4E2D\u2026");
+      void this.expandZhCandidates(q, known).then((entries) => {
+        var _a2;
+        moreBtn.remove();
+        if (!entries.length) {
+          moreBtn.setText("\u6CA1\u6709\u66F4\u591A\u4E86");
+        } else {
+          for (const e of entries) {
+            known.add(e.word);
+            const sense = ((_a2 = e.translation) != null ? _a2 : "").split(/[；;\n]/)[0].replace(/^[a-z]+\.\s*/i, "").trim().slice(0, 24);
+            const ownedHit = !!this.plugin.words.get(e.word);
+            this.zhRow(e.word, sense, q, ownedHit, false, ownedHit ? "\u5DF2\u5728\u8BCD\u5E93" : "");
+          }
+          moreBtn.setText("\u518D\u62D3\u5C55");
+          moreBtn.disabled = false;
+        }
+        this.previewEl.append(moreBtn);
+      });
+    });
+  }
+  /** 英文预览页「返回重选」：收起加入区，还原中文候选列表 */
+  backToZhList() {
+    if (!this.zhBack) return;
+    this.addArea.style.display = "none";
+    this.toolsRow.style.display = "none";
+    this.renderZhList();
+  }
+  /** 「联网拓展」：译文 → Datamuse 语义关联词（means-like，国内直连免 Key）→ 查本地词典，
+   *  返回未展示过的新候选。译文链路与自动兜底一致（MyMemory，失败且配了 AI 用大模型） */
+  async expandZhCandidates(q, known) {
+    var _a;
+    let en = await translateZh2En(q);
+    if (!en.length && llmReady(this.plugin.llmCfg)) {
+      en = ((_a = (await llmTranslateZhToEn(this.plugin.llmCfg, [q]))[0]) != null ? _a : "").toLowerCase().split(/\s+/).filter(Boolean);
+    }
+    const related = /* @__PURE__ */ new Set();
+    for (const w of en.slice(0, 2)) {
+      for (const r of await fetchRelatedWords(w, 10)) related.add(r);
+    }
+    const out = [];
+    for (const w of related) {
+      if (known.has(w)) continue;
+      const e = await this.plugin.dict.lookup(w);
+      if (e && !out.some((x) => x.word === e.word)) out.push(e);
+    }
+    return out.slice(0, 10);
+  }
+  /** 中查英候选行：已收录（虚线）点击弹词卡；未收录（实线）点击进收录流程，
+   *  直加词（direct）加入时拿查询串当释义。样式与例句点词一致（虚线=已收录） */
+  zhRow(word, sense, q, owned, direct, tag) {
+    const row = this.previewEl.createDiv();
+    row.style.cssText = "display:flex;align-items:baseline;gap:8px;padding:4px 0;";
+    const btn = row.createEl("button", { text: word });
+    btn.addClass("el-zh-w");
+    if (owned) btn.addClass("is-owned");
+    btn.onClickEvent(() => {
+      var _a;
+      if (owned) {
+        const doc = this.plugin.words.get(word);
+        if (doc) {
+          this.plugin.openWordCard(doc);
+          return;
+        }
+      }
+      this.word = word;
+      this.phraseZh = "";
+      this.example = "";
+      this.exampleZh = "";
+      this.zhQuery = direct ? q : "";
+      (_a = this.wordInput) == null ? void 0 : _a.setValue(word);
+      void this.query();
+    });
+    if (tag) row.createSpan({ text: tag, cls: "el-chip" });
+    const zh = row.createSpan({ text: sense, cls: "el-muted" });
+    zh.style.fontSize = "12px";
   }
   async renderPreview(word) {
     if (word.split(/\s+/).length > 5) {
@@ -5737,6 +6118,28 @@ var AddWordModal = class _AddWordModal extends import_obsidian9.Modal {
     }
     this.previewEl.setText("\u67E5\u8BE2\u4E2D\u2026");
     const lines = [];
+    const owned = this.plugin.words.get(word);
+    if (owned) {
+      if (owned.phonetic) lines.push(owned.phonetic);
+      lines.push(`\u2713 \u5DF2\u5728\u8BCD\u5E93${owned.themes.length ? `\uFF08${owned.themes.join("\u3001")}\uFF09` : ""}`);
+      if (hasTranslation(owned.translation)) lines.push(owned.translation.split(/[；;\n]/).slice(0, 3).join("\n"));
+      else lines.push("\uFF08\u91CA\u4E49\u5F85\u8865\uFF1A\u70B9\u300C\u67E5\u770B\u8BCD\u5361\u300D\u8865\u5168\uFF09");
+      this.flushPreview(lines);
+      const cardBtn = this.previewEl.createEl("button", { text: "\u67E5\u770B\u8BCD\u5361" });
+      cardBtn.style.cssText = "display:block;margin:8px auto 0;";
+      cardBtn.onClickEvent(() => this.plugin.openWordCard(owned));
+      if (owned.themes.length) {
+        const row = this.previewEl.createDiv();
+        row.style.cssText = "margin-top:6px;";
+        for (const t of owned.themes) {
+          const chip = row.createEl("span", { text: `#${t}`, cls: "el-chip" });
+          chip.setAttr("title", "\u70B9\u51FB\u4FEE\u6539\u6240\u5C5E\u4E3B\u9898");
+          chip.style.cssText = "cursor:pointer;margin-right:4px;";
+          chip.onClickEvent(() => this.plugin.editWordThemes(owned, () => void this.renderPreview(this.word)));
+        }
+      }
+      return;
+    }
     if (isPhrase(word)) {
       lines.push("\u{1F4CC} \u77ED\u8BED\uFF08\u65E0\u97F3\u6807\uFF0C\u91CA\u4E49\u8D70 AI \u7FFB\u8BD1\uFF09");
       if (!this.phraseZh) {
@@ -5751,19 +6154,58 @@ var AddWordModal = class _AddWordModal extends import_obsidian9.Modal {
       }
       lines.push(this.phraseZh || "\uFF08AI \u7FFB\u8BD1\u4E0D\u53EF\u7528\uFF0C\u52A0\u5165\u540E\u91CA\u4E49\u5F85\u8865\uFF09");
     } else {
-      const entry = await this.plugin.dict.lookup(word);
+      let entry = null;
+      let lemHit = word;
+      for (const lem of lemmaCandidates(word)) {
+        entry = await this.plugin.dict.lookup(lem);
+        if (entry) {
+          lemHit = lem;
+          break;
+        }
+      }
+      if (lemHit !== word) {
+        lines.push(`\u300C${word}\u300D\u662F ${lemHit} \u7684\u53D8\u5F62\uFF1A\u663E\u793A\u539F\u5F62\u91CA\u4E49\uFF0C\u5EFA\u8BAE\u6536\u539F\u5F62`);
+        this.retargetLemma(lemHit);
+      }
       if (entry == null ? void 0 : entry.phonetic) lines.push(entry.phonetic);
       if (entry == null ? void 0 : entry.translation) lines.push(entry.translation.replace(/；/g, "\n"));
       const lv = levelFromTag(entry == null ? void 0 : entry.tag);
       if (lv) lines.push(`\u{1F3F7} ${levelLabel(lv)}`);
+      if (entry == null ? void 0 : entry.collins) lines.push(`${"\u2605".repeat(entry.collins)}${"\u2606".repeat(5 - entry.collins)}`);
+      if (entry == null ? void 0 : entry.frq) lines.push(`\u8BCD\u9891 ${entry.frq}`);
       if (lines.length) return this.flushPreview(lines);
+      if (this.zhQuery) {
+        lines.push(`\u{1F004} ${this.zhQuery}`);
+        lines.push("\uFF08\u4E2D\u67E5\u82F1\u76F4\u52A0\uFF1A\u8BCD\u5178\u672A\u6536\u5F55\uFF0C\u91CA\u4E49\u7528\u67E5\u8BE2\u8BCD\uFF1B\u52A0\u5165\u540E\u53EF\u7528\u300C\u8865\u5168\u7F3A\u5931\u91CA\u4E49\u300D\u5B8C\u5584\uFF09");
+        return this.flushPreview(lines);
+      }
       this.previewEl.setText("\u672C\u5730\u8BCD\u5178\u672A\u6536\u5F55\uFF0C\u8054\u7F51\u67E5\u8BE2\u4E2D\u2026");
-      const on = await lookupOnline(word);
+      let on = null;
+      let onLem = word;
+      for (const lem of lemmaCandidates(word)) {
+        on = await lookupOnline(lem);
+        if (on) {
+          onLem = lem;
+          break;
+        }
+      }
+      if (onLem !== word) {
+        lines.push(`\u300C${word}\u300D\u662F ${onLem} \u7684\u53D8\u5F62\uFF1A\u663E\u793A\u539F\u5F62\u91CA\u4E49\uFF0C\u5EFA\u8BAE\u6536\u539F\u5F62`);
+        this.retargetLemma(onLem);
+      }
       if (on == null ? void 0 : on.phonetic) lines.push(on.phonetic);
       if (on == null ? void 0 : on.definition) lines.push(`[\u82F1] ${on.definition}`);
+      if (on == null ? void 0 : on.zh) lines.push(`\u{1F004} ${on.zh}\uFF08\u8054\u7F51\u7FFB\u8BD1\u515C\u5E95\uFF09`);
       if (!lines.length) lines.push("\uFF08\u8BCD\u5178\u672A\u547D\u4E2D\uFF0C\u52A0\u5165\u540E\u53EF\u7528\u300C\u8865\u5168\u7F3A\u5931\u91CA\u4E49\u300D\u91CD\u8BD5\uFF09");
     }
     this.flushPreview(lines);
+  }
+  /** 变形词命中原形词条：词面跟着换成原形（输入框 + this.word 同步），
+   *  后续加入/发音/AI 例句/去重判定都按原形走——词库只收原形，变形词入库即脏数据。
+   *  Obsidian setValue 不触发 onChange，this.word 手动同步 */
+  retargetLemma(lem) {
+    this.word = lem;
+    this.wordInput.setValue(lem);
   }
   /** 预览落盘：带上 AI 例句一次性渲染，并把焦点交给「加入」（Enter 二段式第二段：再按 Enter 即收录） */
   flushPreview(lines) {
@@ -5772,6 +6214,7 @@ var AddWordModal = class _AddWordModal extends import_obsidian9.Modal {
 \u{1F4DD} ${this.example}${this.exampleZh ? `
 ${this.exampleZh}` : ""}`);
     this.previewEl.setText(lines.join("\n"));
+    this.addArea.style.display = "";
     (_a = this.addBtn) == null ? void 0 : _a.buttonEl.focus();
   }
   /** AI 生成一句例句：收词时即有例句，免去事后补全 */
@@ -5780,6 +6223,10 @@ ${this.exampleZh}` : ""}`);
     const word = this.word.trim().toLowerCase();
     if (!word) {
       new import_obsidian9.Notice("\u8BF7\u5148\u586B\u5199\u5355\u8BCD");
+      return;
+    }
+    if (/[一-鿿]/.test(word)) {
+      new import_obsidian9.Notice("\u5355\u8BCD\u6846\u662F\u4E2D\u6587\uFF1A\u5148\u70B9\u5019\u9009\u8BCD\u9009\u5B9A\u82F1\u6587\uFF0C\u518D\u751F\u6210\u4F8B\u53E5");
       return;
     }
     const cfg = this.plugin.llmCfg;
@@ -5819,6 +6266,7 @@ var ExpandModal = class extends import_obsidian9.Modal {
     this.autoRun = autoRun;
   }
   onOpen() {
+    tagModal(this.modalEl, "Expand");
     this.titleEl.setText(`\u6269\u8BCD \u2014 ${this.theme}`);
     this.modalEl.addClass("el-expand-modal");
     this.comp = new ExpandPanel_default({
@@ -5848,6 +6296,7 @@ var BackfillExamplesModal = class extends import_obsidian9.Modal {
   }
   // 生成中停止/关窗置位，任务在批间检查并提前结束
   onOpen() {
+    tagModal(this.modalEl, "BfEx");
     this.titleEl.setText("AI \u8865\u4F8B\u53E5");
     this.modalEl.addClass("el-backfill-modal");
     const { contentEl } = this;
@@ -5978,6 +6427,7 @@ var DataBackfillModal = class extends import_obsidian9.Modal {
     this.onDone = onDone;
   }
   onOpen() {
+    tagModal(this.modalEl, "BfData");
     this.titleEl.setText("\u6279\u91CF\u8865\u5168\u6570\u636E");
     this.modalEl.addClass("el-wordlist-modal");
     const statEl = this.contentEl.createDiv({ cls: "el-muted" });
@@ -6053,6 +6503,7 @@ var WordListModal = class extends import_obsidian9.Modal {
     this.sortAlpha = false;
   }
   onOpen() {
+    tagModal(this.modalEl, "List");
     this.modalEl.addClass("el-wordlist-modal");
     this.render();
   }
@@ -6216,6 +6667,7 @@ var MemoModal = class extends import_obsidian9.Modal {
   }
   onOpen() {
     var _a;
+    tagModal(this.modalEl, "Memo");
     const { contentEl } = this;
     const d = this.wordDoc;
     addHelpTip(
@@ -6323,6 +6775,7 @@ var KeyGuideModal = class extends import_obsidian9.Modal {
     this.onPick = onPick;
   }
   onOpen() {
+    tagModal(this.modalEl, "Key");
     const g = KEY_GUIDES[this.provider];
     this.titleEl.setText(g.title);
     const c = this.contentEl;
@@ -6375,6 +6828,7 @@ var AiSetupModal = class extends import_obsidian9.Modal {
     this.keyVal = "";
   }
   onOpen() {
+    tagModal(this.modalEl, "AI");
     this.titleEl.setText("\u914D\u7F6E AI \u6E90");
     const c = this.contentEl;
     c.addClass("el-aisetup");
@@ -6836,38 +7290,43 @@ var SenseList_default = SenseList;
 // src/components/WordFullCard.svelte
 function get_each_context3(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[55] = list[i];
-  child_ctx[57] = i;
+  child_ctx[62] = list[i];
+  child_ctx[64] = i;
   return child_ctx;
 }
 function get_each_context_12(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[58] = list[i];
+  child_ctx[65] = list[i];
   return child_ctx;
 }
 function get_each_context_2(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[61] = list[i][0];
-  child_ctx[62] = list[i][1];
+  child_ctx[68] = list[i][0];
+  child_ctx[69] = list[i][1];
   return child_ctx;
 }
 function get_each_context_3(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[61] = list[i][0];
-  child_ctx[65] = list[i][1];
+  child_ctx[68] = list[i][0];
+  child_ctx[72] = list[i][1];
   return child_ctx;
 }
 function get_each_context_4(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[61] = list[i];
+  child_ctx[68] = list[i];
   return child_ctx;
 }
 function get_each_context_5(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[61] = list[i];
+  child_ctx[68] = list[i];
   return child_ctx;
 }
-function create_if_block_21(ctx) {
+function get_each_context_6(ctx, list, i) {
+  const child_ctx = ctx.slice();
+  child_ctx[72] = list[i];
+  return child_ctx;
+}
+function create_if_block_26(ctx) {
   let span;
   return {
     c() {
@@ -6885,7 +7344,7 @@ function create_if_block_21(ctx) {
     }
   };
 }
-function create_if_block_20(ctx) {
+function create_if_block_25(ctx) {
   let div;
   let t_1_value = (
     /*doc*/
@@ -6914,18 +7373,18 @@ function create_if_block_20(ctx) {
     }
   };
 }
-function create_if_block_19(ctx) {
+function create_if_block_24(ctx) {
   let button0;
   let t0_value = (
     /*aiBusy*/
-    ctx[8] ? "\u23F3 \u8865\u4F8B\u53E5\u2026" : "\u270D\uFE0F \u8865\u4F8B\u53E5"
+    ctx[10] ? "\u23F3 \u8865\u4F8B\u53E5\u2026" : "\u270D\uFE0F \u8865\u4F8B\u53E5"
   );
   let t0;
   let t1;
   let button1;
   let t2_value = (
     /*sensesBusy*/
-    ctx[9] ? "\u23F3 \u8865\u4E49\u9879\u2026" : "\u{1F4D6} \u8865\u4E49\u9879"
+    ctx[11] ? "\u23F3 \u8865\u4E49\u9879\u2026" : "\u{1F4D6} \u8865\u4E49\u9879"
   );
   let t2;
   let mounted;
@@ -6940,11 +7399,11 @@ function create_if_block_19(ctx) {
       attr(button0, "class", "el-tts el-ai-btn");
       attr(button0, "title", "AI \u8865\u4F8B\u53E5\uFF08\u6BCF\u6B21 3 \u6761\uFF09");
       button0.disabled = /*aiBusy*/
-      ctx[8];
+      ctx[10];
       attr(button1, "class", "el-tts el-ai-btn");
       attr(button1, "title", "AI \u8865\u5168\u4E49\u9879\uFF08\u5E26\u8BCD\u6027\u591A\u4E49\uFF09");
       button1.disabled = /*sensesBusy*/
-      ctx[9];
+      ctx[11];
     },
     m(target, anchor) {
       insert(target, button0, anchor);
@@ -6958,13 +7417,13 @@ function create_if_block_19(ctx) {
             button0,
             "click",
             /*click_handler*/
-            ctx[27]
+            ctx[33]
           ),
           listen(
             button1,
             "click",
             /*click_handler_1*/
-            ctx[28]
+            ctx[34]
           )
         ];
         mounted = true;
@@ -6972,20 +7431,20 @@ function create_if_block_19(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*aiBusy*/
-      256 && t0_value !== (t0_value = /*aiBusy*/
-      ctx2[8] ? "\u23F3 \u8865\u4F8B\u53E5\u2026" : "\u270D\uFE0F \u8865\u4F8B\u53E5")) set_data(t0, t0_value);
+      1024 && t0_value !== (t0_value = /*aiBusy*/
+      ctx2[10] ? "\u23F3 \u8865\u4F8B\u53E5\u2026" : "\u270D\uFE0F \u8865\u4F8B\u53E5")) set_data(t0, t0_value);
       if (dirty[0] & /*aiBusy*/
-      256) {
+      1024) {
         button0.disabled = /*aiBusy*/
-        ctx2[8];
+        ctx2[10];
       }
       if (dirty[0] & /*sensesBusy*/
-      512 && t2_value !== (t2_value = /*sensesBusy*/
-      ctx2[9] ? "\u23F3 \u8865\u4E49\u9879\u2026" : "\u{1F4D6} \u8865\u4E49\u9879")) set_data(t2, t2_value);
+      2048 && t2_value !== (t2_value = /*sensesBusy*/
+      ctx2[11] ? "\u23F3 \u8865\u4E49\u9879\u2026" : "\u{1F4D6} \u8865\u4E49\u9879")) set_data(t2, t2_value);
       if (dirty[0] & /*sensesBusy*/
-      512) {
+      2048) {
         button1.disabled = /*sensesBusy*/
-        ctx2[9];
+        ctx2[11];
       }
     },
     d(detaching) {
@@ -6999,7 +7458,7 @@ function create_if_block_19(ctx) {
     }
   };
 }
-function create_else_block_3(ctx) {
+function create_else_block_4(ctx) {
   let t_1;
   return {
     c() {
@@ -7015,7 +7474,7 @@ function create_else_block_3(ctx) {
     }
   };
 }
-function create_if_block_18(ctx) {
+function create_if_block_23(ctx) {
   let span;
   return {
     c() {
@@ -7030,6 +7489,41 @@ function create_if_block_18(ctx) {
       if (detaching) {
         detach(span);
       }
+    }
+  };
+}
+function create_if_block_22(ctx) {
+  let button;
+  let mounted;
+  let dispose;
+  return {
+    c() {
+      button = element("button");
+      button.textContent = "\u{1F4D6} \u8865\u91CA\u4E49";
+      attr(button, "class", "el-tts el-ai-btn");
+      attr(button, "title", "\u8D70\u8BCD\u5178 \u2192 \u5728\u7EBF \u2192 AI \u7684\u7EDF\u4E00\u8865\u5168\u94FE");
+    },
+    m(target, anchor) {
+      insert(target, button, anchor);
+      if (!mounted) {
+        dispose = listen(button, "click", function() {
+          if (is_function(
+            /*onBackfill*/
+            ctx[7]
+          )) ctx[7].apply(this, arguments);
+        });
+        mounted = true;
+      }
+    },
+    p(new_ctx, dirty) {
+      ctx = new_ctx;
+    },
+    d(detaching) {
+      if (detaching) {
+        detach(button);
+      }
+      mounted = false;
+      dispose();
     }
   };
 }
@@ -7049,21 +7543,25 @@ function create_if_block3(ctx) {
     ctx[0]
   ) } });
   let if_block0 = (
-    /*doc*/
-    ctx[0].level && create_if_block_17(ctx)
+    /*showBody*/
+    ctx[5] && /*doc*/
+    (ctx[0].level || /*dictCollins*/
+    ctx[17] > 0 || /*dictFrq*/
+    ctx[18] > 0 || /*doc*/
+    ctx[0].themes.length) && create_if_block_17(ctx)
   );
-  function select_block_type_1(ctx2, dirty) {
+  function select_block_type_2(ctx2, dirty) {
     if (
       /*doc*/
       ctx2[0].memo
     ) return create_if_block_152;
     if (
       /*dictRem*/
-      ctx2[13]
+      ctx2[15]
     ) return create_if_block_16;
     return create_else_block_2;
   }
-  let current_block_type = select_block_type_1(ctx, [-1, -1, -1]);
+  let current_block_type = select_block_type_2(ctx, [-1, -1, -1]);
   let if_block1 = current_block_type(ctx);
   let if_block2 = (
     /*synonyms*/
@@ -7072,15 +7570,15 @@ function create_if_block3(ctx) {
   );
   let if_block3 = (
     /*dictRel*/
-    ctx[6].length && create_if_block_112(ctx)
+    ctx[8].length && create_if_block_112(ctx)
   );
   let if_block4 = (
     /*dictWf*/
-    ctx[14] && create_if_block_92(ctx)
+    ctx[16] && create_if_block_92(ctx)
   );
   let if_block5 = (
     /*doc*/
-    ctx[0].examples.length && create_if_block_22(ctx)
+    ctx[0].examples.length && create_if_block_27(ctx)
   );
   let if_block6 = (
     /*doc*/
@@ -7131,8 +7629,12 @@ function create_if_block3(ctx) {
       ctx2[0];
       senselist.$set(senselist_changes);
       if (
-        /*doc*/
-        ctx2[0].level
+        /*showBody*/
+        ctx2[5] && /*doc*/
+        (ctx2[0].level || /*dictCollins*/
+        ctx2[17] > 0 || /*dictFrq*/
+        ctx2[18] > 0 || /*doc*/
+        ctx2[0].themes.length)
       ) {
         if (if_block0) {
           if_block0.p(ctx2, dirty);
@@ -7145,7 +7647,7 @@ function create_if_block3(ctx) {
         if_block0.d(1);
         if_block0 = null;
       }
-      if (current_block_type === (current_block_type = select_block_type_1(ctx2, dirty)) && if_block1) {
+      if (current_block_type === (current_block_type = select_block_type_2(ctx2, dirty)) && if_block1) {
         if_block1.p(ctx2, dirty);
       } else {
         if_block1.d(1);
@@ -7173,7 +7675,7 @@ function create_if_block3(ctx) {
       }
       if (
         /*dictRel*/
-        ctx2[6].length
+        ctx2[8].length
       ) {
         if (if_block3) {
           if_block3.p(ctx2, dirty);
@@ -7188,7 +7690,7 @@ function create_if_block3(ctx) {
       }
       if (
         /*dictWf*/
-        ctx2[14]
+        ctx2[16]
       ) {
         if (if_block4) {
           if_block4.p(ctx2, dirty);
@@ -7208,7 +7710,7 @@ function create_if_block3(ctx) {
         if (if_block5) {
           if_block5.p(ctx2, dirty);
         } else {
-          if_block5 = create_if_block_22(ctx2);
+          if_block5 = create_if_block_27(ctx2);
           if_block5.c();
           if_block5.m(t6.parentNode, t6);
         }
@@ -7265,19 +7767,48 @@ function create_if_block3(ctx) {
 }
 function create_if_block_17(ctx) {
   let div;
-  let span;
-  let t_1_value = levelLabel(
+  let t0;
+  let t1;
+  let t2;
+  let each_blocks = [];
+  let each_1_lookup = /* @__PURE__ */ new Map();
+  let if_block0 = (
     /*doc*/
-    ctx[0].level
-  ) + "";
-  let t_1;
+    ctx[0].level && create_if_block_21(ctx)
+  );
+  let if_block1 = (
+    /*dictCollins*/
+    ctx[17] > 0 && create_if_block_20(ctx)
+  );
+  let if_block2 = (
+    /*dictFrq*/
+    ctx[18] > 0 && create_if_block_19(ctx)
+  );
+  let each_value_6 = ensure_array_like(
+    /*doc*/
+    ctx[0].themes
+  );
+  const get_key = (ctx2) => (
+    /*t*/
+    ctx2[72]
+  );
+  for (let i = 0; i < each_value_6.length; i += 1) {
+    let child_ctx = get_each_context_6(ctx, each_value_6, i);
+    let key = get_key(child_ctx);
+    each_1_lookup.set(key, each_blocks[i] = create_each_block_6(key, child_ctx));
+  }
   return {
     c() {
       div = element("div");
-      span = element("span");
-      t_1 = text(t_1_value);
-      attr(span, "class", "el-chip");
-      attr(span, "title", "\u8003\u8BD5\u7B49\u7EA7");
+      if (if_block0) if_block0.c();
+      t0 = space();
+      if (if_block1) if_block1.c();
+      t1 = space();
+      if (if_block2) if_block2.c();
+      t2 = space();
+      for (let i = 0; i < each_blocks.length; i += 1) {
+        each_blocks[i].c();
+      }
       set_style(div, "margin-top", "8px");
       set_style(div, "display", "flex");
       set_style(div, "gap", "6px");
@@ -7286,7 +7817,102 @@ function create_if_block_17(ctx) {
     },
     m(target, anchor) {
       insert(target, div, anchor);
-      append(div, span);
+      if (if_block0) if_block0.m(div, null);
+      append(div, t0);
+      if (if_block1) if_block1.m(div, null);
+      append(div, t1);
+      if (if_block2) if_block2.m(div, null);
+      append(div, t2);
+      for (let i = 0; i < each_blocks.length; i += 1) {
+        if (each_blocks[i]) {
+          each_blocks[i].m(div, null);
+        }
+      }
+    },
+    p(ctx2, dirty) {
+      if (
+        /*doc*/
+        ctx2[0].level
+      ) {
+        if (if_block0) {
+          if_block0.p(ctx2, dirty);
+        } else {
+          if_block0 = create_if_block_21(ctx2);
+          if_block0.c();
+          if_block0.m(div, t0);
+        }
+      } else if (if_block0) {
+        if_block0.d(1);
+        if_block0 = null;
+      }
+      if (
+        /*dictCollins*/
+        ctx2[17] > 0
+      ) {
+        if (if_block1) {
+          if_block1.p(ctx2, dirty);
+        } else {
+          if_block1 = create_if_block_20(ctx2);
+          if_block1.c();
+          if_block1.m(div, t1);
+        }
+      } else if (if_block1) {
+        if_block1.d(1);
+        if_block1 = null;
+      }
+      if (
+        /*dictFrq*/
+        ctx2[18] > 0
+      ) {
+        if (if_block2) {
+          if_block2.p(ctx2, dirty);
+        } else {
+          if_block2 = create_if_block_19(ctx2);
+          if_block2.c();
+          if_block2.m(div, t2);
+        }
+      } else if (if_block2) {
+        if_block2.d(1);
+        if_block2 = null;
+      }
+      if (dirty[0] & /*editThemes, doc, themeEditable*/
+      4194369) {
+        each_value_6 = ensure_array_like(
+          /*doc*/
+          ctx2[0].themes
+        );
+        each_blocks = update_keyed_each(each_blocks, dirty, get_key, 1, ctx2, each_value_6, each_1_lookup, div, destroy_block, create_each_block_6, null, get_each_context_6);
+      }
+    },
+    d(detaching) {
+      if (detaching) {
+        detach(div);
+      }
+      if (if_block0) if_block0.d();
+      if (if_block1) if_block1.d();
+      if (if_block2) if_block2.d();
+      for (let i = 0; i < each_blocks.length; i += 1) {
+        each_blocks[i].d();
+      }
+    }
+  };
+}
+function create_if_block_21(ctx) {
+  let span;
+  let t_1_value = levelLabel(
+    /*doc*/
+    ctx[0].level
+  ) + "";
+  let t_1;
+  return {
+    c() {
+      span = element("span");
+      t_1 = text(t_1_value);
+      attr(span, "class", "el-chip");
+      attr(span, "title", "\u8003\u8BD5\u7B49\u7EA7");
+    },
+    m(target, anchor) {
+      insert(target, span, anchor);
       append(span, t_1);
     },
     p(ctx2, dirty) {
@@ -7298,8 +7924,221 @@ function create_if_block_17(ctx) {
     },
     d(detaching) {
       if (detaching) {
-        detach(div);
+        detach(span);
       }
+    }
+  };
+}
+function create_if_block_20(ctx) {
+  let span;
+  let t0_value = "\u2605".repeat(
+    /*dictCollins*/
+    ctx[17]
+  ) + "";
+  let t0;
+  let t1_value = "\u2606".repeat(5 - /*dictCollins*/
+  ctx[17]) + "";
+  let t1;
+  return {
+    c() {
+      span = element("span");
+      t0 = text(t0_value);
+      t1 = text(t1_value);
+      attr(span, "class", "el-chip");
+      attr(span, "title", "Collins \u661F\u7EA7\uFF1A\u8BED\u6599\u5E93\u5E38\u7528\u5EA6\uFF0C5 \u661F\u6700\u9AD8\u9891");
+    },
+    m(target, anchor) {
+      insert(target, span, anchor);
+      append(span, t0);
+      append(span, t1);
+    },
+    p(ctx2, dirty) {
+      if (dirty[0] & /*dictCollins*/
+      131072 && t0_value !== (t0_value = "\u2605".repeat(
+        /*dictCollins*/
+        ctx2[17]
+      ) + "")) set_data(t0, t0_value);
+      if (dirty[0] & /*dictCollins*/
+      131072 && t1_value !== (t1_value = "\u2606".repeat(5 - /*dictCollins*/
+      ctx2[17]) + "")) set_data(t1, t1_value);
+    },
+    d(detaching) {
+      if (detaching) {
+        detach(span);
+      }
+    }
+  };
+}
+function create_if_block_19(ctx) {
+  let span;
+  let t0;
+  let t1;
+  return {
+    c() {
+      span = element("span");
+      t0 = text("\u8BCD\u9891 ");
+      t1 = text(
+        /*dictFrq*/
+        ctx[18]
+      );
+      attr(span, "class", "el-chip");
+      attr(span, "title", "BNC \u8BED\u6599\u8BCD\u9891\u5E8F\uFF0C\u8D8A\u5C0F\u8D8A\u5E38\u7528");
+    },
+    m(target, anchor) {
+      insert(target, span, anchor);
+      append(span, t0);
+      append(span, t1);
+    },
+    p(ctx2, dirty) {
+      if (dirty[0] & /*dictFrq*/
+      262144) set_data(
+        t1,
+        /*dictFrq*/
+        ctx2[18]
+      );
+    },
+    d(detaching) {
+      if (detaching) {
+        detach(span);
+      }
+    }
+  };
+}
+function create_else_block_3(ctx) {
+  let span;
+  let t0;
+  let t1_value = (
+    /*t*/
+    ctx[72] + ""
+  );
+  let t1;
+  return {
+    c() {
+      span = element("span");
+      t0 = text("\u{1F4C1} ");
+      t1 = text(t1_value);
+      attr(span, "class", "el-chip");
+      attr(span, "title", "\u6240\u5C5E\u4E3B\u9898");
+    },
+    m(target, anchor) {
+      insert(target, span, anchor);
+      append(span, t0);
+      append(span, t1);
+    },
+    p(ctx2, dirty) {
+      if (dirty[0] & /*doc*/
+      1 && t1_value !== (t1_value = /*t*/
+      ctx2[72] + "")) set_data(t1, t1_value);
+    },
+    d(detaching) {
+      if (detaching) {
+        detach(span);
+      }
+    }
+  };
+}
+function create_if_block_18(ctx) {
+  let span;
+  let t0;
+  let t1_value = (
+    /*t*/
+    ctx[72] + ""
+  );
+  let t1;
+  let mounted;
+  let dispose;
+  return {
+    c() {
+      span = element("span");
+      t0 = text("\u{1F4C1} ");
+      t1 = text(t1_value);
+      attr(span, "class", "el-chip");
+      attr(span, "title", "\u70B9\u51FB\u4FEE\u6539\u6240\u5C5E\u4E3B\u9898");
+      attr(span, "role", "button");
+      attr(span, "tabindex", "0");
+      set_style(span, "cursor", "pointer");
+    },
+    m(target, anchor) {
+      insert(target, span, anchor);
+      append(span, t0);
+      append(span, t1);
+      if (!mounted) {
+        dispose = [
+          listen(
+            span,
+            "click",
+            /*editThemes*/
+            ctx[22]
+          ),
+          listen(
+            span,
+            "keydown",
+            /*keydown_handler_1*/
+            ctx[36]
+          )
+        ];
+        mounted = true;
+      }
+    },
+    p(ctx2, dirty) {
+      if (dirty[0] & /*doc*/
+      1 && t1_value !== (t1_value = /*t*/
+      ctx2[72] + "")) set_data(t1, t1_value);
+    },
+    d(detaching) {
+      if (detaching) {
+        detach(span);
+      }
+      mounted = false;
+      run_all(dispose);
+    }
+  };
+}
+function create_each_block_6(key_1, ctx) {
+  let first;
+  let if_block_anchor;
+  function select_block_type_1(ctx2, dirty) {
+    if (
+      /*themeEditable*/
+      ctx2[6]
+    ) return create_if_block_18;
+    return create_else_block_3;
+  }
+  let current_block_type = select_block_type_1(ctx, [-1, -1, -1]);
+  let if_block = current_block_type(ctx);
+  return {
+    key: key_1,
+    first: null,
+    c() {
+      first = empty();
+      if_block.c();
+      if_block_anchor = empty();
+      this.first = first;
+    },
+    m(target, anchor) {
+      insert(target, first, anchor);
+      if_block.m(target, anchor);
+      insert(target, if_block_anchor, anchor);
+    },
+    p(new_ctx, dirty) {
+      ctx = new_ctx;
+      if (current_block_type === (current_block_type = select_block_type_1(ctx, dirty)) && if_block) {
+        if_block.p(ctx, dirty);
+      } else {
+        if_block.d(1);
+        if_block = current_block_type(ctx);
+        if (if_block) {
+          if_block.c();
+          if_block.m(if_block_anchor.parentNode, if_block_anchor);
+        }
+      }
+    },
+    d(detaching) {
+      if (detaching) {
+        detach(first);
+        detach(if_block_anchor);
+      }
+      if_block.d(detaching);
     }
   };
 }
@@ -7321,7 +8160,7 @@ function create_else_block_2(ctx) {
           button,
           "click",
           /*editMemo*/
-          ctx[17]
+          ctx[21]
         );
         mounted = true;
       }
@@ -7348,7 +8187,7 @@ function create_if_block_16(ctx) {
       t0 = text("\u{1F4D6} ");
       t1 = text(
         /*dictRem*/
-        ctx[13]
+        ctx[15]
       );
       attr(div, "class", "el-memo");
       attr(div, "title", "\u8BCD\u5178\u8BCD\u6839\u62C6\u89E3\uFF0C\u70B9\u51FB\u8BB0\u6210\u81EA\u5DF1\u7684\u52A9\u8BB0");
@@ -7365,13 +8204,13 @@ function create_if_block_16(ctx) {
             div,
             "click",
             /*editMemo*/
-            ctx[17]
+            ctx[21]
           ),
           listen(
             div,
             "keydown",
-            /*keydown_handler_2*/
-            ctx[31]
+            /*keydown_handler_3*/
+            ctx[38]
           )
         ];
         mounted = true;
@@ -7379,10 +8218,10 @@ function create_if_block_16(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*dictRem*/
-      8192) set_data(
+      32768) set_data(
         t1,
         /*dictRem*/
-        ctx2[13]
+        ctx2[15]
       );
     },
     d(detaching) {
@@ -7424,13 +8263,13 @@ function create_if_block_152(ctx) {
             div,
             "click",
             /*editMemo*/
-            ctx[17]
+            ctx[21]
           ),
           listen(
             div,
             "keydown",
-            /*keydown_handler_1*/
-            ctx[30]
+            /*keydown_handler_2*/
+            ctx[37]
           )
         ];
         mounted = true;
@@ -7551,7 +8390,7 @@ function create_if_block_142(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*libHits, synonyms, relClick*/
-      4196356) {
+      134225924) {
         each_value_5 = ensure_array_like(
           /*synonyms*/
           ctx2[2]
@@ -7587,7 +8426,7 @@ function create_each_block_5(ctx) {
   let button;
   let t_1_value = (
     /*w*/
-    ctx[61] + ""
+    ctx[68] + ""
   );
   let t_1;
   let button_class_value;
@@ -7597,9 +8436,9 @@ function create_each_block_5(ctx) {
   function click_handler_3() {
     return (
       /*click_handler_3*/
-      ctx[32](
+      ctx[39](
         /*w*/
-        ctx[61]
+        ctx[68]
       )
     );
   }
@@ -7608,14 +8447,14 @@ function create_each_block_5(ctx) {
       button = element("button");
       t_1 = text(t_1_value);
       attr(button, "class", button_class_value = "el-related-w " + /*libHits*/
-      (ctx[11].has(
+      (ctx[13].has(
         /*w*/
-        ctx[61]
+        ctx[68]
       ) ? "el-rel-card" : ""));
       attr(button, "title", button_title_value = /*libHits*/
-      ctx[11].has(
+      ctx[13].has(
         /*w*/
-        ctx[61]
+        ctx[68]
       ) ? "\u70B9\u51FB\u67E5\u770B\u8BCD\u5361" : "\u70B9\u51FB\u53D1\u97F3");
     },
     m(target, anchor) {
@@ -7630,20 +8469,20 @@ function create_each_block_5(ctx) {
       ctx = new_ctx;
       if (dirty[0] & /*synonyms*/
       4 && t_1_value !== (t_1_value = /*w*/
-      ctx[61] + "")) set_data(t_1, t_1_value);
+      ctx[68] + "")) set_data(t_1, t_1_value);
       if (dirty[0] & /*libHits, synonyms*/
-      2052 && button_class_value !== (button_class_value = "el-related-w " + /*libHits*/
-      (ctx[11].has(
+      8196 && button_class_value !== (button_class_value = "el-related-w " + /*libHits*/
+      (ctx[13].has(
         /*w*/
-        ctx[61]
+        ctx[68]
       ) ? "el-rel-card" : ""))) {
         attr(button, "class", button_class_value);
       }
       if (dirty[0] & /*libHits, synonyms*/
-      2052 && button_title_value !== (button_title_value = /*libHits*/
-      ctx[11].has(
+      8196 && button_title_value !== (button_title_value = /*libHits*/
+      ctx[13].has(
         /*w*/
-        ctx[61]
+        ctx[68]
       ) ? "\u70B9\u51FB\u67E5\u770B\u8BCD\u5361" : "\u70B9\u51FB\u53D1\u97F3")) {
         attr(button, "title", button_title_value);
       }
@@ -7692,7 +8531,7 @@ function create_if_block_132(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*libHits, antonyms, relClick*/
-      4196360) {
+      134225928) {
         each_value_4 = ensure_array_like(
           /*antonyms*/
           ctx2[3]
@@ -7728,7 +8567,7 @@ function create_each_block_4(ctx) {
   let button;
   let t_1_value = (
     /*w*/
-    ctx[61] + ""
+    ctx[68] + ""
   );
   let t_1;
   let button_class_value;
@@ -7738,9 +8577,9 @@ function create_each_block_4(ctx) {
   function click_handler_4() {
     return (
       /*click_handler_4*/
-      ctx[33](
+      ctx[40](
         /*w*/
-        ctx[61]
+        ctx[68]
       )
     );
   }
@@ -7749,14 +8588,14 @@ function create_each_block_4(ctx) {
       button = element("button");
       t_1 = text(t_1_value);
       attr(button, "class", button_class_value = "el-related-w " + /*libHits*/
-      (ctx[11].has(
+      (ctx[13].has(
         /*w*/
-        ctx[61]
+        ctx[68]
       ) ? "el-rel-card" : "") + " el-related-ant");
       attr(button, "title", button_title_value = /*libHits*/
-      ctx[11].has(
+      ctx[13].has(
         /*w*/
-        ctx[61]
+        ctx[68]
       ) ? "\u70B9\u51FB\u67E5\u770B\u8BCD\u5361" : "\u70B9\u51FB\u53D1\u97F3");
     },
     m(target, anchor) {
@@ -7771,20 +8610,20 @@ function create_each_block_4(ctx) {
       ctx = new_ctx;
       if (dirty[0] & /*antonyms*/
       8 && t_1_value !== (t_1_value = /*w*/
-      ctx[61] + "")) set_data(t_1, t_1_value);
+      ctx[68] + "")) set_data(t_1, t_1_value);
       if (dirty[0] & /*libHits, antonyms*/
-      2056 && button_class_value !== (button_class_value = "el-related-w " + /*libHits*/
-      (ctx[11].has(
+      8200 && button_class_value !== (button_class_value = "el-related-w " + /*libHits*/
+      (ctx[13].has(
         /*w*/
-        ctx[61]
+        ctx[68]
       ) ? "el-rel-card" : "") + " el-related-ant")) {
         attr(button, "class", button_class_value);
       }
       if (dirty[0] & /*libHits, antonyms*/
-      2056 && button_title_value !== (button_title_value = /*libHits*/
-      ctx[11].has(
+      8200 && button_title_value !== (button_title_value = /*libHits*/
+      ctx[13].has(
         /*w*/
-        ctx[61]
+        ctx[68]
       ) ? "\u70B9\u51FB\u67E5\u770B\u8BCD\u5361" : "\u70B9\u51FB\u53D1\u97F3")) {
         attr(button, "title", button_title_value);
       }
@@ -7804,7 +8643,7 @@ function create_if_block_112(ctx) {
   let t1;
   let each_value_3 = ensure_array_like(
     /*dictRel*/
-    ctx[6]
+    ctx[8]
   );
   let each_blocks = [];
   for (let i = 0; i < each_value_3.length; i += 1) {
@@ -7834,10 +8673,10 @@ function create_if_block_112(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*libHits, dictRel, relClick*/
-      4196416) {
+      134226176) {
         each_value_3 = ensure_array_like(
           /*dictRel*/
-          ctx2[6]
+          ctx2[8]
         );
         let i;
         for (i = 0; i < each_value_3.length; i += 1) {
@@ -7868,7 +8707,7 @@ function create_each_block_3(ctx) {
   let button;
   let t_1_value = (
     /*w*/
-    ctx[61] + ""
+    ctx[68] + ""
   );
   let t_1;
   let button_class_value;
@@ -7878,9 +8717,9 @@ function create_each_block_3(ctx) {
   function click_handler_5() {
     return (
       /*click_handler_5*/
-      ctx[34](
+      ctx[41](
         /*w*/
-        ctx[61]
+        ctx[68]
       )
     );
   }
@@ -7889,15 +8728,15 @@ function create_each_block_3(ctx) {
       button = element("button");
       t_1 = text(t_1_value);
       attr(button, "class", button_class_value = "el-related-w " + /*libHits*/
-      (ctx[11].has(
+      (ctx[13].has(
         /*w*/
-        ctx[61]
+        ctx[68]
       ) ? "el-rel-card" : ""));
       attr(button, "title", button_title_value = /*t*/
-      ctx[65] || /*libHits*/
-      (ctx[11].has(
+      ctx[72] || /*libHits*/
+      (ctx[13].has(
         /*w*/
-        ctx[61]
+        ctx[68]
       ) ? "\u70B9\u51FB\u67E5\u770B\u8BCD\u5361" : "\u70B9\u51FB\u53D1\u97F3"));
     },
     m(target, anchor) {
@@ -7911,22 +8750,22 @@ function create_each_block_3(ctx) {
     p(new_ctx, dirty) {
       ctx = new_ctx;
       if (dirty[0] & /*dictRel*/
-      64 && t_1_value !== (t_1_value = /*w*/
-      ctx[61] + "")) set_data(t_1, t_1_value);
+      256 && t_1_value !== (t_1_value = /*w*/
+      ctx[68] + "")) set_data(t_1, t_1_value);
       if (dirty[0] & /*libHits, dictRel*/
-      2112 && button_class_value !== (button_class_value = "el-related-w " + /*libHits*/
-      (ctx[11].has(
+      8448 && button_class_value !== (button_class_value = "el-related-w " + /*libHits*/
+      (ctx[13].has(
         /*w*/
-        ctx[61]
+        ctx[68]
       ) ? "el-rel-card" : ""))) {
         attr(button, "class", button_class_value);
       }
       if (dirty[0] & /*dictRel, libHits*/
-      2112 && button_title_value !== (button_title_value = /*t*/
-      ctx[65] || /*libHits*/
-      (ctx[11].has(
+      8448 && button_title_value !== (button_title_value = /*t*/
+      ctx[72] || /*libHits*/
+      (ctx[13].has(
         /*w*/
-        ctx[61]
+        ctx[68]
       ) ? "\u70B9\u51FB\u67E5\u770B\u8BCD\u5361" : "\u70B9\u51FB\u53D1\u97F3"))) {
         attr(button, "title", button_title_value);
       }
@@ -7944,20 +8783,20 @@ function create_if_block_92(ctx) {
   let div;
   let span;
   let t1;
-  function select_block_type_2(ctx2, dirty) {
+  function select_block_type_3(ctx2, dirty) {
     if (
       /*dictWf*/
-      ctx2[14].lemma
+      ctx2[16].lemma
     ) return create_if_block_102;
     return create_else_block_12;
   }
-  let current_block_type = select_block_type_2(ctx, [-1, -1, -1]);
+  let current_block_type = select_block_type_3(ctx, [-1, -1, -1]);
   let if_block = current_block_type(ctx);
   return {
     c() {
       div = element("div");
       span = element("span");
-      span.textContent = "\u{1F500} \u8BCD\u5F62";
+      span.textContent = "\u{1F9E9} \u8BCD\u5F62";
       t1 = space();
       if_block.c();
       attr(span, "title", "\u8BCD\u5F62\u53D8\u5316\uFF08\u8BCD\u5178\uFF09\uFF0C\u70B9\u51FB\u53D1\u97F3");
@@ -7970,7 +8809,7 @@ function create_if_block_92(ctx) {
       if_block.m(div, null);
     },
     p(ctx2, dirty) {
-      if (current_block_type === (current_block_type = select_block_type_2(ctx2, dirty)) && if_block) {
+      if (current_block_type === (current_block_type = select_block_type_3(ctx2, dirty)) && if_block) {
         if_block.p(ctx2, dirty);
       } else {
         if_block.d(1);
@@ -7993,7 +8832,7 @@ function create_else_block_12(ctx) {
   let each_1_anchor;
   let each_value_2 = ensure_array_like(
     /*dictWf*/
-    ctx[14].forms
+    ctx[16].forms
   );
   let each_blocks = [];
   for (let i = 0; i < each_value_2.length; i += 1) {
@@ -8016,10 +8855,10 @@ function create_else_block_12(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*plugin, dictWf*/
-      16386) {
+      65538) {
         each_value_2 = ensure_array_like(
           /*dictWf*/
-          ctx2[14].forms
+          ctx2[16].forms
         );
         let i;
         for (i = 0; i < each_value_2.length; i += 1) {
@@ -8050,7 +8889,7 @@ function create_if_block_102(ctx) {
   let button;
   let t0_value = (
     /*dictWf*/
-    ctx[14].lemma + ""
+    ctx[16].lemma + ""
   );
   let t0;
   let span;
@@ -8075,15 +8914,15 @@ function create_if_block_102(ctx) {
           button,
           "click",
           /*click_handler_6*/
-          ctx[35]
+          ctx[42]
         );
         mounted = true;
       }
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*dictWf*/
-      16384 && t0_value !== (t0_value = /*dictWf*/
-      ctx2[14].lemma + "")) set_data(t0, t0_value);
+      65536 && t0_value !== (t0_value = /*dictWf*/
+      ctx2[16].lemma + "")) set_data(t0, t0_value);
     },
     d(detaching) {
       if (detaching) {
@@ -8098,13 +8937,13 @@ function create_each_block_2(ctx) {
   let button;
   let t0_value = (
     /*w*/
-    ctx[61] + ""
+    ctx[68] + ""
   );
   let t0;
   let span;
   let t1_value = (
     /*label*/
-    ctx[62] + ""
+    ctx[69] + ""
   );
   let t1;
   let mounted;
@@ -8112,9 +8951,9 @@ function create_each_block_2(ctx) {
   function click_handler_7() {
     return (
       /*click_handler_7*/
-      ctx[36](
+      ctx[43](
         /*w*/
-        ctx[61]
+        ctx[68]
       )
     );
   }
@@ -8141,11 +8980,11 @@ function create_each_block_2(ctx) {
     p(new_ctx, dirty) {
       ctx = new_ctx;
       if (dirty[0] & /*dictWf*/
-      16384 && t0_value !== (t0_value = /*w*/
-      ctx[61] + "")) set_data(t0, t0_value);
+      65536 && t0_value !== (t0_value = /*w*/
+      ctx[68] + "")) set_data(t0, t0_value);
       if (dirty[0] & /*dictWf*/
-      16384 && t1_value !== (t1_value = /*label*/
-      ctx[62] + "")) set_data(t1, t1_value);
+      65536 && t1_value !== (t1_value = /*label*/
+      ctx[69] + "")) set_data(t1, t1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -8156,7 +8995,7 @@ function create_each_block_2(ctx) {
     }
   };
 }
-function create_if_block_22(ctx) {
+function create_if_block_27(ctx) {
   let div;
   let each_value = ensure_array_like(
     /*doc*/
@@ -8184,7 +9023,7 @@ function create_if_block_22(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*readExample, doc, delExample, segsList, tokClick*/
-      2425857) {
+      76550145) {
         each_value = ensure_array_like(
           /*doc*/
           ctx2[0].examples
@@ -8217,7 +9056,7 @@ function create_if_block_22(ctx) {
 function create_else_block3(ctx) {
   let t_1_value = (
     /*seg*/
-    ctx[58].t + ""
+    ctx[65].t + ""
   );
   let t_1;
   return {
@@ -8229,8 +9068,8 @@ function create_else_block3(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*segsList*/
-      1024 && t_1_value !== (t_1_value = /*seg*/
-      ctx2[58].t + "")) set_data(t_1, t_1_value);
+      4096 && t_1_value !== (t_1_value = /*seg*/
+      ctx2[65].t + "")) set_data(t_1, t_1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -8243,7 +9082,7 @@ function create_if_block_82(ctx) {
   let span;
   let t_1_value = (
     /*seg*/
-    ctx[58].t + ""
+    ctx[65].t + ""
   );
   let t_1;
   let mounted;
@@ -8251,18 +9090,18 @@ function create_if_block_82(ctx) {
   function click_handler_11() {
     return (
       /*click_handler_11*/
-      ctx[43](
+      ctx[50](
         /*seg*/
-        ctx[58]
+        ctx[65]
       )
     );
   }
-  function keydown_handler_6(...args) {
+  function keydown_handler_7(...args) {
     return (
-      /*keydown_handler_6*/
-      ctx[44](
+      /*keydown_handler_7*/
+      ctx[51](
         /*seg*/
-        ctx[58],
+        ctx[65],
         ...args
       )
     );
@@ -8282,7 +9121,7 @@ function create_if_block_82(ctx) {
       if (!mounted) {
         dispose = [
           listen(span, "click", stop_propagation(click_handler_11)),
-          listen(span, "keydown", keydown_handler_6)
+          listen(span, "keydown", keydown_handler_7)
         ];
         mounted = true;
       }
@@ -8290,8 +9129,8 @@ function create_if_block_82(ctx) {
     p(new_ctx, dirty) {
       ctx = new_ctx;
       if (dirty[0] & /*segsList*/
-      1024 && t_1_value !== (t_1_value = /*seg*/
-      ctx[58].t + "")) set_data(t_1, t_1_value);
+      4096 && t_1_value !== (t_1_value = /*seg*/
+      ctx[65].t + "")) set_data(t_1, t_1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -8306,7 +9145,7 @@ function create_if_block_72(ctx) {
   let span;
   let t_1_value = (
     /*seg*/
-    ctx[58].t + ""
+    ctx[65].t + ""
   );
   let t_1;
   let mounted;
@@ -8314,18 +9153,18 @@ function create_if_block_72(ctx) {
   function click_handler_10() {
     return (
       /*click_handler_10*/
-      ctx[41](
+      ctx[48](
         /*seg*/
-        ctx[58]
+        ctx[65]
       )
     );
   }
-  function keydown_handler_5(...args) {
+  function keydown_handler_6(...args) {
     return (
-      /*keydown_handler_5*/
-      ctx[42](
+      /*keydown_handler_6*/
+      ctx[49](
         /*seg*/
-        ctx[58],
+        ctx[65],
         ...args
       )
     );
@@ -8345,7 +9184,7 @@ function create_if_block_72(ctx) {
       if (!mounted) {
         dispose = [
           listen(span, "click", stop_propagation(click_handler_10)),
-          listen(span, "keydown", keydown_handler_5)
+          listen(span, "keydown", keydown_handler_6)
         ];
         mounted = true;
       }
@@ -8353,8 +9192,8 @@ function create_if_block_72(ctx) {
     p(new_ctx, dirty) {
       ctx = new_ctx;
       if (dirty[0] & /*segsList*/
-      1024 && t_1_value !== (t_1_value = /*seg*/
-      ctx[58].t + "")) set_data(t_1, t_1_value);
+      4096 && t_1_value !== (t_1_value = /*seg*/
+      ctx[65].t + "")) set_data(t_1, t_1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -8369,7 +9208,7 @@ function create_if_block_62(ctx) {
   let span;
   let t_1_value = (
     /*seg*/
-    ctx[58].t + ""
+    ctx[65].t + ""
   );
   let t_1;
   let mounted;
@@ -8377,18 +9216,18 @@ function create_if_block_62(ctx) {
   function click_handler_9() {
     return (
       /*click_handler_9*/
-      ctx[39](
+      ctx[46](
         /*seg*/
-        ctx[58]
+        ctx[65]
       )
     );
   }
-  function keydown_handler_4(...args) {
+  function keydown_handler_5(...args) {
     return (
-      /*keydown_handler_4*/
-      ctx[40](
+      /*keydown_handler_5*/
+      ctx[47](
         /*seg*/
-        ctx[58],
+        ctx[65],
         ...args
       )
     );
@@ -8408,7 +9247,7 @@ function create_if_block_62(ctx) {
       if (!mounted) {
         dispose = [
           listen(span, "click", stop_propagation(click_handler_9)),
-          listen(span, "keydown", keydown_handler_4)
+          listen(span, "keydown", keydown_handler_5)
         ];
         mounted = true;
       }
@@ -8416,8 +9255,8 @@ function create_if_block_62(ctx) {
     p(new_ctx, dirty) {
       ctx = new_ctx;
       if (dirty[0] & /*segsList*/
-      1024 && t_1_value !== (t_1_value = /*seg*/
-      ctx[58].t + "")) set_data(t_1, t_1_value);
+      4096 && t_1_value !== (t_1_value = /*seg*/
+      ctx[65].t + "")) set_data(t_1, t_1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -8432,7 +9271,7 @@ function create_if_block_52(ctx) {
   let span;
   let t_1_value = (
     /*seg*/
-    ctx[58].t + ""
+    ctx[65].t + ""
   );
   let t_1;
   let mounted;
@@ -8440,18 +9279,18 @@ function create_if_block_52(ctx) {
   function click_handler_8() {
     return (
       /*click_handler_8*/
-      ctx[37](
+      ctx[44](
         /*seg*/
-        ctx[58]
+        ctx[65]
       )
     );
   }
-  function keydown_handler_3(...args) {
+  function keydown_handler_4(...args) {
     return (
-      /*keydown_handler_3*/
-      ctx[38](
+      /*keydown_handler_4*/
+      ctx[45](
         /*seg*/
-        ctx[58],
+        ctx[65],
         ...args
       )
     );
@@ -8471,7 +9310,7 @@ function create_if_block_52(ctx) {
       if (!mounted) {
         dispose = [
           listen(span, "click", stop_propagation(click_handler_8)),
-          listen(span, "keydown", keydown_handler_3)
+          listen(span, "keydown", keydown_handler_4)
         ];
         mounted = true;
       }
@@ -8479,8 +9318,8 @@ function create_if_block_52(ctx) {
     p(new_ctx, dirty) {
       ctx = new_ctx;
       if (dirty[0] & /*segsList*/
-      1024 && t_1_value !== (t_1_value = /*seg*/
-      ctx[58].t + "")) set_data(t_1, t_1_value);
+      4096 && t_1_value !== (t_1_value = /*seg*/
+      ctx[65].t + "")) set_data(t_1, t_1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -8493,26 +9332,26 @@ function create_if_block_52(ctx) {
 }
 function create_each_block_12(ctx) {
   let if_block_anchor;
-  function select_block_type_3(ctx2, dirty) {
+  function select_block_type_4(ctx2, dirty) {
     if (
       /*seg*/
-      ctx2[58].kind === "self"
+      ctx2[65].kind === "self"
     ) return create_if_block_52;
     if (
       /*seg*/
-      ctx2[58].kind === "rel"
+      ctx2[65].kind === "rel"
     ) return create_if_block_62;
     if (
       /*seg*/
-      ctx2[58].kind === "lib"
+      ctx2[65].kind === "lib"
     ) return create_if_block_72;
     if (
       /*seg*/
-      ctx2[58].kind === "new"
+      ctx2[65].kind === "new"
     ) return create_if_block_82;
     return create_else_block3;
   }
-  let current_block_type = select_block_type_3(ctx, [-1, -1, -1]);
+  let current_block_type = select_block_type_4(ctx, [-1, -1, -1]);
   let if_block = current_block_type(ctx);
   return {
     c() {
@@ -8524,7 +9363,7 @@ function create_each_block_12(ctx) {
       insert(target, if_block_anchor, anchor);
     },
     p(ctx2, dirty) {
-      if (current_block_type === (current_block_type = select_block_type_3(ctx2, dirty)) && if_block) {
+      if (current_block_type === (current_block_type = select_block_type_4(ctx2, dirty)) && if_block) {
         if_block.p(ctx2, dirty);
       } else {
         if_block.d(1);
@@ -8548,7 +9387,7 @@ function create_if_block_42(ctx) {
   let t0;
   let t1_value = (
     /*e*/
-    ctx[55].source + ""
+    ctx[62].source + ""
   );
   let t1;
   return {
@@ -8566,7 +9405,7 @@ function create_if_block_42(ctx) {
     p(ctx2, dirty) {
       if (dirty[0] & /*doc*/
       1 && t1_value !== (t1_value = /*e*/
-      ctx2[55].source + "")) set_data(t1, t1_value);
+      ctx2[62].source + "")) set_data(t1, t1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -8579,7 +9418,7 @@ function create_if_block_32(ctx) {
   let div;
   let t_1_value = (
     /*e*/
-    ctx[55].translation + ""
+    ctx[62].translation + ""
   );
   let t_1;
   return {
@@ -8595,7 +9434,7 @@ function create_if_block_32(ctx) {
     p(ctx2, dirty) {
       if (dirty[0] & /*doc*/
       1 && t_1_value !== (t_1_value = /*e*/
-      ctx2[55].translation + "")) set_data(t_1, t_1_value);
+      ctx2[62].translation + "")) set_data(t_1, t_1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -8614,9 +9453,9 @@ function create_each_block3(ctx) {
   let dispose;
   let each_value_1 = ensure_array_like(
     /*segsList*/
-    (_a = ctx[10][
+    (_a = ctx[12][
       /*ei*/
-      ctx[57]
+      ctx[64]
     ]) != null ? _a : []
   );
   let each_blocks = [];
@@ -8626,44 +9465,44 @@ function create_each_block3(ctx) {
   function click_handler_12() {
     return (
       /*click_handler_12*/
-      ctx[45](
+      ctx[52](
         /*e*/
-        ctx[55]
+        ctx[62]
       )
     );
   }
   let if_block0 = (
     /*e*/
-    ctx[55].source && create_if_block_42(ctx)
+    ctx[62].source && create_if_block_42(ctx)
   );
   function click_handler_13() {
     return (
       /*click_handler_13*/
-      ctx[46](
+      ctx[53](
         /*ei*/
-        ctx[57]
+        ctx[64]
       )
     );
   }
   let if_block1 = (
     /*e*/
-    ctx[55].translation && create_if_block_32(ctx)
+    ctx[62].translation && create_if_block_32(ctx)
   );
   function click_handler_14() {
     return (
       /*click_handler_14*/
-      ctx[47](
+      ctx[54](
         /*e*/
-        ctx[55]
+        ctx[62]
       )
     );
   }
-  function keydown_handler_7(...args) {
+  function keydown_handler_8(...args) {
     return (
-      /*keydown_handler_7*/
-      ctx[48](
+      /*keydown_handler_8*/
+      ctx[55](
         /*e*/
-        ctx[55],
+        ctx[62],
         ...args
       )
     );
@@ -8706,7 +9545,7 @@ function create_each_block3(ctx) {
           listen(button0, "click", stop_propagation(click_handler_12)),
           listen(button1, "click", stop_propagation(click_handler_13)),
           listen(div, "click", click_handler_14),
-          listen(div, "keydown", keydown_handler_7)
+          listen(div, "keydown", keydown_handler_8)
         ];
         mounted = true;
       }
@@ -8715,12 +9554,12 @@ function create_each_block3(ctx) {
       var _a2;
       ctx = new_ctx;
       if (dirty[0] & /*tokClick, segsList*/
-      2098176) {
+      67112960) {
         each_value_1 = ensure_array_like(
           /*segsList*/
-          (_a2 = ctx[10][
+          (_a2 = ctx[12][
             /*ei*/
-            ctx[57]
+            ctx[64]
           ]) != null ? _a2 : []
         );
         let i;
@@ -8741,7 +9580,7 @@ function create_each_block3(ctx) {
       }
       if (
         /*e*/
-        ctx[55].source
+        ctx[62].source
       ) {
         if (if_block0) {
           if_block0.p(ctx, dirty);
@@ -8756,7 +9595,7 @@ function create_each_block3(ctx) {
       }
       if (
         /*e*/
-        ctx[55].translation
+        ctx[62].translation
       ) {
         if (if_block1) {
           if_block1.p(ctx, dirty);
@@ -8789,7 +9628,7 @@ function create_fragment4(ctx) {
     ctx[0].word + ""
   );
   let t0;
-  let show_if = isPhrase(
+  let show_if_1 = isPhrase(
     /*doc*/
     ctx[0].word
   );
@@ -8800,29 +9639,39 @@ function create_fragment4(ctx) {
   let button;
   let button_title_value;
   let t4;
-  let if_block4_anchor;
+  let show_if = (
+    /*showBody*/
+    ctx[5] && !hasTranslation(
+      /*doc*/
+      ctx[0].translation
+    ) && /*onBackfill*/
+    ctx[7]
+  );
+  let t5;
+  let if_block5_anchor;
   let current;
   let mounted;
   let dispose;
-  let if_block0 = show_if && create_if_block_21(ctx);
+  let if_block0 = show_if_1 && create_if_block_26(ctx);
   let if_block1 = (
     /*doc*/
-    ctx[0].phonetic && create_if_block_20(ctx)
+    ctx[0].phonetic && create_if_block_25(ctx)
   );
   let if_block2 = (
     /*showAi*/
-    ctx[4] && create_if_block_19(ctx)
+    ctx[4] && create_if_block_24(ctx)
   );
   function select_block_type(ctx2, dirty) {
     if (
       /*hasAudio*/
-      ctx2[7]
-    ) return create_if_block_18;
-    return create_else_block_3;
+      ctx2[9]
+    ) return create_if_block_23;
+    return create_else_block_4;
   }
   let current_block_type = select_block_type(ctx, [-1, -1, -1]);
   let if_block3 = current_block_type(ctx);
-  let if_block4 = (
+  let if_block4 = show_if && create_if_block_22(ctx);
+  let if_block5 = (
     /*showBody*/
     ctx[5] && create_if_block3(ctx)
   );
@@ -8840,14 +9689,16 @@ function create_fragment4(ctx) {
       if_block3.c();
       t4 = space();
       if (if_block4) if_block4.c();
-      if_block4_anchor = empty();
+      t5 = space();
+      if (if_block5) if_block5.c();
+      if_block5_anchor = empty();
       attr(div, "class", "el-word el-word-link");
       attr(div, "title", "\u70B9\u51FB\u7F16\u8F91\u8BCD\u7B14\u8BB0");
       attr(div, "role", "button");
       attr(div, "tabindex", "0");
       attr(button, "class", "el-tts");
       attr(button, "title", button_title_value = /*hasAudio*/
-      ctx[7] ? "\u6807\u51C6\u53D1\u97F3" : "\u7CFB\u7EDF TTS \u64AD\u653E\uFF0C\u70B9\u51FB\u540E\u81EA\u52A8\u7F13\u5B58\u6807\u51C6\u97F3");
+      ctx[9] ? "\u6807\u51C6\u53D1\u97F3" : "\u7CFB\u7EDF TTS \u64AD\u653E\uFF0C\u70B9\u51FB\u540E\u81EA\u52A8\u7F13\u5B58\u6807\u51C6\u97F3");
     },
     m(target, anchor) {
       insert(target, div, anchor);
@@ -8862,7 +9713,9 @@ function create_fragment4(ctx) {
       if_block3.m(button, null);
       insert(target, t4, anchor);
       if (if_block4) if_block4.m(target, anchor);
-      insert(target, if_block4_anchor, anchor);
+      insert(target, t5, anchor);
+      if (if_block5) if_block5.m(target, anchor);
+      insert(target, if_block5_anchor, anchor);
       current = true;
       if (!mounted) {
         dispose = [
@@ -8874,19 +9727,19 @@ function create_fragment4(ctx) {
             div,
             "click",
             /*openWordNote*/
-            ctx[15]
+            ctx[19]
           ),
           listen(
             div,
             "keydown",
             /*keydown_handler*/
-            ctx[26]
+            ctx[32]
           ),
           listen(
             button,
             "click",
             /*click_handler_2*/
-            ctx[29]
+            ctx[35]
           )
         ];
         mounted = true;
@@ -8897,14 +9750,14 @@ function create_fragment4(ctx) {
       1) && t0_value !== (t0_value = /*doc*/
       ctx2[0].word + "")) set_data(t0, t0_value);
       if (dirty[0] & /*doc*/
-      1) show_if = isPhrase(
+      1) show_if_1 = isPhrase(
         /*doc*/
         ctx2[0].word
       );
-      if (show_if) {
+      if (show_if_1) {
         if (if_block0) {
         } else {
-          if_block0 = create_if_block_21(ctx2);
+          if_block0 = create_if_block_26(ctx2);
           if_block0.c();
           if_block0.m(div, null);
         }
@@ -8924,7 +9777,7 @@ function create_fragment4(ctx) {
         if (if_block1) {
           if_block1.p(ctx2, dirty);
         } else {
-          if_block1 = create_if_block_20(ctx2);
+          if_block1 = create_if_block_25(ctx2);
           if_block1.c();
           if_block1.m(t2.parentNode, t2);
         }
@@ -8939,7 +9792,7 @@ function create_fragment4(ctx) {
         if (if_block2) {
           if_block2.p(ctx2, dirty);
         } else {
-          if_block2 = create_if_block_19(ctx2);
+          if_block2 = create_if_block_24(ctx2);
           if_block2.c();
           if_block2.m(t3.parentNode, t3);
         }
@@ -8956,41 +9809,60 @@ function create_fragment4(ctx) {
         }
       }
       if (!current || dirty[0] & /*hasAudio*/
-      128 && button_title_value !== (button_title_value = /*hasAudio*/
-      ctx2[7] ? "\u6807\u51C6\u53D1\u97F3" : "\u7CFB\u7EDF TTS \u64AD\u653E\uFF0C\u70B9\u51FB\u540E\u81EA\u52A8\u7F13\u5B58\u6807\u51C6\u97F3")) {
+      512 && button_title_value !== (button_title_value = /*hasAudio*/
+      ctx2[9] ? "\u6807\u51C6\u53D1\u97F3" : "\u7CFB\u7EDF TTS \u64AD\u653E\uFF0C\u70B9\u51FB\u540E\u81EA\u52A8\u7F13\u5B58\u6807\u51C6\u97F3")) {
         attr(button, "title", button_title_value);
+      }
+      if (dirty[0] & /*showBody, doc, onBackfill*/
+      161) show_if = /*showBody*/
+      ctx2[5] && !hasTranslation(
+        /*doc*/
+        ctx2[0].translation
+      ) && /*onBackfill*/
+      ctx2[7];
+      if (show_if) {
+        if (if_block4) {
+          if_block4.p(ctx2, dirty);
+        } else {
+          if_block4 = create_if_block_22(ctx2);
+          if_block4.c();
+          if_block4.m(t5.parentNode, t5);
+        }
+      } else if (if_block4) {
+        if_block4.d(1);
+        if_block4 = null;
       }
       if (
         /*showBody*/
         ctx2[5]
       ) {
-        if (if_block4) {
-          if_block4.p(ctx2, dirty);
+        if (if_block5) {
+          if_block5.p(ctx2, dirty);
           if (dirty[0] & /*showBody*/
           32) {
-            transition_in(if_block4, 1);
+            transition_in(if_block5, 1);
           }
         } else {
-          if_block4 = create_if_block3(ctx2);
-          if_block4.c();
-          transition_in(if_block4, 1);
-          if_block4.m(if_block4_anchor.parentNode, if_block4_anchor);
+          if_block5 = create_if_block3(ctx2);
+          if_block5.c();
+          transition_in(if_block5, 1);
+          if_block5.m(if_block5_anchor.parentNode, if_block5_anchor);
         }
-      } else if (if_block4) {
+      } else if (if_block5) {
         group_outros();
-        transition_out(if_block4, 1, 1, () => {
-          if_block4 = null;
+        transition_out(if_block5, 1, 1, () => {
+          if_block5 = null;
         });
         check_outros();
       }
     },
     i(local) {
       if (current) return;
-      transition_in(if_block4);
+      transition_in(if_block5);
       current = true;
     },
     o(local) {
-      transition_out(if_block4);
+      transition_out(if_block5);
       current = false;
     },
     d(detaching) {
@@ -9001,13 +9873,15 @@ function create_fragment4(ctx) {
         detach(t3);
         detach(button);
         detach(t4);
-        detach(if_block4_anchor);
+        detach(t5);
+        detach(if_block5_anchor);
       }
       if (if_block0) if_block0.d();
       if (if_block1) if_block1.d(detaching);
       if (if_block2) if_block2.d(detaching);
       if_block3.d();
       if (if_block4) if_block4.d(detaching);
+      if (if_block5) if_block5.d(detaching);
       mounted = false;
       run_all(dispose);
     }
@@ -9020,12 +9894,15 @@ function instance4($$self, $$props, $$invalidate) {
   let { antonyms = [] } = $$props;
   let { showAi = true } = $$props;
   let { showBody = true } = $$props;
+  let { themeEditable = true } = $$props;
+  let { onBackfill = void 0 } = $$props;
+  let { onEditThemes = void 0 } = $$props;
   let hasAudio = false;
   let audioSeq = 0;
   async function checkAudio(w) {
     const gen = ++audioSeq;
     const ok = w ? await plugin.audio.has(w) : false;
-    if (gen === audioSeq) $$invalidate(7, hasAudio = ok);
+    if (gen === audioSeq) $$invalidate(9, hasAudio = ok);
   }
   onDestroy(plugin.audio.onCached(() => void checkAudio(doc.word)));
   function openWordNote() {
@@ -9039,6 +9916,10 @@ function instance4($$self, $$props, $$invalidate) {
   function editMemo() {
     new MemoModal(plugin.app, plugin, doc, () => $$invalidate(0, doc)).open();
   }
+  function editThemes() {
+    if (onEditThemes) return onEditThemes();
+    plugin.editWordThemes(doc, () => $$invalidate(0, doc));
+  }
   async function delExample(index) {
     if (!await confirmOk(plugin.app, "\u5220\u9664\u8FD9\u6761\u4F8B\u53E5\uFF1F\u8BCD\u7B14\u8BB0\u540C\u6B65\u66F4\u65B0\u3002", "\u5220\u9664")) return;
     await plugin.words.removeExample(doc, index);
@@ -9047,23 +9928,23 @@ function instance4($$self, $$props, $$invalidate) {
   let aiBusy = false;
   async function aiExamples() {
     if (aiBusy) return;
-    $$invalidate(8, aiBusy = true);
+    $$invalidate(10, aiBusy = true);
     try {
       await plugin.aiExamplesFor(doc);
       $$invalidate(0, doc);
     } finally {
-      $$invalidate(8, aiBusy = false);
+      $$invalidate(10, aiBusy = false);
     }
   }
   let sensesBusy = false;
   async function aiSenses() {
     if (sensesBusy) return;
-    $$invalidate(9, sensesBusy = true);
+    $$invalidate(11, sensesBusy = true);
     try {
       await plugin.aiSensesFor(doc);
       $$invalidate(0, doc);
     } finally {
-      $$invalidate(9, sensesBusy = false);
+      $$invalidate(11, sensesBusy = false);
     }
   }
   let relatedList = [];
@@ -9090,7 +9971,7 @@ function instance4($$self, $$props, $$invalidate) {
       if (lw === self || isForm(tok, self)) kind = "self";
       else if (isFrequentForm(lw)) kind = void 0;
       else if (relatedList.includes(lw) || relatedList.some((w) => isForm(tok, w))) kind = "rel";
-      else if (plugin.words.get(lw)) kind = "lib";
+      else if (lemmaCandidates(lw).some((lem) => plugin.words.get(lem))) kind = "lib";
       else if (!/['’](?:s|t|re|ve|ll|d|m)$/.test(lw)) kind = "new";
       segs.push({ t: tok, kind });
       last = m.index + tok.length;
@@ -9102,7 +9983,7 @@ function instance4($$self, $$props, $$invalidate) {
   let segsList = [];
   function tokClick(seg) {
     if (seg.kind === "new") {
-      new AddWordModal(plugin.app, plugin, seg.t, () => $$invalidate(24, libVer += 1), doc.themes[0]).open();
+      new AddWordModal(plugin.app, plugin, seg.t, () => $$invalidate(30, libVer += 1), doc.themes[0]).open();
       return;
     }
     if (seg.kind === "self") {
@@ -9124,44 +10005,51 @@ function instance4($$self, $$props, $$invalidate) {
   let dictRel = [];
   let dictRem = "";
   let dictWf = null;
+  let dictCollins = 0;
+  let dictFrq = 0;
   async function loadDictExtra(word) {
-    var _a, _b;
-    $$invalidate(6, dictRel = []);
-    $$invalidate(13, dictRem = "");
-    $$invalidate(14, dictWf = null);
+    var _a, _b, _c, _d;
+    $$invalidate(8, dictRel = []);
+    $$invalidate(15, dictRem = "");
+    $$invalidate(16, dictWf = null);
+    $$invalidate(17, dictCollins = 0);
+    $$invalidate(18, dictFrq = 0);
     try {
       const e = await plugin.dict.lookup(word);
       if (doc.word !== word) return;
-      $$invalidate(6, dictRel = (_a = e === null || e === void 0 ? void 0 : e.rel) !== null && _a !== void 0 ? _a : []);
-      $$invalidate(13, dictRem = (_b = e === null || e === void 0 ? void 0 : e.rem) !== null && _b !== void 0 ? _b : "");
-      $$invalidate(14, dictWf = parseWf(word, e === null || e === void 0 ? void 0 : e.wf));
-    } catch (_c) {
+      $$invalidate(8, dictRel = (_a = e === null || e === void 0 ? void 0 : e.rel) !== null && _a !== void 0 ? _a : []);
+      $$invalidate(15, dictRem = (_b = e === null || e === void 0 ? void 0 : e.rem) !== null && _b !== void 0 ? _b : "");
+      $$invalidate(16, dictWf = parseWf(word, e === null || e === void 0 ? void 0 : e.wf));
+      $$invalidate(17, dictCollins = (_c = e === null || e === void 0 ? void 0 : e.collins) !== null && _c !== void 0 ? _c : 0);
+      $$invalidate(18, dictFrq = (_d = e === null || e === void 0 ? void 0 : e.frq) !== null && _d !== void 0 ? _d : 0);
+    } catch (_e) {
     }
   }
   const keydown_handler = (ev) => ev.key === "Enter" && openWordNote();
   const click_handler = () => void aiExamples();
   const click_handler_1 = () => void aiSenses();
   const click_handler_2 = () => plugin.speakWord(doc.word);
-  const keydown_handler_1 = (ev) => ev.key === "Enter" && editMemo();
+  const keydown_handler_1 = (ev) => ev.key === "Enter" && editThemes();
   const keydown_handler_2 = (ev) => ev.key === "Enter" && editMemo();
+  const keydown_handler_3 = (ev) => ev.key === "Enter" && editMemo();
   const click_handler_3 = (w) => relClick(w);
   const click_handler_4 = (w) => relClick(w);
   const click_handler_5 = (w) => relClick(w);
   const click_handler_6 = () => (dictWf == null ? void 0 : dictWf.lemma) && plugin.speakWord(dictWf.lemma);
   const click_handler_7 = (w) => plugin.speakWord(w);
   const click_handler_8 = (seg) => tokClick(seg);
-  const keydown_handler_3 = (seg, ev) => ev.key === "Enter" && tokClick(seg);
-  const click_handler_9 = (seg) => tokClick(seg);
   const keydown_handler_4 = (seg, ev) => ev.key === "Enter" && tokClick(seg);
-  const click_handler_10 = (seg) => tokClick(seg);
+  const click_handler_9 = (seg) => tokClick(seg);
   const keydown_handler_5 = (seg, ev) => ev.key === "Enter" && tokClick(seg);
-  const click_handler_11 = (seg) => tokClick(seg);
+  const click_handler_10 = (seg) => tokClick(seg);
   const keydown_handler_6 = (seg, ev) => ev.key === "Enter" && tokClick(seg);
+  const click_handler_11 = (seg) => tokClick(seg);
+  const keydown_handler_7 = (seg, ev) => ev.key === "Enter" && tokClick(seg);
   const click_handler_12 = (e) => readExample(e.text);
   const click_handler_13 = (ei) => void delExample(ei);
   const click_handler_14 = (e) => readExample(e.text);
-  const keydown_handler_7 = (e, ev) => ev.key === "Enter" && readExample(e.text);
-  const click_handler_15 = () => $$invalidate(12, showAllEx = !showAllEx);
+  const keydown_handler_8 = (e, ev) => ev.key === "Enter" && readExample(e.text);
+  const click_handler_15 = () => $$invalidate(14, showAllEx = !showAllEx);
   $$self.$$set = ($$props2) => {
     if ("plugin" in $$props2) $$invalidate(1, plugin = $$props2.plugin);
     if ("doc" in $$props2) $$invalidate(0, doc = $$props2.doc);
@@ -9169,6 +10057,9 @@ function instance4($$self, $$props, $$invalidate) {
     if ("antonyms" in $$props2) $$invalidate(3, antonyms = $$props2.antonyms);
     if ("showAi" in $$props2) $$invalidate(4, showAi = $$props2.showAi);
     if ("showBody" in $$props2) $$invalidate(5, showBody = $$props2.showBody);
+    if ("themeEditable" in $$props2) $$invalidate(6, themeEditable = $$props2.themeEditable);
+    if ("onBackfill" in $$props2) $$invalidate(7, onBackfill = $$props2.onBackfill);
+    if ("onEditThemes" in $$props2) $$invalidate(28, onEditThemes = $$props2.onEditThemes);
   };
   $$self.$$.update = () => {
     if ($$self.$$.dirty[0] & /*doc*/
@@ -9177,21 +10068,22 @@ function instance4($$self, $$props, $$invalidate) {
     }
     if ($$self.$$.dirty[0] & /*doc*/
     1) {
-      $: $$invalidate(23, relatedList = relatedWords(doc));
+      $: $$invalidate(29, relatedList = relatedWords(doc));
     }
     if ($$self.$$.dirty[0] & /*relatedList, libVer, doc*/
-    25165825) {
-      $: $$invalidate(10, segsList = (relatedList, libVer, doc.examples.map((e) => splitExample(e.text))));
+    1610612737) {
+      $: $$invalidate(12, segsList = (relatedList, libVer, doc.examples.map((e) => splitExample(e.text))));
     }
     if ($$self.$$.dirty[0] & /*synonyms, antonyms, dictRel, plugin*/
-    78) {
-      $: $$invalidate(11, libHits = new Set([...synonyms, ...antonyms, ...dictRel.map(([w]) => w)].filter((w) => !!plugin.words.get(w))));
+    270) {
+      $: $$invalidate(13, libHits = new Set([...synonyms, ...antonyms, ...dictRel.map(([w]) => w)].filter((w) => !!plugin.words.get(w))));
     }
-    if ($$self.$$.dirty[0] & /*doc, shownWord*/
-    33554433) {
+    if ($$self.$$.dirty[0] & /*doc*/
+    1 | $$self.$$.dirty[1] & /*shownWord*/
+    1) {
       $: if (doc.word !== shownWord) {
-        $$invalidate(25, shownWord = doc.word);
-        $$invalidate(12, showAllEx = false);
+        $$invalidate(31, shownWord = doc.word);
+        $$invalidate(14, showAllEx = false);
       }
     }
     if ($$self.$$.dirty[0] & /*doc*/
@@ -9206,6 +10098,8 @@ function instance4($$self, $$props, $$invalidate) {
     antonyms,
     showAi,
     showBody,
+    themeEditable,
+    onBackfill,
     dictRel,
     hasAudio,
     aiBusy,
@@ -9215,14 +10109,18 @@ function instance4($$self, $$props, $$invalidate) {
     showAllEx,
     dictRem,
     dictWf,
+    dictCollins,
+    dictFrq,
     openWordNote,
     readExample,
     editMemo,
+    editThemes,
     delExample,
     aiExamples,
     aiSenses,
     tokClick,
     relClick,
+    onEditThemes,
     relatedList,
     libVer,
     shownWord,
@@ -9232,23 +10130,24 @@ function instance4($$self, $$props, $$invalidate) {
     click_handler_2,
     keydown_handler_1,
     keydown_handler_2,
+    keydown_handler_3,
     click_handler_3,
     click_handler_4,
     click_handler_5,
     click_handler_6,
     click_handler_7,
     click_handler_8,
-    keydown_handler_3,
-    click_handler_9,
     keydown_handler_4,
-    click_handler_10,
+    click_handler_9,
     keydown_handler_5,
-    click_handler_11,
+    click_handler_10,
     keydown_handler_6,
+    click_handler_11,
+    keydown_handler_7,
     click_handler_12,
     click_handler_13,
     click_handler_14,
-    keydown_handler_7,
+    keydown_handler_8,
     click_handler_15
   ];
 }
@@ -9267,7 +10166,10 @@ var WordFullCard = class extends SvelteComponent {
         synonyms: 2,
         antonyms: 3,
         showAi: 4,
-        showBody: 5
+        showBody: 5,
+        themeEditable: 6,
+        onBackfill: 7,
+        onEditThemes: 28
       },
       null,
       [-1, -1, -1]
@@ -9280,18 +10182,18 @@ var WordFullCard_default = WordFullCard;
 var { window: window_1 } = globals;
 function get_each_context_22(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[119] = list[i];
-  child_ctx[121] = i;
+  child_ctx[125] = list[i];
+  child_ctx[127] = i;
   return child_ctx;
 }
 function get_each_context4(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[114] = list[i];
+  child_ctx[120] = list[i];
   return child_ctx;
 }
 function get_each_context_13(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[114] = list[i];
+  child_ctx[120] = list[i];
   return child_ctx;
 }
 function create_if_block_212(ctx) {
@@ -9347,8 +10249,8 @@ function create_if_block_212(ctx) {
   );
   const if_block_creators = [
     create_if_block_222,
-    create_if_block_24,
-    create_if_block_25,
+    create_if_block_242,
+    create_if_block_252,
     create_if_block_29,
     create_if_block_332
   ];
@@ -9378,7 +10280,7 @@ function create_if_block_212(ctx) {
     ) return 4;
     return -1;
   }
-  if (~(current_block_type_index = select_block_type_4(ctx, [-1, -1, -1, -1]))) {
+  if (~(current_block_type_index = select_block_type_4(ctx, [-1, -1, -1, -1, -1]))) {
     if_block2 = if_blocks[current_block_type_index] = if_block_creators[current_block_type_index](ctx);
   }
   return {
@@ -9721,7 +10623,7 @@ function create_if_block_93(ctx) {
     ) return create_if_block_202;
     return create_else_block_13;
   }
-  let current_block_type = select_block_type_2(ctx, [-1, -1, -1, -1]);
+  let current_block_type = select_block_type_2(ctx, [-1, -1, -1, -1, -1]);
   let if_block0 = current_block_type(ctx);
   let if_block1 = (
     /*stats*/
@@ -9761,7 +10663,7 @@ function create_if_block_93(ctx) {
       ctx2[19] > 0
     ) return create_if_block_133;
   }
-  let current_block_type_1 = select_block_type_3(ctx, [-1, -1, -1, -1]);
+  let current_block_type_1 = select_block_type_3(ctx, [-1, -1, -1, -1, -1]);
   let if_block7 = current_block_type_1 && current_block_type_1(ctx);
   let if_block8 = !/*exitedEarly*/
   ctx[13] && !/*hardMode*/
@@ -10106,7 +11008,7 @@ function create_if_block_43(ctx) {
     ) return create_if_block_83;
     return create_else_block4;
   }
-  let current_block_type = select_block_type_1(ctx, [-1, -1, -1, -1]);
+  let current_block_type = select_block_type_1(ctx, [-1, -1, -1, -1, -1]);
   let if_block0 = current_block_type(ctx);
   let if_block1 = !/*hardMode*/
   ctx[14] && /*doneFresh*/
@@ -10282,7 +11184,7 @@ function create_if_block_33(ctx) {
     }
   };
 }
-function create_if_block_23(ctx) {
+function create_if_block_28(ctx) {
   let div3;
   let div0;
   let t1;
@@ -10568,7 +11470,7 @@ function create_if_block_332(ctx) {
     ) return create_if_block_48;
     return create_else_block_7;
   }
-  let current_block_type = select_block_type_8(ctx, [-1, -1, -1, -1]);
+  let current_block_type = select_block_type_8(ctx, [-1, -1, -1, -1, -1]);
   let if_block0 = current_block_type(ctx);
   let if_block1 = (
     /*quizPicked*/
@@ -10738,14 +11640,14 @@ function create_if_block_29(ctx) {
     ) return 0;
     return 1;
   }
-  current_block_type_index = select_block_type_6(ctx, [-1, -1, -1, -1]);
+  current_block_type_index = select_block_type_6(ctx, [-1, -1, -1, -1, -1]);
   if_block0 = if_blocks[current_block_type_index] = if_block_creators[current_block_type_index](ctx);
   function select_block_type_7(ctx2, dirty) {
     if (!/*revealed*/
     ctx2[5]) return create_if_block_30;
     return create_else_block_22;
   }
-  let current_block_type = select_block_type_7(ctx, [-1, -1, -1, -1]);
+  let current_block_type = select_block_type_7(ctx, [-1, -1, -1, -1, -1]);
   let if_block1 = current_block_type(ctx);
   return {
     c() {
@@ -10816,7 +11718,7 @@ function create_if_block_29(ctx) {
     }
   };
 }
-function create_if_block_25(ctx) {
+function create_if_block_252(ctx) {
   let div;
   let wordfullcard;
   let t0;
@@ -10854,7 +11756,7 @@ function create_if_block_25(ctx) {
   let if_block0 = (
     /*cur*/
     ctx[9].kind === "restudy" && !/*revealed*/
-    ctx[5] && create_if_block_28(ctx)
+    ctx[5] && create_if_block_282(ctx)
   );
   function select_block_type_5(ctx2, dirty) {
     if (
@@ -10862,13 +11764,13 @@ function create_if_block_25(ctx) {
       ctx2[9].kind === "study" || /*cur*/
       ctx2[9].kind === "restudy" && /*revealed*/
       ctx2[5]
-    ) return create_if_block_26;
+    ) return create_if_block_262;
     if (
       /*cur*/
       ctx2[9].kind === "confirm"
-    ) return create_if_block_27;
+    ) return create_if_block_272;
   }
-  let current_block_type = select_block_type_5(ctx, [-1, -1, -1, -1]);
+  let current_block_type = select_block_type_5(ctx, [-1, -1, -1, -1, -1]);
   let if_block1 = current_block_type && current_block_type(ctx);
   return {
     c() {
@@ -10920,7 +11822,7 @@ function create_if_block_25(ctx) {
         if (if_block0) {
           if_block0.p(ctx2, dirty);
         } else {
-          if_block0 = create_if_block_28(ctx2);
+          if_block0 = create_if_block_282(ctx2);
           if_block0.c();
           if_block0.m(div, null);
         }
@@ -10962,7 +11864,7 @@ function create_if_block_25(ctx) {
     }
   };
 }
-function create_if_block_24(ctx) {
+function create_if_block_242(ctx) {
   let div0;
   let wordfullcard;
   let t0;
@@ -11394,7 +12296,7 @@ function create_if_block_36(ctx) {
     ) return create_if_block_44;
     return create_else_block_6;
   }
-  let current_block_type = select_block_type_9(ctx, [-1, -1, -1, -1]);
+  let current_block_type = select_block_type_9(ctx, [-1, -1, -1, -1, -1]);
   let if_block0 = current_block_type(ctx);
   function select_block_type_11(ctx2, dirty) {
     if (
@@ -11406,7 +12308,7 @@ function create_if_block_36(ctx) {
       ctx2[12]
     ) return create_if_block_432;
   }
-  let current_block_type_1 = select_block_type_11(ctx, [-1, -1, -1, -1]);
+  let current_block_type_1 = select_block_type_11(ctx, [-1, -1, -1, -1, -1]);
   let if_block1 = current_block_type_1 && current_block_type_1(ctx);
   return {
     c() {
@@ -11585,7 +12487,7 @@ function create_if_block_44(ctx) {
     ) return create_if_block_45;
     return create_else_block_5;
   }
-  let current_block_type = select_block_type_10(ctx, [-1, -1, -1, -1]);
+  let current_block_type = select_block_type_10(ctx, [-1, -1, -1, -1, -1]);
   let if_block = current_block_type(ctx);
   return {
     c() {
@@ -12056,9 +12958,9 @@ function create_if_block_38(ctx) {
       /*hasAudio*/
       ctx2[34]
     ) return create_if_block_39;
-    return create_else_block_4;
+    return create_else_block_42;
   }
-  let current_block_type = select_block_type_12(ctx, [-1, -1, -1, -1]);
+  let current_block_type = select_block_type_12(ctx, [-1, -1, -1, -1, -1]);
   let if_block = current_block_type(ctx);
   return {
     c() {
@@ -12106,7 +13008,7 @@ function create_if_block_38(ctx) {
     }
   };
 }
-function create_else_block_4(ctx) {
+function create_else_block_42(ctx) {
   let t;
   return {
     c() {
@@ -12243,7 +13145,7 @@ function create_each_block_22(ctx) {
   let span1;
   let t2_value = (
     /*opt*/
-    ctx[119] + ""
+    ctx[125] + ""
   );
   let t2;
   let t3;
@@ -12255,7 +13157,7 @@ function create_each_block_22(ctx) {
       /*click_handler_16*/
       ctx[89](
         /*i*/
-        ctx[121]
+        ctx[127]
       )
     );
   }
@@ -12264,7 +13166,7 @@ function create_each_block_22(ctx) {
       button = element("button");
       span0 = element("span");
       span0.textContent = `${/*i*/
-      ctx[121] + 1}`;
+      ctx[127] + 1}`;
       t1 = space();
       span1 = element("span");
       t2 = text(t2_value);
@@ -12279,7 +13181,7 @@ function create_each_block_22(ctx) {
         "is-correct",
         /*quizPicked*/
         ctx[11] >= 0 && /*i*/
-        ctx[121] === /*cur*/
+        ctx[127] === /*cur*/
         ctx[9].quiz.answer
       );
       toggle_class(
@@ -12287,7 +13189,7 @@ function create_each_block_22(ctx) {
         "is-wrong",
         /*quizPicked*/
         ctx[11] === /*i*/
-        ctx[121] && !/*quizCorrect*/
+        ctx[127] && !/*quizCorrect*/
         ctx[12]
       );
     },
@@ -12307,7 +13209,7 @@ function create_each_block_22(ctx) {
       ctx = new_ctx;
       if (dirty[0] & /*cur*/
       512 && t2_value !== (t2_value = /*opt*/
-      ctx[119] + "")) set_data(t2, t2_value);
+      ctx[125] + "")) set_data(t2, t2_value);
       if (dirty[0] & /*quizPicked*/
       2048 && button_disabled_value !== (button_disabled_value = /*quizPicked*/
       ctx[11] >= 0)) {
@@ -12320,7 +13222,7 @@ function create_each_block_22(ctx) {
           "is-correct",
           /*quizPicked*/
           ctx[11] >= 0 && /*i*/
-          ctx[121] === /*cur*/
+          ctx[127] === /*cur*/
           ctx[9].quiz.answer
         );
       }
@@ -12331,7 +13233,7 @@ function create_each_block_22(ctx) {
           "is-wrong",
           /*quizPicked*/
           ctx[11] === /*i*/
-          ctx[121] && !/*quizCorrect*/
+          ctx[127] && !/*quizCorrect*/
           ctx[12]
         );
       }
@@ -12664,7 +13566,7 @@ function create_if_block_30(ctx) {
     }
   };
 }
-function create_if_block_28(ctx) {
+function create_if_block_282(ctx) {
   let div;
   let button;
   let mounted;
@@ -12700,7 +13602,7 @@ function create_if_block_28(ctx) {
     }
   };
 }
-function create_if_block_27(ctx) {
+function create_if_block_272(ctx) {
   let div;
   let button0;
   let t2;
@@ -12766,7 +13668,7 @@ function create_if_block_27(ctx) {
     }
   };
 }
-function create_if_block_26(ctx) {
+function create_if_block_262(ctx) {
   let div;
   let button0;
   let t2;
@@ -13103,7 +14005,7 @@ function create_each_block_13(ctx) {
   let button;
   let t_value = (
     /*w*/
-    ctx[114] + ""
+    ctx[120] + ""
   );
   let t;
   let mounted;
@@ -13113,7 +14015,7 @@ function create_each_block_13(ctx) {
       /*click_handler_3*/
       ctx[75](
         /*w*/
-        ctx[114]
+        ctx[120]
       )
     );
   }
@@ -13136,7 +14038,7 @@ function create_each_block_13(ctx) {
       ctx = new_ctx;
       if (dirty[0] & /*masteredNow*/
       131072 && t_value !== (t_value = /*w*/
-      ctx[114] + "")) set_data(t, t_value);
+      ctx[120] + "")) set_data(t, t_value);
     },
     d(detaching) {
       if (detaching) {
@@ -13212,7 +14114,7 @@ function create_each_block4(ctx) {
   let button;
   let t_value = (
     /*w*/
-    ctx[114] + ""
+    ctx[120] + ""
   );
   let t;
   let mounted;
@@ -13222,7 +14124,7 @@ function create_each_block4(ctx) {
       /*click_handler_4*/
       ctx[76](
         /*w*/
-        ctx[114]
+        ctx[120]
       )
     );
   }
@@ -13245,7 +14147,7 @@ function create_each_block4(ctx) {
       ctx = new_ctx;
       if (dirty[0] & /*weakNow*/
       262144 && t_value !== (t_value = /*w*/
-      ctx[114] + "")) set_data(t, t_value);
+      ctx[120] + "")) set_data(t, t_value);
     },
     d(detaching) {
       if (detaching) {
@@ -13771,7 +14673,7 @@ function create_fragment5(ctx) {
   const if_block_creators = [
     create_if_block4,
     create_if_block_110,
-    create_if_block_23,
+    create_if_block_28,
     create_if_block_33,
     create_if_block_43,
     create_if_block_93,
@@ -13809,7 +14711,7 @@ function create_fragment5(ctx) {
     ) return 6;
     return -1;
   }
-  if (~(current_block_type_index = select_block_type(ctx, [-1, -1, -1, -1]))) {
+  if (~(current_block_type_index = select_block_type(ctx, [-1, -1, -1, -1, -1]))) {
     if_block = if_blocks[current_block_type_index] = if_block_creators[current_block_type_index](ctx);
   }
   return {
@@ -13998,9 +14900,13 @@ function instance5($$self, $$props, $$invalidate) {
     return { update: (n) => (0, import_obsidian10.setIcon)(node, n) };
   }
   function toggleMute() {
-    $$invalidate(0, plugin.muted = !plugin.muted, plugin);
-    $$invalidate(8, audioMuted = plugin.muted);
+    plugin.toggleMute();
   }
+  onMount(() => {
+    const syncMute = () => $$invalidate(8, audioMuted = plugin.muted);
+    window.addEventListener("el-mute-changed", syncMute);
+    return () => window.removeEventListener("el-mute-changed", syncMute);
+  });
   let synRow = [];
   let antRow = [];
   let relLoadSeq = 0;
@@ -14064,20 +14970,27 @@ function instance5($$self, $$props, $$invalidate) {
     if (seq !== audioSeq) return;
     $$invalidate(34, hasAudio = ok);
   }
-  onDestroy(() => plugin.enrichDropPending());
+  onDestroy(() => {
+    cancelFlip();
+    plugin.enrichDropPending();
+  });
   onDestroy(plugin.audio.onCached(() => void checkAudio(cur === null || cur === void 0 ? void 0 : cur.doc.word)));
   onMount(async () => {
     var _a, _b, _c;
     $$invalidate(7, themeName = (_a = plugin.sessionTheme) !== null && _a !== void 0 ? _a : "");
     $$invalidate(14, hardMode = plugin.sessionHard);
+    $$invalidate(0, plugin.sessionActive = true, plugin);
     let s;
     try {
       s = await plugin.buildSession(plugin.sessionTheme, plugin.sessionHard);
     } catch (e) {
+      if (destroyed) return;
+      $$invalidate(0, plugin.sessionActive = false, plugin);
       $$invalidate(30, loadError = e instanceof Error ? e.message : String(e));
       $$invalidate(1, loading = false);
       return;
     }
+    if (destroyed) return;
     $$invalidate(15, dueTotal = s.dueTotal);
     $$invalidate(2, cards = [
       ...s.queue.slice(0, s.dueFirst).map(reviewCard),
@@ -14085,7 +14998,6 @@ function instance5($$self, $$props, $$invalidate) {
     ]);
     $$invalidate(1, loading = false);
     startedAt = Date.now();
-    $$invalidate(0, plugin.sessionActive = true, plugin);
     if (!cards.length) {
       $$invalidate(0, plugin.sessionActive = false, plugin);
       const pool = themeName ? plugin.words.byTheme(themeName) : plugin.activeWords();
@@ -14127,7 +15039,9 @@ function instance5($$self, $$props, $$invalidate) {
       });
     })();
   });
+  let destroyed = false;
   onDestroy(() => {
+    destroyed = true;
     offNoteChange.off();
     $$invalidate(0, plugin.sessionActive = false, plugin);
   });
@@ -14148,19 +15062,43 @@ function instance5($$self, $$props, $$invalidate) {
     if (card.kind === "review" && card.reverse && !revealed) return;
     plugin.speakWord(card.doc.word);
   }
+  function settleTail() {
+    if (idx < cards.length) {
+      autoSpeak(cards[idx]);
+      return;
+    }
+    if (reinforcementBuilt) {
+      finish();
+      return;
+    }
+    try {
+      buildReinforcement();
+    } catch (e) {
+      console.error("\u5DE9\u56FA\u6D4B\u8BD5\u51FA\u9898\u5931\u8D25\uFF0C\u8DF3\u8FC7\u76F4\u63A5\u5B8C\u6210:", e);
+      finish();
+    }
+  }
+  function flipPending() {
+    var _a;
+    return ((_a = cards[idx]) === null || _a === void 0 ? void 0 : _a.kind) === "quiz" && quizPicked >= 0 && quizCorrect;
+  }
+  function armFlip() {
+    cancelFlip();
+    autoTimer = setTimeout(advance, 1100);
+  }
+  function cancelFlip() {
+    clearTimeout(autoTimer);
+    autoTimer = void 0;
+  }
   function advance() {
+    cancelFlip();
     $$invalidate(3, idx++, idx);
     $$invalidate(5, revealed = false);
     $$invalidate(11, quizPicked = -1);
     $$invalidate(35, spellInput = "");
     $$invalidate(36, spellHinted = false);
     $$invalidate(37, spellShowQ = false);
-    if (idx >= cards.length) {
-      if (!reinforcementBuilt) buildReinforcement();
-      else finish();
-    } else {
-      autoSpeak(cards[idx]);
-    }
+    settleTail();
   }
   function insertNext(card) {
     cards.splice(idx + 1, 0, card);
@@ -14168,18 +15106,20 @@ function instance5($$self, $$props, $$invalidate) {
   }
   function goBack() {
     if (finished || idx <= 0) return;
-    clearTimeout(autoTimer);
+    cancelFlip();
     if (browseFrom < 0) $$invalidate(4, browseFrom = idx);
     $$invalidate(3, idx--, idx);
     plugin.speakWord(cards[idx].doc.word);
   }
+  function landCurrent() {
+    if (flipPending()) armFlip();
+    else autoSpeak(cards[idx]);
+  }
   function goForward() {
-    var _a;
     if (browseFrom < 0) return;
     $$invalidate(3, idx = browseFrom);
     $$invalidate(4, browseFrom = -1);
-    if (((_a = cards[idx]) === null || _a === void 0 ? void 0 : _a.kind) === "quiz" && quizPicked >= 0 && quizCorrect) advance();
-    else autoSpeak(cards[idx]);
+    landCurrent();
   }
   function finishGrade(r) {
     if (r.isNew) $$invalidate(16, stats.new++, stats);
@@ -14289,7 +15229,7 @@ function instance5($$self, $$props, $$invalidate) {
     if (r.masteredNow) masteredNow.push(cur.doc.word);
     if (ok) {
       plugin.speakWord(cur.doc.word);
-      autoTimer = setTimeout(advance, 1100);
+      armFlip();
     }
   }
   function pick(i) {
@@ -14315,7 +15255,7 @@ function instance5($$self, $$props, $$invalidate) {
     if (r.masteredNow) masteredNow.push(cur.doc.word);
     if (quizCorrect) {
       plugin.speakWord(cur.doc.word);
-      autoTimer = setTimeout(advance, 1100);
+      armFlip();
     }
   }
   function quizOpts() {
@@ -14377,6 +15317,8 @@ function instance5($$self, $$props, $$invalidate) {
   }
   function finish(early = false) {
     var _a;
+    if (finished) return;
+    cancelFlip();
     $$invalidate(6, finished = true);
     $$invalidate(13, exitedEarly = early);
     $$invalidate(4, browseFrom = -1);
@@ -14411,10 +15353,14 @@ function instance5($$self, $$props, $$invalidate) {
       void extraRound();
       return;
     }
+    if (flipPending() && idx + 1 >= cards.length) {
+      $$invalidate(13, exitedEarly = false);
+      return;
+    }
     $$invalidate(6, finished = false);
     $$invalidate(13, exitedEarly = false);
     $$invalidate(0, plugin.sessionActive = true, plugin);
-    autoSpeak(cards[idx]);
+    landCurrent();
   }
   async function extraRound(extraNew = 0) {
     let s;
@@ -14424,6 +15370,7 @@ function instance5($$self, $$props, $$invalidate) {
       new import_obsidian10.Notice(`\u52A0\u8F7D\u65B0\u4E00\u8F6E\u5931\u8D25\uFF1A${e instanceof Error ? e.message : e}`);
       return;
     }
+    if (destroyed) return;
     if (!s.queue.length) {
       $$invalidate(19, remaining = 0);
       $$invalidate(25, doneFresh = freshLeftCount());
@@ -14456,6 +15403,7 @@ function instance5($$self, $$props, $$invalidate) {
     $$invalidate(19, remaining = -1);
     $$invalidate(6, finished = false);
     $$invalidate(22, done = false);
+    $$invalidate(0, plugin.sessionActive = true, plugin);
     autoSpeak(cards[idx]);
   }
   function onKey(e) {
@@ -14470,7 +15418,7 @@ function instance5($$self, $$props, $$invalidate) {
       return;
     }
     if (k === "Escape") {
-      if (!finished) finish(true);
+      if (cards.length > 0 && !finished) finish(true);
       return;
     }
     if (finished) return;
@@ -14540,17 +15488,13 @@ function instance5($$self, $$props, $$invalidate) {
       studiedDocs = studiedDocs.filter((d) => d.word !== w);
       quizPool = quizPool.filter((d) => d.word !== w);
       $$invalidate(17, masteredNow = masteredNow.filter((x) => x !== w));
+      cancelFlip();
       $$invalidate(5, revealed = false);
       $$invalidate(11, quizPicked = -1);
       $$invalidate(35, spellInput = "");
       $$invalidate(36, spellHinted = false);
       $$invalidate(37, spellShowQ = false);
-      if (idx >= cards.length) {
-        if (!reinforcementBuilt) buildReinforcement();
-        else finish();
-      } else {
-        autoSpeak(cards[idx]);
-      }
+      if (!finished) settleTail();
       plugin.deleteWord(w).then(() => new import_obsidian10.Notice(`\u5DF2\u5220\u9664\u300C${w}\u300D`)).catch((e) => new import_obsidian10.Notice(`\u5220\u9664\u5931\u8D25\uFF08\u300C${w}\u300D\u53EF\u80FD\u8FD8\u5728\u8BCD\u5E93\uFF09\uFF1A${e instanceof Error ? e.message : e}`));
     });
   }
@@ -14733,7 +15677,7 @@ function instance5($$self, $$props, $$invalidate) {
 var LearnSession = class extends SvelteComponent {
   constructor(options) {
     super();
-    init(this, options, instance5, create_fragment5, safe_not_equal, { plugin: 0 }, null, [-1, -1, -1, -1]);
+    init(this, options, instance5, create_fragment5, safe_not_equal, { plugin: 0 }, null, [-1, -1, -1, -1, -1]);
   }
 };
 var LearnSession_default = LearnSession;
@@ -14779,81 +15723,36 @@ var import_obsidian13 = require("obsidian");
 var import_obsidian12 = require("obsidian");
 function get_each_context5(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[52] = list[i];
+  child_ctx[53] = list[i];
   return child_ctx;
 }
 function get_each_context_14(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[55] = list[i];
-  child_ctx[57] = i;
+  child_ctx[56] = list[i];
+  child_ctx[58] = i;
   return child_ctx;
 }
 function get_each_context_23(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[58] = list[i];
+  child_ctx[59] = list[i];
   return child_ctx;
 }
 function get_each_context_32(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[61] = list[i];
+  child_ctx[62] = list[i];
   return child_ctx;
 }
 function get_each_context_42(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[57] = list[i];
-  child_ctx[65] = i;
+  child_ctx[58] = list[i];
+  child_ctx[66] = i;
   return child_ctx;
 }
 function get_each_context_52(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[57] = list[i];
-  child_ctx[65] = i;
+  child_ctx[58] = list[i];
+  child_ctx[66] = i;
   return child_ctx;
-}
-function create_if_block_163(ctx) {
-  let button;
-  let t0;
-  let t1_value = (
-    /*totals*/
-    ctx[4].hard + ""
-  );
-  let t1;
-  let mounted;
-  let dispose;
-  return {
-    c() {
-      button = element("button");
-      t0 = text("\u96BE\u8BCD\u4E13\u9879 ");
-      t1 = text(t1_value);
-      attr(button, "class", "mod-warning");
-    },
-    m(target, anchor) {
-      insert(target, button, anchor);
-      append(button, t0);
-      append(button, t1);
-      if (!mounted) {
-        dispose = listen(
-          button,
-          "click",
-          /*click_handler*/
-          ctx[30]
-        );
-        mounted = true;
-      }
-    },
-    p(ctx2, dirty) {
-      if (dirty[0] & /*totals*/
-      16 && t1_value !== (t1_value = /*totals*/
-      ctx2[4].hard + "")) set_data(t1, t1_value);
-    },
-    d(detaching) {
-      if (detaching) {
-        detach(button);
-      }
-      mounted = false;
-      dispose();
-    }
-  };
 }
 function create_if_block_154(ctx) {
   let button;
@@ -14869,7 +15768,7 @@ function create_if_block_154(ctx) {
   return {
     c() {
       button = element("button");
-      t0 = text("\u4ECA\u65E5\u5B66\u4E60");
+      t0 = text("\u5B66\u4E60");
       t1 = text(t1_value);
       attr(button, "class", "mod-cta");
     },
@@ -14881,7 +15780,7 @@ function create_if_block_154(ctx) {
         dispose = listen(
           button,
           "click",
-          /*click_handler_1*/
+          /*click_handler*/
           ctx[31]
         );
         mounted = true;
@@ -15220,11 +16119,11 @@ function create_if_block_104(ctx) {
   let if_block1_anchor;
   let if_block0 = (
     /*d*/
-    ctx[57].new > 0 && create_if_block_124(ctx)
+    ctx[58].new > 0 && create_if_block_124(ctx)
   );
   let if_block1 = (
     /*d*/
-    ctx[57].rev > 0 && create_if_block_114(ctx)
+    ctx[58].rev > 0 && create_if_block_114(ctx)
   );
   return {
     c() {
@@ -15242,7 +16141,7 @@ function create_if_block_104(ctx) {
     p(ctx2, dirty) {
       if (
         /*d*/
-        ctx2[57].new > 0
+        ctx2[58].new > 0
       ) {
         if (if_block0) {
           if_block0.p(ctx2, dirty);
@@ -15257,7 +16156,7 @@ function create_if_block_104(ctx) {
       }
       if (
         /*d*/
-        ctx2[57].rev > 0
+        ctx2[58].rev > 0
       ) {
         if (if_block1) {
           if_block1.p(ctx2, dirty);
@@ -15293,14 +16192,14 @@ function create_if_block_124(ctx) {
         /*barH*/
         ctx[16](
           /*d*/
-          ctx[57].new
+          ctx[58].new
         ) + "px"
       );
       toggle_class(
         div,
         "seg-top",
         /*d*/
-        ctx[57].rev === 0
+        ctx[58].rev === 0
       );
     },
     m(target, anchor) {
@@ -15315,7 +16214,7 @@ function create_if_block_124(ctx) {
           /*barH*/
           ctx2[16](
             /*d*/
-            ctx2[57].new
+            ctx2[58].new
           ) + "px"
         );
       }
@@ -15325,7 +16224,7 @@ function create_if_block_124(ctx) {
           div,
           "seg-top",
           /*d*/
-          ctx2[57].rev === 0
+          ctx2[58].rev === 0
         );
       }
     },
@@ -15348,7 +16247,7 @@ function create_if_block_114(ctx) {
         /*barH*/
         ctx[16](
           /*d*/
-          ctx[57].rev
+          ctx[58].rev
         ) + "px"
       );
     },
@@ -15364,7 +16263,7 @@ function create_if_block_114(ctx) {
           /*barH*/
           ctx2[16](
             /*d*/
-            ctx2[57].rev
+            ctx2[58].rev
           ) + "px"
         );
       }
@@ -15386,8 +16285,8 @@ function create_each_block_52(ctx) {
   function select_block_type(ctx2, dirty) {
     if (
       /*d*/
-      ctx2[57].rev + /*d*/
-      ctx2[57].new > 0
+      ctx2[58].rev + /*d*/
+      ctx2[58].new > 0
     ) return create_if_block_104;
     return create_else_block_23;
   }
@@ -15398,16 +16297,16 @@ function create_each_block_52(ctx) {
       /*mouseenter_handler*/
       ctx[32](
         /*i*/
-        ctx[65]
+        ctx[66]
       )
     );
   }
-  function click_handler_2() {
+  function click_handler_1() {
     return (
-      /*click_handler_2*/
+      /*click_handler_1*/
       ctx[33](
         /*i*/
-        ctx[65]
+        ctx[66]
       )
     );
   }
@@ -15416,7 +16315,7 @@ function create_each_block_52(ctx) {
       /*keydown_handler*/
       ctx[34](
         /*i*/
-        ctx[65],
+        ctx[66],
         ...args
       )
     );
@@ -15429,13 +16328,13 @@ function create_each_block_52(ctx) {
       attr(div, "class", "el-chart-col");
       attr(div, "role", "img");
       attr(div, "aria-label", div_aria_label_value = /*d*/
-      ctx[57].date + "\uFF1A\u65B0\u5B66 " + /*d*/
-      ctx[57].new + "\uFF0C\u590D\u4E60 " + /*d*/
-      ctx[57].rev);
+      ctx[58].date + "\uFF1A\u65B0\u5B66 " + /*d*/
+      ctx[58].new + "\uFF0C\u590D\u4E60 " + /*d*/
+      ctx[58].rev);
       attr(div, "title", div_title_value = /*d*/
-      ctx[57].date + "\uFF1A\u65B0\u5B66 " + /*d*/
-      ctx[57].new + " \xB7 \u590D\u4E60 " + /*d*/
-      ctx[57].rev);
+      ctx[58].date + "\uFF1A\u65B0\u5B66 " + /*d*/
+      ctx[58].new + " \xB7 \u590D\u4E60 " + /*d*/
+      ctx[58].rev);
       attr(div, "tabindex", "-1");
     },
     m(target, anchor) {
@@ -15445,7 +16344,7 @@ function create_each_block_52(ctx) {
       if (!mounted) {
         dispose = [
           listen(div, "mouseenter", mouseenter_handler),
-          listen(div, "click", click_handler_2),
+          listen(div, "click", click_handler_1),
           listen(div, "keydown", keydown_handler)
         ];
         mounted = true;
@@ -15465,16 +16364,16 @@ function create_each_block_52(ctx) {
       }
       if (dirty[0] & /*days*/
       4 && div_aria_label_value !== (div_aria_label_value = /*d*/
-      ctx[57].date + "\uFF1A\u65B0\u5B66 " + /*d*/
-      ctx[57].new + "\uFF0C\u590D\u4E60 " + /*d*/
-      ctx[57].rev)) {
+      ctx[58].date + "\uFF1A\u65B0\u5B66 " + /*d*/
+      ctx[58].new + "\uFF0C\u590D\u4E60 " + /*d*/
+      ctx[58].rev)) {
         attr(div, "aria-label", div_aria_label_value);
       }
       if (dirty[0] & /*days*/
       4 && div_title_value !== (div_title_value = /*d*/
-      ctx[57].date + "\uFF1A\u65B0\u5B66 " + /*d*/
-      ctx[57].new + " \xB7 \u590D\u4E60 " + /*d*/
-      ctx[57].rev)) {
+      ctx[58].date + "\uFF1A\u65B0\u5B66 " + /*d*/
+      ctx[58].new + " \xB7 \u590D\u4E60 " + /*d*/
+      ctx[58].rev)) {
         attr(div, "title", div_title_value);
       }
     },
@@ -15492,11 +16391,11 @@ function create_each_block_42(ctx) {
   let span;
   let t_1_value = (
     /*i*/
-    (ctx[65] === 0 || /*i*/
-    ctx[65] === 7 || /*i*/
-    ctx[65] === 13 ? (
+    (ctx[66] === 0 || /*i*/
+    ctx[66] === 7 || /*i*/
+    ctx[66] === 13 ? (
       /*d*/
-      ctx[57].label
+      ctx[58].label
     ) : "") + ""
   );
   let t_1;
@@ -15513,11 +16412,11 @@ function create_each_block_42(ctx) {
     p(ctx2, dirty) {
       if (dirty[0] & /*days*/
       4 && t_1_value !== (t_1_value = /*i*/
-      (ctx2[65] === 0 || /*i*/
-      ctx2[65] === 7 || /*i*/
-      ctx2[65] === 13 ? (
+      (ctx2[66] === 0 || /*i*/
+      ctx2[66] === 7 || /*i*/
+      ctx2[66] === 13 ? (
         /*d*/
-        ctx2[57].label
+        ctx2[58].label
       ) : "") + "")) set_data(t_1, t_1_value);
     },
     d(detaching) {
@@ -15617,7 +16516,7 @@ function create_else_block_14(ctx) {
   );
   const get_key = (ctx2) => (
     /*t*/
-    ctx2[58].name
+    ctx2[59].name
   );
   for (let i = 0; i < each_value_2.length; i += 1) {
     let child_ctx = get_each_context_23(ctx, each_value_2, i);
@@ -15666,7 +16565,7 @@ function create_if_block_310(ctx) {
     c() {
       div = element("div");
       div.innerHTML = `\u8FD8\u6CA1\u6709\u4E3B\u9898\u3002<br/>
-      \u70B9\u51FB\u300C\u65B0\u5EFA\u4E3B\u9898\u300D\u521B\u5EFA\u4E00\u4E2A\uFF08\u5982\u300C\u79D1\u6280\u300D\uFF09\uFF0C\u5EFA\u597D\u5373\u53EF\u6269\u8BCD\u6216\u5BFC\u5165\u8BCD\u8868\u3002`;
+      \u70B9\u51FB\u300C\u65B0\u5EFA\u300D\u521B\u5EFA\u4E00\u4E2A\uFF08\u5982\u300C\u79D1\u6280\u300D\uFF09\uFF0C\u5EFA\u597D\u5373\u53EF\u6269\u8BCD\u6216\u5BFC\u5165\u8BCD\u8868\u3002`;
       attr(div, "class", "el-empty");
     },
     m(target, anchor) {
@@ -15711,20 +16610,20 @@ function create_if_block_74(ctx) {
   let t2;
   let t3_value = (
     /*t*/
-    ctx[58].count - /*t*/
-    ctx[58].fresh + ""
+    ctx[59].count - /*t*/
+    ctx[59].fresh + ""
   );
   let t3;
   let t4;
   let t5_value = (
     /*t*/
-    ctx[58].count + ""
+    ctx[59].count + ""
   );
   let t5;
   let t6;
   let t7_value = (
     /*t*/
-    ctx[58].mastered + ""
+    ctx[59].mastered + ""
   );
   let t7;
   return {
@@ -15747,27 +16646,27 @@ function create_if_block_74(ctx) {
         span0,
         "width",
         /*t*/
-        ctx[58].mastered / /*t*/
-        ctx[58].count * 100 + "%"
+        ctx[59].mastered / /*t*/
+        ctx[59].count * 100 + "%"
       );
       attr(span1, "class", "el-theme-bar-seg is-learning");
       set_style(
         span1,
         "width",
         /*t*/
-        (ctx[58].count - /*t*/
-        ctx[58].fresh - /*t*/
-        ctx[58].mastered) / /*t*/
-        ctx[58].count * 100 + "%"
+        (ctx[59].count - /*t*/
+        ctx[59].fresh - /*t*/
+        ctx[59].mastered) / /*t*/
+        ctx[59].count * 100 + "%"
       );
       attr(div0, "class", "el-theme-bar");
       attr(div0, "role", "img");
       attr(div0, "aria-label", div0_aria_label_value = "\u5DF2\u5B66 " + /*t*/
-      (ctx[58].count - /*t*/
-      ctx[58].fresh) + "/" + /*t*/
-      ctx[58].count + "\uFF0C\u5DF2\u638C\u63E1 " + /*t*/
-      ctx[58].mastered + "\uFF0C\u672A\u5B66 " + /*t*/
-      ctx[58].fresh);
+      (ctx[59].count - /*t*/
+      ctx[59].fresh) + "/" + /*t*/
+      ctx[59].count + "\uFF0C\u5DF2\u638C\u63E1 " + /*t*/
+      ctx[59].mastered + "\uFF0C\u672A\u5B66 " + /*t*/
+      ctx[59].fresh);
       attr(span2, "class", "el-theme-bar-label");
       attr(div1, "class", "el-theme-bar-row");
     },
@@ -15793,8 +16692,8 @@ function create_if_block_74(ctx) {
           span0,
           "width",
           /*t*/
-          ctx2[58].mastered / /*t*/
-          ctx2[58].count * 100 + "%"
+          ctx2[59].mastered / /*t*/
+          ctx2[59].count * 100 + "%"
         );
       }
       if (dirty[0] & /*rows*/
@@ -15803,31 +16702,31 @@ function create_if_block_74(ctx) {
           span1,
           "width",
           /*t*/
-          (ctx2[58].count - /*t*/
-          ctx2[58].fresh - /*t*/
-          ctx2[58].mastered) / /*t*/
-          ctx2[58].count * 100 + "%"
+          (ctx2[59].count - /*t*/
+          ctx2[59].fresh - /*t*/
+          ctx2[59].mastered) / /*t*/
+          ctx2[59].count * 100 + "%"
         );
       }
       if (dirty[0] & /*rows*/
       8 && div0_aria_label_value !== (div0_aria_label_value = "\u5DF2\u5B66 " + /*t*/
-      (ctx2[58].count - /*t*/
-      ctx2[58].fresh) + "/" + /*t*/
-      ctx2[58].count + "\uFF0C\u5DF2\u638C\u63E1 " + /*t*/
-      ctx2[58].mastered + "\uFF0C\u672A\u5B66 " + /*t*/
-      ctx2[58].fresh)) {
+      (ctx2[59].count - /*t*/
+      ctx2[59].fresh) + "/" + /*t*/
+      ctx2[59].count + "\uFF0C\u5DF2\u638C\u63E1 " + /*t*/
+      ctx2[59].mastered + "\uFF0C\u672A\u5B66 " + /*t*/
+      ctx2[59].fresh)) {
         attr(div0, "aria-label", div0_aria_label_value);
       }
       if (dirty[0] & /*rows*/
       8 && t3_value !== (t3_value = /*t*/
-      ctx2[58].count - /*t*/
-      ctx2[58].fresh + "")) set_data(t3, t3_value);
+      ctx2[59].count - /*t*/
+      ctx2[59].fresh + "")) set_data(t3, t3_value);
       if (dirty[0] & /*rows*/
       8 && t5_value !== (t5_value = /*t*/
-      ctx2[58].count + "")) set_data(t5, t5_value);
+      ctx2[59].count + "")) set_data(t5, t5_value);
       if (dirty[0] & /*rows*/
       8 && t7_value !== (t7_value = /*t*/
-      ctx2[58].mastered + "")) set_data(t7, t7_value);
+      ctx2[59].mastered + "")) set_data(t7, t7_value);
     },
     d(detaching) {
       if (detaching) {
@@ -15840,7 +16739,7 @@ function create_if_block_64(ctx) {
   let t0;
   let t1_value = (
     /*t*/
-    ctx[58].learn + ""
+    ctx[59].learn + ""
   );
   let t1;
   return {
@@ -15855,7 +16754,7 @@ function create_if_block_64(ctx) {
     p(ctx2, dirty) {
       if (dirty[0] & /*rows*/
       8 && t1_value !== (t1_value = /*t*/
-      ctx2[58].learn + "")) set_data(t1, t1_value);
+      ctx2[59].learn + "")) set_data(t1, t1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -15870,18 +16769,18 @@ function create_if_block_54(ctx) {
   let t0;
   let t1_value = (
     /*t*/
-    ctx[58].hard + ""
+    ctx[59].hard + ""
   );
   let t1;
   let span_title_value;
   let mounted;
   let dispose;
-  function click_handler_5() {
+  function click_handler_4() {
     return (
-      /*click_handler_5*/
+      /*click_handler_4*/
       ctx[38](
         /*t*/
-        ctx[58]
+        ctx[59]
       )
     );
   }
@@ -15890,7 +16789,7 @@ function create_if_block_54(ctx) {
       /*keydown_handler_1*/
       ctx[39](
         /*t*/
-        ctx[58],
+        ctx[59],
         ...args
       )
     );
@@ -15903,7 +16802,7 @@ function create_if_block_54(ctx) {
       set_style(span, "color", "var(--text-error)");
       set_style(span, "cursor", "pointer");
       attr(span, "title", span_title_value = "\u70B9\u51FB\u5F00\u59CB\u300C" + /*t*/
-      ctx[58].name + "\u300D\u96BE\u8BCD\u4E13\u9879");
+      ctx[59].name + "\u300D\u96BE\u8BCD\u4E13\u9879");
       attr(span, "role", "button");
       attr(span, "tabindex", "-1");
     },
@@ -15913,7 +16812,7 @@ function create_if_block_54(ctx) {
       append(span, t1);
       if (!mounted) {
         dispose = [
-          listen(span, "click", stop_propagation(click_handler_5)),
+          listen(span, "click", stop_propagation(click_handler_4)),
           listen(span, "keydown", keydown_handler_1)
         ];
         mounted = true;
@@ -15923,10 +16822,10 @@ function create_if_block_54(ctx) {
       ctx = new_ctx;
       if (dirty[0] & /*rows*/
       8 && t1_value !== (t1_value = /*t*/
-      ctx[58].hard + "")) set_data(t1, t1_value);
+      ctx[59].hard + "")) set_data(t1, t1_value);
       if (dirty[0] & /*rows*/
       8 && span_title_value !== (span_title_value = "\u70B9\u51FB\u5F00\u59CB\u300C" + /*t*/
-      ctx[58].name + "\u300D\u96BE\u8BCD\u4E13\u9879")) {
+      ctx[59].name + "\u300D\u96BE\u8BCD\u4E13\u9879")) {
         attr(span, "title", span_title_value);
       }
     },
@@ -15945,11 +16844,11 @@ function create_if_block_410(ctx) {
   let each_1_lookup = /* @__PURE__ */ new Map();
   let each_value_3 = ensure_array_like(
     /*t*/
-    ctx[58].keywords
+    ctx[59].keywords
   );
   const get_key = (ctx2) => (
     /*k*/
-    ctx2[61]
+    ctx2[62]
   );
   for (let i = 0; i < each_value_3.length; i += 1) {
     let child_ctx = get_each_context_32(ctx, each_value_3, i);
@@ -15977,7 +16876,7 @@ function create_if_block_410(ctx) {
       8) {
         each_value_3 = ensure_array_like(
           /*t*/
-          ctx2[58].keywords
+          ctx2[59].keywords
         );
         each_blocks = update_keyed_each(each_blocks, dirty, get_key, 1, ctx2, each_value_3, each_1_lookup, div, destroy_block, create_each_block_32, null, get_each_context_32);
       }
@@ -15996,7 +16895,7 @@ function create_each_block_32(key_1, ctx) {
   let span;
   let t_1_value = (
     /*k*/
-    ctx[61] + ""
+    ctx[62] + ""
   );
   let t_1;
   return {
@@ -16016,7 +16915,7 @@ function create_each_block_32(key_1, ctx) {
       ctx = new_ctx;
       if (dirty[0] & /*rows*/
       8 && t_1_value !== (t_1_value = /*k*/
-      ctx[61] + "")) set_data(t_1, t_1_value);
+      ctx[62] + "")) set_data(t_1, t_1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -16038,7 +16937,7 @@ function create_each_block_23(key_1, ctx) {
   let div1;
   let t4_value = (
     /*t*/
-    ctx[58].name + ""
+    ctx[59].name + ""
   );
   let t4;
   let t5;
@@ -16047,20 +16946,20 @@ function create_each_block_23(key_1, ctx) {
   let t7;
   let t8_value = (
     /*t*/
-    ctx[58].todayNew + ""
+    ctx[59].todayNew + ""
   );
   let t8;
   let t9;
   let t10_value = (
     /*t*/
-    ctx[58].due + ""
+    ctx[59].due + ""
   );
   let t10;
   let t11;
   let t12;
   let t13_value = (
     /*t*/
-    ctx[58].fresh + ""
+    ctx[59].fresh + ""
   );
   let t13;
   let t14;
@@ -16075,46 +16974,46 @@ function create_each_block_23(key_1, ctx) {
   let t22;
   let mounted;
   let dispose;
-  function click_handler_3() {
+  function click_handler_2() {
     return (
-      /*click_handler_3*/
+      /*click_handler_2*/
       ctx[36](
         /*t*/
-        ctx[58]
+        ctx[59]
       )
     );
   }
-  function click_handler_4() {
+  function click_handler_3() {
     return (
-      /*click_handler_4*/
+      /*click_handler_3*/
       ctx[37](
         /*t*/
-        ctx[58]
+        ctx[59]
       )
     );
   }
   let if_block0 = (
     /*t*/
-    ctx[58].count > 0 && create_if_block_74(ctx)
+    ctx[59].count > 0 && create_if_block_74(ctx)
   );
   let if_block1 = (
     /*t*/
-    ctx[58].learn > 0 && create_if_block_64(ctx)
+    ctx[59].learn > 0 && create_if_block_64(ctx)
   );
   let if_block2 = (
     /*t*/
-    ctx[58].hard > 0 && create_if_block_54(ctx)
+    ctx[59].hard > 0 && create_if_block_54(ctx)
   );
   let if_block3 = (
     /*t*/
-    ctx[58].keywords.length && create_if_block_410(ctx)
+    ctx[59].keywords.length && create_if_block_410(ctx)
   );
-  function click_handler_6() {
+  function click_handler_5() {
     return (
-      /*click_handler_6*/
+      /*click_handler_5*/
       ctx[40](
         /*t*/
-        ctx[58]
+        ctx[59]
       )
     );
   }
@@ -16123,35 +17022,35 @@ function create_each_block_23(key_1, ctx) {
       /*keydown_handler_2*/
       ctx[41](
         /*t*/
-        ctx[58],
+        ctx[59],
         ...args
+      )
+    );
+  }
+  function click_handler_6() {
+    return (
+      /*click_handler_6*/
+      ctx[42](
+        /*t*/
+        ctx[59]
       )
     );
   }
   function click_handler_7() {
     return (
       /*click_handler_7*/
-      ctx[42](
+      ctx[43](
         /*t*/
-        ctx[58]
+        ctx[59]
       )
     );
   }
   function click_handler_8() {
     return (
       /*click_handler_8*/
-      ctx[43](
-        /*t*/
-        ctx[58]
-      )
-    );
-  }
-  function click_handler_9() {
-    return (
-      /*click_handler_9*/
       ctx[44](
         /*t*/
-        ctx[58]
+        ctx[59]
       )
     );
   }
@@ -16203,12 +17102,12 @@ function create_each_block_23(key_1, ctx) {
       attr(button1, "type", "button");
       attr(button1, "class", "el-theme-pin");
       attr(button1, "title", button1_title_value = /*t*/
-      ctx[58].pinned ? "\u53D6\u6D88\u7F6E\u9876" : "\u7F6E\u9876\uFF08\u6392\u5728\u5217\u8868\u6700\u524D\uFF09");
+      ctx[59].pinned ? "\u53D6\u6D88\u7F6E\u9876" : "\u7F6E\u9876\uFF08\u6392\u5728\u5217\u8868\u6700\u524D\uFF09");
       toggle_class(
         button1,
         "is-pinned",
         /*t*/
-        ctx[58].pinned
+        ctx[59].pinned
       );
       attr(div0, "class", "el-theme-corner");
       attr(div1, "class", "el-theme-name");
@@ -16259,13 +17158,13 @@ function create_each_block_23(key_1, ctx) {
       append(div5, t22);
       if (!mounted) {
         dispose = [
-          listen(button0, "click", click_handler_3),
-          listen(button1, "click", click_handler_4),
-          listen(div3, "click", click_handler_6),
+          listen(button0, "click", click_handler_2),
+          listen(button1, "click", click_handler_3),
+          listen(div3, "click", click_handler_5),
           listen(div3, "keydown", keydown_handler_2),
-          listen(button2, "click", click_handler_7),
-          listen(button3, "click", click_handler_8),
-          listen(button4, "click", click_handler_9)
+          listen(button2, "click", click_handler_6),
+          listen(button3, "click", click_handler_7),
+          listen(button4, "click", click_handler_8)
         ];
         mounted = true;
       }
@@ -16274,7 +17173,7 @@ function create_each_block_23(key_1, ctx) {
       ctx = new_ctx;
       if (dirty[0] & /*rows*/
       8 && button1_title_value !== (button1_title_value = /*t*/
-      ctx[58].pinned ? "\u53D6\u6D88\u7F6E\u9876" : "\u7F6E\u9876\uFF08\u6392\u5728\u5217\u8868\u6700\u524D\uFF09")) {
+      ctx[59].pinned ? "\u53D6\u6D88\u7F6E\u9876" : "\u7F6E\u9876\uFF08\u6392\u5728\u5217\u8868\u6700\u524D\uFF09")) {
         attr(button1, "title", button1_title_value);
       }
       if (dirty[0] & /*rows*/
@@ -16283,15 +17182,15 @@ function create_each_block_23(key_1, ctx) {
           button1,
           "is-pinned",
           /*t*/
-          ctx[58].pinned
+          ctx[59].pinned
         );
       }
       if (dirty[0] & /*rows*/
       8 && t4_value !== (t4_value = /*t*/
-      ctx[58].name + "")) set_data(t4, t4_value);
+      ctx[59].name + "")) set_data(t4, t4_value);
       if (
         /*t*/
-        ctx[58].count > 0
+        ctx[59].count > 0
       ) {
         if (if_block0) {
           if_block0.p(ctx, dirty);
@@ -16306,13 +17205,13 @@ function create_each_block_23(key_1, ctx) {
       }
       if (dirty[0] & /*rows*/
       8 && t8_value !== (t8_value = /*t*/
-      ctx[58].todayNew + "")) set_data(t8, t8_value);
+      ctx[59].todayNew + "")) set_data(t8, t8_value);
       if (dirty[0] & /*rows*/
       8 && t10_value !== (t10_value = /*t*/
-      ctx[58].due + "")) set_data(t10, t10_value);
+      ctx[59].due + "")) set_data(t10, t10_value);
       if (
         /*t*/
-        ctx[58].learn > 0
+        ctx[59].learn > 0
       ) {
         if (if_block1) {
           if_block1.p(ctx, dirty);
@@ -16327,10 +17226,10 @@ function create_each_block_23(key_1, ctx) {
       }
       if (dirty[0] & /*rows*/
       8 && t13_value !== (t13_value = /*t*/
-      ctx[58].fresh + "")) set_data(t13, t13_value);
+      ctx[59].fresh + "")) set_data(t13, t13_value);
       if (
         /*t*/
-        ctx[58].hard > 0
+        ctx[59].hard > 0
       ) {
         if (if_block2) {
           if_block2.p(ctx, dirty);
@@ -16345,7 +17244,7 @@ function create_each_block_23(key_1, ctx) {
       }
       if (
         /*t*/
-        ctx[58].keywords.length
+        ctx[59].keywords.length
       ) {
         if (if_block3) {
           if_block3.p(ctx, dirty);
@@ -16394,7 +17293,7 @@ function create_if_block5(ctx) {
     var _a;
     return (
       /*w*/
-      (_a = ctx2[52].cells[0]) == null ? void 0 : _a.date
+      (_a = ctx2[53].cells[0]) == null ? void 0 : _a.date
     );
   };
   for (let i = 0; i < each_value.length; i += 1) {
@@ -16503,12 +17402,12 @@ function create_if_block_111(ctx) {
   let i_aria_label_value;
   let mounted;
   let dispose;
-  function click_handler_10() {
+  function click_handler_9() {
     return (
-      /*click_handler_10*/
+      /*click_handler_9*/
       ctx[45](
         /*c*/
-        ctx[55]
+        ctx[56]
       )
     );
   }
@@ -16517,7 +17416,7 @@ function create_if_block_111(ctx) {
       /*keydown_handler_3*/
       ctx[46](
         /*c*/
-        ctx[55],
+        ctx[56],
         ...args
       )
     );
@@ -16528,17 +17427,17 @@ function create_if_block_111(ctx) {
       attr(i, "class", i_class_value = "el-heat-cell h" + /*heatLevel*/
       ctx[17](
         /*c*/
-        ctx[55].n
+        ctx[56].n
       ));
       attr(i, "title", i_title_value = /*cellTip*/
       ctx[18](
         /*c*/
-        ctx[55]
+        ctx[56]
       ));
       attr(i, "aria-label", i_aria_label_value = /*cellTip*/
       ctx[18](
         /*c*/
-        ctx[55]
+        ctx[56]
       ));
       attr(i, "role", "button");
       attr(i, "tabindex", "-1");
@@ -16546,14 +17445,14 @@ function create_if_block_111(ctx) {
         i,
         "is-today",
         /*c*/
-        ctx[55].isNew
+        ctx[56].isNew
       );
     },
     m(target, anchor) {
       insert(target, i, anchor);
       if (!mounted) {
         dispose = [
-          listen(i, "click", click_handler_10),
+          listen(i, "click", click_handler_9),
           listen(i, "keydown", keydown_handler_3)
         ];
         mounted = true;
@@ -16565,7 +17464,7 @@ function create_if_block_111(ctx) {
       512 && i_class_value !== (i_class_value = "el-heat-cell h" + /*heatLevel*/
       ctx[17](
         /*c*/
-        ctx[55].n
+        ctx[56].n
       ))) {
         attr(i, "class", i_class_value);
       }
@@ -16573,7 +17472,7 @@ function create_if_block_111(ctx) {
       512 && i_title_value !== (i_title_value = /*cellTip*/
       ctx[18](
         /*c*/
-        ctx[55]
+        ctx[56]
       ))) {
         attr(i, "title", i_title_value);
       }
@@ -16581,7 +17480,7 @@ function create_if_block_111(ctx) {
       512 && i_aria_label_value !== (i_aria_label_value = /*cellTip*/
       ctx[18](
         /*c*/
-        ctx[55]
+        ctx[56]
       ))) {
         attr(i, "aria-label", i_aria_label_value);
       }
@@ -16591,7 +17490,7 @@ function create_if_block_111(ctx) {
           i,
           "is-today",
           /*c*/
-          ctx[55].isNew
+          ctx[56].isNew
         );
       }
     },
@@ -16610,7 +17509,7 @@ function create_each_block_14(key_1, ctx) {
   function select_block_type_2(ctx2, dirty) {
     if (
       /*c*/
-      ctx2[55]
+      ctx2[56]
     ) return create_if_block_111;
     return create_else_block5;
   }
@@ -16657,7 +17556,7 @@ function create_each_block5(key_1, ctx) {
   let div0;
   let t0_value = (
     /*w*/
-    ctx[52].month + ""
+    ctx[53].month + ""
   );
   let t0;
   let t1;
@@ -16666,11 +17565,11 @@ function create_each_block5(key_1, ctx) {
   let t2;
   let each_value_1 = ensure_array_like(
     /*w*/
-    ctx[52].cells
+    ctx[53].cells
   );
   const get_key = (ctx2) => (
     /*d*/
-    ctx2[57]
+    ctx2[58]
   );
   for (let i = 0; i < each_value_1.length; i += 1) {
     let child_ctx = get_each_context_14(ctx, each_value_1, i);
@@ -16709,12 +17608,12 @@ function create_each_block5(key_1, ctx) {
       ctx = new_ctx;
       if (dirty[0] & /*heat*/
       512 && t0_value !== (t0_value = /*w*/
-      ctx[52].month + "")) set_data(t0, t0_value);
+      ctx[53].month + "")) set_data(t0, t0_value);
       if (dirty[0] & /*heatLevel, heat, cellTip*/
       393728) {
         each_value_1 = ensure_array_like(
           /*w*/
-          ctx[52].cells
+          ctx[53].cells
         );
         each_blocks = update_keyed_each(each_blocks, dirty, get_key, 1, ctx, each_value_1, each_1_lookup, div1, destroy_block, create_each_block_14, t2, get_each_context_14);
       }
@@ -16743,6 +17642,8 @@ function create_fragment6(ctx) {
   let button2;
   let t6;
   let t7;
+  let button3;
+  let icon_action_1;
   let t8;
   let t9;
   let div2;
@@ -16787,21 +17688,17 @@ function create_fragment6(ctx) {
   let dispose;
   let if_block0 = (
     /*totals*/
-    ctx[4].hard > 0 && create_if_block_163(ctx)
-  );
-  let if_block1 = (
-    /*totals*/
     ctx[4].words > 0 && create_if_block_154(ctx)
   );
-  let if_block2 = (
+  let if_block1 = (
     /*guideVisible*/
     ctx[11] && create_if_block_144(ctx)
   );
-  let if_block3 = (
+  let if_block2 = (
     /*totals*/
     ctx[4].hard > 0 && create_if_block_134(ctx)
   );
-  let if_block4 = !/*loading*/
+  let if_block3 = !/*loading*/
   ctx[7] && /*chartSum*/
   ctx[12] > 0 && create_if_block_84(ctx);
   function select_block_type_1(ctx2, dirty) {
@@ -16816,8 +17713,8 @@ function create_fragment6(ctx) {
     return create_else_block_14;
   }
   let current_block_type = select_block_type_1(ctx, [-1, -1, -1]);
-  let if_block5 = current_block_type(ctx);
-  let if_block6 = !/*loading*/
+  let if_block4 = current_block_type(ctx);
+  let if_block5 = !/*loading*/
   ctx[7] && /*heatSum*/
   ctx[10] > 0 && create_if_block5(ctx);
   return {
@@ -16831,16 +17728,16 @@ function create_fragment6(ctx) {
       button0 = element("button");
       t2 = space();
       button1 = element("button");
-      button1.textContent = "\u65B0\u5EFA\u4E3B\u9898";
+      button1.textContent = "\u67E5\u8BCD";
       t4 = space();
       button2 = element("button");
-      button2.textContent = "\u6570\u636E\u8865\u5168";
+      button2.textContent = "\u65B0\u5EFA";
       t6 = space();
       if (if_block0) if_block0.c();
       t7 = space();
-      if (if_block1) if_block1.c();
+      button3 = element("button");
       t8 = space();
-      if (if_block2) if_block2.c();
+      if (if_block1) if_block1.c();
       t9 = space();
       div2 = element("div");
       t10 = text("\u4ECA\u65E5 +");
@@ -16857,16 +17754,16 @@ function create_fragment6(ctx) {
       t18 = text("/");
       t19 = text(t19_value);
       t20 = space();
-      if (if_block3) if_block3.c();
+      if (if_block2) if_block2.c();
       t21 = text("\n    \xB7 \u8FDE\u7EED\u6253\u5361 ");
       t22 = text(t22_value);
       t23 = text(" \u5929");
       t24 = space();
-      if (if_block4) if_block4.c();
+      if (if_block3) if_block3.c();
       t25 = space();
-      if_block5.c();
+      if_block4.c();
       t26 = space();
-      if (if_block6) if_block6.c();
+      if (if_block5) if_block5.c();
       attr(button0, "class", "el-mute clickable-icon");
       attr(
         button0,
@@ -16880,7 +17777,9 @@ function create_fragment6(ctx) {
         /*muteTip*/
         ctx[13]
       );
-      attr(button2, "title", "\u6279\u91CF\u8865\u5168\uFF1A\u4F8B\u53E5 / \u4E49\u9879 / \u4F8B\u53E5\u7FFB\u8BD1 / \u540C\u53CD\u4E49\u8BCD");
+      attr(button3, "class", "el-more clickable-icon");
+      attr(button3, "title", "\u66F4\u591A\u64CD\u4F5C\uFF1A\u96BE\u8BCD\u4E13\u9879 / \u6570\u636E\u8865\u5168");
+      attr(button3, "aria-label", "\u66F4\u591A\u64CD\u4F5C");
       attr(div0, "class", "el-actions");
       attr(div1, "class", "el-header");
       attr(div2, "class", "el-totals");
@@ -16900,9 +17799,9 @@ function create_fragment6(ctx) {
       append(div0, t6);
       if (if_block0) if_block0.m(div0, null);
       append(div0, t7);
-      if (if_block1) if_block1.m(div0, null);
+      append(div0, button3);
       append(div3, t8);
-      if (if_block2) if_block2.m(div3, null);
+      if (if_block1) if_block1.m(div3, null);
       append(div3, t9);
       append(div3, div2);
       append(div2, t10);
@@ -16916,16 +17815,16 @@ function create_fragment6(ctx) {
       append(div2, t18);
       append(div2, t19);
       append(div2, t20);
-      if (if_block3) if_block3.m(div2, null);
+      if (if_block2) if_block2.m(div2, null);
       append(div2, t21);
       append(div2, t22);
       append(div2, t23);
       append(div3, t24);
-      if (if_block4) if_block4.m(div3, null);
+      if (if_block3) if_block3.m(div3, null);
       append(div3, t25);
-      if_block5.m(div3, null);
+      if_block4.m(div3, null);
       append(div3, t26);
-      if (if_block6) if_block6.m(div3, null);
+      if (if_block5) if_block5.m(div3, null);
       if (!mounted) {
         dispose = [
           action_destroyer(icon_action = /*icon*/
@@ -16944,14 +17843,22 @@ function create_fragment6(ctx) {
           listen(
             button1,
             "click",
-            /*openCreate*/
-            ctx[24]
+            /*openLookup*/
+            ctx[28]
           ),
           listen(
             button2,
             "click",
-            /*openBackfill*/
-            ctx[28]
+            /*openCreate*/
+            ctx[24]
+          ),
+          action_destroyer(icon_action_1 = /*icon*/
+          ctx[14].call(null, button3, "ellipsis")),
+          listen(
+            button3,
+            "click",
+            /*openMore*/
+            ctx[29]
           )
         ];
         mounted = true;
@@ -16984,12 +17891,12 @@ function create_fragment6(ctx) {
       );
       if (
         /*totals*/
-        ctx2[4].hard > 0
+        ctx2[4].words > 0
       ) {
         if (if_block0) {
           if_block0.p(ctx2, dirty);
         } else {
-          if_block0 = create_if_block_163(ctx2);
+          if_block0 = create_if_block_154(ctx2);
           if_block0.c();
           if_block0.m(div0, t7);
         }
@@ -16998,34 +17905,19 @@ function create_fragment6(ctx) {
         if_block0 = null;
       }
       if (
-        /*totals*/
-        ctx2[4].words > 0
+        /*guideVisible*/
+        ctx2[11]
       ) {
         if (if_block1) {
           if_block1.p(ctx2, dirty);
         } else {
-          if_block1 = create_if_block_154(ctx2);
+          if_block1 = create_if_block_144(ctx2);
           if_block1.c();
-          if_block1.m(div0, null);
+          if_block1.m(div3, t9);
         }
       } else if (if_block1) {
         if_block1.d(1);
         if_block1 = null;
-      }
-      if (
-        /*guideVisible*/
-        ctx2[11]
-      ) {
-        if (if_block2) {
-          if_block2.p(ctx2, dirty);
-        } else {
-          if_block2 = create_if_block_144(ctx2);
-          if_block2.c();
-          if_block2.m(div3, t9);
-        }
-      } else if (if_block2) {
-        if_block2.d(1);
-        if_block2 = null;
       }
       if (dirty[0] & /*todayCount*/
       64) set_data(
@@ -17049,16 +17941,16 @@ function create_fragment6(ctx) {
         /*totals*/
         ctx2[4].hard > 0
       ) {
-        if (if_block3) {
-          if_block3.p(ctx2, dirty);
+        if (if_block2) {
+          if_block2.p(ctx2, dirty);
         } else {
-          if_block3 = create_if_block_134(ctx2);
-          if_block3.c();
-          if_block3.m(div2, t21);
+          if_block2 = create_if_block_134(ctx2);
+          if_block2.c();
+          if_block2.m(div2, t21);
         }
-      } else if (if_block3) {
-        if_block3.d(1);
-        if_block3 = null;
+      } else if (if_block2) {
+        if_block2.d(1);
+        if_block2 = null;
       }
       if (dirty[0] & /*plugin*/
       1 && t22_value !== (t22_value = /*plugin*/
@@ -17066,40 +17958,40 @@ function create_fragment6(ctx) {
       if (!/*loading*/
       ctx2[7] && /*chartSum*/
       ctx2[12] > 0) {
-        if (if_block4) {
-          if_block4.p(ctx2, dirty);
+        if (if_block3) {
+          if_block3.p(ctx2, dirty);
         } else {
-          if_block4 = create_if_block_84(ctx2);
-          if_block4.c();
-          if_block4.m(div3, t25);
+          if_block3 = create_if_block_84(ctx2);
+          if_block3.c();
+          if_block3.m(div3, t25);
         }
-      } else if (if_block4) {
-        if_block4.d(1);
-        if_block4 = null;
+      } else if (if_block3) {
+        if_block3.d(1);
+        if_block3 = null;
       }
-      if (current_block_type === (current_block_type = select_block_type_1(ctx2, dirty)) && if_block5) {
-        if_block5.p(ctx2, dirty);
+      if (current_block_type === (current_block_type = select_block_type_1(ctx2, dirty)) && if_block4) {
+        if_block4.p(ctx2, dirty);
       } else {
-        if_block5.d(1);
-        if_block5 = current_block_type(ctx2);
-        if (if_block5) {
-          if_block5.c();
-          if_block5.m(div3, t26);
+        if_block4.d(1);
+        if_block4 = current_block_type(ctx2);
+        if (if_block4) {
+          if_block4.c();
+          if_block4.m(div3, t26);
         }
       }
       if (!/*loading*/
       ctx2[7] && /*heatSum*/
       ctx2[10] > 0) {
-        if (if_block6) {
-          if_block6.p(ctx2, dirty);
+        if (if_block5) {
+          if_block5.p(ctx2, dirty);
         } else {
-          if_block6 = create_if_block5(ctx2);
-          if_block6.c();
-          if_block6.m(div3, null);
+          if_block5 = create_if_block5(ctx2);
+          if_block5.c();
+          if_block5.m(div3, null);
         }
-      } else if (if_block6) {
-        if_block6.d(1);
-        if_block6 = null;
+      } else if (if_block5) {
+        if_block5.d(1);
+        if_block5 = null;
       }
     },
     i: noop,
@@ -17112,9 +18004,8 @@ function create_fragment6(ctx) {
       if (if_block1) if_block1.d();
       if (if_block2) if_block2.d();
       if (if_block3) if_block3.d();
-      if (if_block4) if_block4.d();
-      if_block5.d();
-      if (if_block6) if_block6.d();
+      if_block4.d();
+      if (if_block5) if_block5.d();
       mounted = false;
       run_all(dispose);
     }
@@ -17147,9 +18038,13 @@ function instance6($$self, $$props, $$invalidate) {
     return { update: (n) => (0, import_obsidian12.setIcon)(node, n) };
   }
   function toggleMute() {
-    $$invalidate(0, plugin.muted = !plugin.muted, plugin);
-    $$invalidate(1, audioMuted = plugin.muted);
+    plugin.toggleMute();
   }
+  onMount(() => {
+    const syncMute = () => $$invalidate(1, audioMuted = plugin.muted);
+    window.addEventListener("el-mute-changed", syncMute);
+    return () => window.removeEventListener("el-mute-changed", syncMute);
+  });
   let days = [];
   let maxDay = 1;
   let tipDay = -1;
@@ -17351,22 +18246,32 @@ function instance6($$self, $$props, $$invalidate) {
   function openBackfill() {
     new DataBackfillModal(plugin.app, plugin, () => void refresh()).open();
   }
-  const click_handler = () => start(null, true);
-  const click_handler_1 = () => start(null);
+  function openLookup() {
+    new AddWordModal(plugin.app, plugin, void 0, () => void refresh()).open();
+  }
+  function openMore(ev) {
+    const menu = new import_obsidian12.Menu();
+    if (totals.hard > 0) {
+      menu.addItem((mi) => mi.setTitle(`\u96BE\u8BCD\u4E13\u9879 ${totals.hard}`).setIcon("target").onClick(() => start(null, true)));
+    }
+    menu.addItem((mi) => mi.setTitle("\u6570\u636E\u8865\u5168").setIcon("database").onClick(() => openBackfill()));
+    menu.showAtMouseEvent(ev);
+  }
+  const click_handler = () => start(null);
   const mouseenter_handler = (i) => $$invalidate(8, tipDay = i);
-  const click_handler_2 = (i) => $$invalidate(8, tipDay = i);
+  const click_handler_1 = (i) => $$invalidate(8, tipDay = i);
   const keydown_handler = (i, e) => e.key === "Enter" && $$invalidate(8, tipDay = i);
   const mouseleave_handler = () => $$invalidate(8, tipDay = -1);
-  const click_handler_3 = (t) => disableTheme(t.name);
-  const click_handler_4 = (t) => togglePin(t.name);
-  const click_handler_5 = (t) => start(t.name, true);
+  const click_handler_2 = (t) => disableTheme(t.name);
+  const click_handler_3 = (t) => togglePin(t.name);
+  const click_handler_4 = (t) => start(t.name, true);
   const keydown_handler_1 = (t, e) => e.key === "Enter" && start(t.name, true);
-  const click_handler_6 = (t) => openWords(t.name);
+  const click_handler_5 = (t) => openWords(t.name);
   const keydown_handler_2 = (t, e) => e.key === "Enter" && openWords(t.name);
-  const click_handler_7 = (t) => start(t.name);
-  const click_handler_8 = (t) => openExpand(t.name);
-  const click_handler_9 = (t) => openEdit(t.name);
-  const click_handler_10 = (c) => new import_obsidian12.Notice(cellTip(c), 4e3);
+  const click_handler_6 = (t) => start(t.name);
+  const click_handler_7 = (t) => openExpand(t.name);
+  const click_handler_8 = (t) => openEdit(t.name);
+  const click_handler_9 = (c) => new import_obsidian12.Notice(cellTip(c), 4e3);
   const keydown_handler_3 = (c, e) => e.key === "Enter" && new import_obsidian12.Notice(cellTip(c), 4e3);
   $$self.$$set = ($$props2) => {
     if ("plugin" in $$props2) $$invalidate(0, plugin = $$props2.plugin);
@@ -17410,34 +18315,34 @@ function instance6($$self, $$props, $$invalidate) {
     openExpand,
     openEdit,
     start,
-    openBackfill,
+    openLookup,
+    openMore,
     refresh,
     click_handler,
-    click_handler_1,
     mouseenter_handler,
-    click_handler_2,
+    click_handler_1,
     keydown_handler,
     mouseleave_handler,
+    click_handler_2,
     click_handler_3,
     click_handler_4,
-    click_handler_5,
     keydown_handler_1,
-    click_handler_6,
+    click_handler_5,
     keydown_handler_2,
+    click_handler_6,
     click_handler_7,
     click_handler_8,
     click_handler_9,
-    click_handler_10,
     keydown_handler_3
   ];
 }
 var ThemePanel = class extends SvelteComponent {
   constructor(options) {
     super();
-    init(this, options, instance6, create_fragment6, safe_not_equal, { plugin: 0, refresh: 29 }, null, [-1, -1, -1]);
+    init(this, options, instance6, create_fragment6, safe_not_equal, { plugin: 0, refresh: 30 }, null, [-1, -1, -1]);
   }
   get refresh() {
-    return this.$$.ctx[29];
+    return this.$$.ctx[30];
   }
 };
 var ThemePanel_default = ThemePanel;
@@ -17483,14 +18388,23 @@ var WordCardModal = class _WordCardModal extends import_obsidian14.Modal {
   }
   async onOpen() {
     var _a;
+    tagModal(this.modalEl, "Card");
     (_a = _WordCardModal.current) == null ? void 0 : _a.close();
     _WordCardModal.current = this;
     this.modalEl.addClass("el-wordcard-modal");
     this.plugin.speakWord(this.wdoc.word);
     this.comp = new WordFullCard_default({
       target: this.contentEl,
-      props: { plugin: this.plugin, doc: this.wdoc }
+      props: {
+        plugin: this.plugin,
+        doc: this.wdoc,
+        // 主题芯片可点改走 WordFullCard 缺省回调（plugin.editWordThemes），doc 原地变即刷新
+        onBackfill: () => this.backfill()
+      }
     });
+    if (this.plugin.db.settings.enrichOnLearn !== false) {
+      void this.plugin.enrichWordsInBackground([this.wdoc.word], { quiet: true }).then(() => this.refresh());
+    }
     try {
       const r = await this.plugin.relWords(this.wdoc, {
         online: this.plugin.db.settings.enrichOnLearn !== false
@@ -17500,11 +18414,58 @@ var WordCardModal = class _WordCardModal extends import_obsidian14.Modal {
     } catch (e) {
     }
   }
+  /** 释义缺失时的补全：走统一补全链（词典 → 在线 → AI），完成后刷新词卡内容 */
+  backfill() {
+    void this.plugin.enrichWordsInBackground([this.wdoc.word], { notice: true }).then(() => this.refresh());
+  }
+  /** 用词库里的最新词条刷新卡片（主题/释义在弹窗外被改动后同步到 UI） */
+  refresh() {
+    var _a;
+    const fresh = this.plugin.words.get(this.wdoc.word);
+    if (fresh && _WordCardModal.current === this) (_a = this.comp) == null ? void 0 : _a.$set({ doc: { ...fresh } });
+  }
   onClose() {
     var _a;
     if (_WordCardModal.current === this) _WordCardModal.current = void 0;
     (_a = this.comp) == null ? void 0 : _a.$destroy();
     this.contentEl.empty();
+  }
+};
+var ThemePickModal = class extends import_obsidian14.Modal {
+  constructor(app, plugin, wdoc, onDone) {
+    super(app);
+    this.plugin = plugin;
+    this.wdoc = wdoc;
+    this.onDone = onDone;
+  }
+  async onOpen() {
+    tagModal(this.modalEl, "Pick");
+    this.renderList();
+  }
+  async toggle(theme) {
+    if (this.wdoc.themes.includes(theme)) await this.plugin.words.removeTheme(this.wdoc, theme);
+    else await this.plugin.words.addTheme(this.wdoc, theme);
+    this.onDone();
+    this.renderList();
+  }
+  renderList() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl("h3", { text: `\u4FEE\u6539\u300C${this.wdoc.word}\u300D\u6240\u5C5E\u4E3B\u9898` });
+    const box = contentEl.createDiv("el-disabled-list");
+    for (const name of Object.keys(this.plugin.db.themes)) {
+      const inTheme = this.wdoc.themes.includes(name);
+      const row = box.createDiv("el-disabled-row");
+      row.createSpan({ text: name });
+      row.createEl("button", { text: inTheme ? "\u79FB\u9664" : "\u52A0\u5165", cls: inTheme ? "el-btn-restore" : "mod-cta" }).addEventListener("click", () => void this.toggle(name));
+    }
+    const done = contentEl.createEl("button", { text: "\u5B8C\u6210", cls: "mod-cta" });
+    done.style.cssText = "display:block;margin:12px auto 0;";
+    done.onClickEvent(() => this.close());
+  }
+  onClose() {
+    this.contentEl.empty();
+    this.onDone();
   }
 };
 
@@ -17760,7 +18721,6 @@ var DEFAULT_DATA = {
     fuzzyHalve: true,
     spellChance: 0.3,
     audioChance: 0.4,
-    dictBase: "",
     ttsRate: 1,
     ttsSentenceRate: 0.85,
     autoBackup: true,
@@ -17768,7 +18728,8 @@ var DEFAULT_DATA = {
     llmSaved: { ollama: { ...LLM_OLLAMA_PRESET } },
     exampleCount: 3,
     expandCount: 12,
-    enrichOnLearn: true
+    enrichOnLearn: true,
+    freshByFreq: true
   },
   themes: {},
   progress: {},
@@ -17796,7 +18757,7 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
     this.enrichQueue = Promise.resolve();
     this.enrichTurnScheduled = false;
   }
-  /** 词笔记顶栏内容（阅读态 post-processor 与编辑态注入共用）：发音/音标/进度/主题/删除 */
+  /** 词笔记顶栏内容（阅读态 post-processor 与编辑态注入共用）：发音/音标/进度/主题（芯片可点改）/删除 */
   renderWordBar(bar, word, fm) {
     const ttsBtn = bar.createEl("button", { text: "\u{1F50A}", cls: "el-tts" });
     ttsBtn.onClickEvent(() => {
@@ -17814,13 +18775,31 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
     });
     if (p && isHardWord(p)) bar.createEl("span", { text: "\u96BE\u8BCD", cls: "el-chip el-chip-hard" });
     for (const t of Array.isArray(fm.themes) ? fm.themes.map(String) : []) {
-      bar.createEl("span", { text: `#${t}`, cls: "el-chip" });
+      const chip = bar.createEl("span", { text: `#${t}`, cls: "el-chip" });
+      chip.setAttr("title", "\u70B9\u51FB\u4FEE\u6539\u6240\u5C5E\u4E3B\u9898");
+      chip.style.cursor = "pointer";
+      chip.onClickEvent(() => {
+        const doc = this.plugin.words.get(word);
+        if (!doc) {
+          new import_obsidian15.Notice("\u8BCD\u5E93\u7D22\u5F15\u91CC\u6CA1\u6709\u8BE5\u8BCD\uFF0C\u91CD\u8F7D\u63D2\u4EF6\u6216\u91CD\u5F00\u7B14\u8BB0\u540E\u518D\u8BD5");
+          return;
+        }
+        new ThemePickModal(this.app, this.plugin, doc, () => this.rerenderWordBar(bar, word, fm)).open();
+      });
     }
     bar.createEl("button", { text: "\u{1F5D1}", cls: "el-note-del", attr: { title: "\u5220\u9664\u8BCD\u6761" } }).onClickEvent(async () => {
       if (!await confirmDeleteWord(this.app, word)) return;
       await this.deleteWord(word);
       new import_obsidian15.Notice(`\u5DF2\u5220\u9664\u300C${word}\u300D`);
     });
+  }
+  /** 顶栏原地重画：主题在弹窗里改过后立即反映（阅读态 post-processor 不因 frontmatter 变化自动重跑，
+   *  编辑态进度未变的顶栏也不会重建——这里统一就地刷新，bar 元素不变，阅读/编辑两态共用） */
+  rerenderWordBar(bar, word, fm) {
+    var _a;
+    const fresh = this.plugin.words.get(word);
+    bar.empty();
+    this.renderWordBar(bar, word, { ...fm, themes: (_a = fresh == null ? void 0 : fresh.themes) != null ? _a : fm.themes });
   }
   /** 编辑态（live preview / source）词笔记顶部注入同一条顶栏；阅读态交还给 post-processor */
   refreshEditNoteBar() {
@@ -17897,7 +18876,7 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
     if (loaded) (_m = (_l = this.db.settings).aiGuideDone) != null ? _m : _l.aiGuideDone = true;
     this.store = new DataStore(this);
     this.words = new WordStore(this);
-    this.dict = new EcdictDict(this.app, (_n = this.manifest.dir) != null ? _n : "", () => this.db.settings.dictBase);
+    this.dict = new EcdictDict(this.app, (_n = this.manifest.dir) != null ? _n : "");
     this.audio = new AudioCache(this.app, (_o = this.manifest.dir) != null ? _o : "");
     setPreferredVoice((_p = this.db.settings.ttsVoice) != null ? _p : null);
     this.registerView(THEME_VIEW_TYPE, (leaf) => new ThemeView(leaf, this));
@@ -17964,6 +18943,11 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
       id: "download-dict",
       name: "\u4E0B\u8F7D\u5B8C\u6574\u8BCD\u5178\u5206\u7247",
       callback: () => this.downloadDict()
+    });
+    this.addCommand({
+      id: "toggle-mute",
+      name: "\u5207\u6362\u5168\u5C40\u9759\u97F3",
+      callback: () => this.toggleMute()
     });
     this.registerEvent(
       this.app.workspace.on("editor-menu", (menu, editor) => {
@@ -18084,25 +19068,22 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
     }
     this.sessionTheme = theme;
     this.sessionHard = hard;
+    const existed = this.app.workspace.getLeavesOfType(LEARN_VIEW_TYPE).length > 0;
     await this.activateView(LEARN_VIEW_TYPE);
-    const view = (_a = this.app.workspace.getLeavesOfType(LEARN_VIEW_TYPE)[0]) == null ? void 0 : _a.view;
-    if (view instanceof LearnView) view.restart();
+    if (existed) {
+      const view = (_a = this.app.workspace.getLeavesOfType(LEARN_VIEW_TYPE)[0]) == null ? void 0 : _a.view;
+      if (view instanceof LearnView) view.restart();
+    }
     return true;
   }
   async downloadDict() {
     const meta = await this.dict.installedMeta();
-    if (meta && !this.db.settings.dictBase.trim()) {
-      if (!starterNeedsUpgrade(meta)) {
-        new import_obsidian15.Notice(`\u57FA\u7840\u8BCD\u5178 v${meta.ver} \u5DF2\u5B89\u88C5\uFF08${meta.count} \u8BCD\u6761\uFF0C${fmtDate(meta.installed)}\uFF09\uFF0C\u65E0\u9700\u91CD\u590D\u4E0B\u8F7D`);
-        return;
-      }
-      new import_obsidian15.Notice(`\u68C0\u6D4B\u5230\u57FA\u7840\u8BCD\u5178 v${meta.ver}\uFF0C\u5347\u7EA7\u5230 v${STARTER_VER}\u2026`);
-      await this.dict.ensureStarter().catch(() => new import_obsidian15.Notice("\u5347\u7EA7\u5931\u8D25\uFF1A\u7A0D\u540E\u67E5\u8BCD\u65F6\u4F1A\u81EA\u52A8\u91CD\u8BD5"));
+    if (meta && !starterNeedsUpgrade(meta)) {
+      new import_obsidian15.Notice(`\u57FA\u7840\u8BCD\u5178 v${meta.ver} \u5DF2\u5B89\u88C5\uFF08${meta.count} \u8BCD\u6761\uFF0C${fmtDate(meta.installed)}\uFF09\uFF0C\u65E0\u9700\u91CD\u590D\u4E0B\u8F7D`);
       return;
     }
-    new import_obsidian15.Notice(meta ? "\u5F00\u59CB\u68C0\u67E5\u8BCD\u5178\u5206\u7247\u2026" : "\u5F00\u59CB\u4E0B\u8F7D\u8BCD\u5178\u5206\u7247\u2026");
-    const ok = await this.dict.downloadAll();
-    new import_obsidian15.Notice(ok ? "\u8BCD\u5178\u4E0B\u8F7D\u5B8C\u6210" : "\u90E8\u5206\u5206\u7247\u4E0B\u8F7D\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u8BBE\u7F6E\u4E2D\u7684\u5206\u7247\u5730\u5740");
+    new import_obsidian15.Notice(meta ? `\u68C0\u6D4B\u5230\u57FA\u7840\u8BCD\u5178 v${meta.ver}\uFF0C\u5347\u7EA7\u5230 v${STARTER_VER}\u2026` : "\u5F00\u59CB\u4E0B\u8F7D\u57FA\u7840\u8BCD\u5178\u2026");
+    await this.dict.ensureStarter().catch(() => new import_obsidian15.Notice("\u4E0B\u8F7D\u5931\u8D25\uFF1A\u7A0D\u540E\u67E5\u8BCD\u65F6\u4F1A\u81EA\u52A8\u91CD\u8BD5"));
   }
   /** 全库口径：排除仅属于停用主题的词（enabled === false；全库会话/状态栏/面板合计共用，防口径漂移） */
   activeWords() {
@@ -18169,10 +19150,19 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
     reviews.sort(
       (a, b) => this.db.progress[a.word].next - this.db.progress[b.word].next
     );
-    fresh.sort((a, b) => {
-      var _a2, _b;
-      return ((_a2 = b.added) != null ? _a2 : 0) - ((_b = a.added) != null ? _b : 0);
-    });
+    if (this.db.settings.freshByFreq !== false && fresh.length > 1) {
+      const frq = await this.dict.freqRank(fresh.map((w) => w.word));
+      if (frq.size) sortFreshByFreq(fresh, frq);
+      else fresh.sort((a, b) => {
+        var _a2, _b;
+        return ((_a2 = b.added) != null ? _a2 : 0) - ((_b = a.added) != null ? _b : 0);
+      });
+    } else {
+      fresh.sort((a, b) => {
+        var _a2, _b;
+        return ((_a2 = b.added) != null ? _a2 : 0) - ((_b = a.added) != null ? _b : 0);
+      });
+    }
     const day = (_a = this.db.stats.days[fmtDate(now2)]) != null ? _a : { new: 0, rev: 0 };
     const quota = Math.max(0, this.db.settings.dailyNew - day.new);
     const qReviews = reviews.slice(0, this.db.settings.dailyReviewMax);
@@ -18387,12 +19377,15 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
   }
   /** 加词：已存在则合并主题+追加例句，否则查词典（离线+在线补全）建笔记。返回 created | merged | skipped */
   async addWord(raw, theme, opts) {
-    var _a, _b, _c, _d, _e;
+    var _a, _b, _c, _d, _e, _f;
     const o = opts != null ? opts : {};
     const word = normalizeWord(raw);
     if (!word) return "skipped";
     const existing = this.words.get(word);
     if (existing) {
+      if (o.translation && !hasTranslation(existing.translation)) {
+        await this.words.updateWordDoc(existing, { translation: o.translation });
+      }
       await this.words.addTheme(existing, theme);
       for (const ex of (_a = o.examples) != null ? _a : []) {
         if (!existing.examples.some((e) => e.text === ex.text)) {
@@ -18407,7 +19400,7 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
     if (!o.skipOnline && (!phonetic || !translation)) {
       const on = await lookupOnline(word);
       phonetic != null ? phonetic : phonetic = on == null ? void 0 : on.phonetic;
-      if (!translation && (on == null ? void 0 : on.definition)) translation = `[\u82F1] ${on.definition}`;
+      if (!translation) translation = (on == null ? void 0 : on.definition) ? `[\u82F1] ${on.definition}` : (_c = on == null ? void 0 : on.zh) != null ? _c : "";
     }
     const dictEx = (entry == null ? void 0 : entry.ex) ? [{ text: entry.ex[0], translation: entry.ex[1], source: "\u8BCD\u5178" }] : void 0;
     await this.words.create(word, {
@@ -18415,10 +19408,10 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
       phonetic,
       level: levelFromTag(entry == null ? void 0 : entry.tag),
       translation,
-      examples: ((_c = o.examples) == null ? void 0 : _c.length) ? o.examples : dictEx,
+      examples: ((_d = o.examples) == null ? void 0 : _d.length) ? o.examples : dictEx,
       // 词典自带同/反义词建笔记时一次写入（开箱离线完整，免后续抓取）；空则不写，保留抓取缺口语义
-      synonyms: ((_d = entry == null ? void 0 : entry.synonyms) == null ? void 0 : _d.length) ? entry.synonyms : void 0,
-      antonyms: ((_e = entry == null ? void 0 : entry.antonyms) == null ? void 0 : _e.length) ? entry.antonyms : void 0
+      synonyms: ((_e = entry == null ? void 0 : entry.synonyms) == null ? void 0 : _e.length) ? entry.synonyms : void 0,
+      antonyms: ((_f = entry == null ? void 0 : entry.antonyms) == null ? void 0 : _f.length) ? entry.antonyms : void 0
     });
     return "created";
   }
@@ -18460,13 +19453,13 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
     let processed = 0;
     const prog = quiet ? null : new import_obsidian15.Notice(`\u8865\u5168\u4E2D 0/${missing.length}\u2026`, 0);
     await runPool(missing, 6, async (doc) => {
-      var _a;
+      var _a, _b;
       const entry = await this.dict.lookup(doc.word);
       let translation = (_a = entry == null ? void 0 : entry.translation) != null ? _a : "";
       let phonetic = entry == null ? void 0 : entry.phonetic;
       if (!translation || !phonetic) {
         const on = await lookupOnline(doc.word);
-        if (!translation) translation = (on == null ? void 0 : on.definition) ? `[\u82F1] ${on.definition}` : "";
+        if (!translation) translation = (on == null ? void 0 : on.definition) ? `[\u82F1] ${on.definition}` : (_b = on == null ? void 0 : on.zh) != null ? _b : "";
         phonetic != null ? phonetic : phonetic = on == null ? void 0 : on.phonetic;
       }
       if (translation || phonetic) {
@@ -18831,6 +19824,12 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
       return 0;
     }
   }
+  /** 切换全局静音（命令/快捷键入口）：与主页 🔇 按钮同一开关；广播事件让已挂载组件同步按钮态 */
+  toggleMute() {
+    this.muted = !this.muted;
+    new import_obsidian15.Notice(this.muted ? "\u5DF2\u5168\u5C40\u9759\u97F3" : "\u53D1\u97F3\u5DF2\u5F00\u542F");
+    window.dispatchEvent(new CustomEvent("el-mute-changed"));
+  }
   /** 词级发音统一入口：全局静音直接短路；标准发音缓存优先，未命中先等预下载落地（通常
    *  ~0.4s，超时 1.5s）拿到真人音，真拿不到才 TTS 兜底（下载继续在后台，下次起该词标准音） */
   speakWord(word, rate) {
@@ -18846,6 +19845,11 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
   /** 词卡弹窗统一入口：例句点已收录词时弹出对应词卡（弹窗类独立文件，避免与词卡组件循环 import） */
   openWordCard(doc) {
     new WordCardModal(this.app, this, doc).open();
+  }
+  /** 主题选择弹窗统一入口：所有词卡/词笔记顶栏共用。ThemePickModal 与词卡组件同文件，
+   *  经此中转 WordFullCard 就不必直接 import（避免循环 import） */
+  editWordThemes(doc, onDone) {
+    new ThemePickModal(this.app, this, doc, onDone).open();
   }
   /** 删除词条：词笔记移入回收站 + 清内存索引、学习进度与发音缓存 */
   async deleteWord(word) {
@@ -19078,12 +20082,7 @@ var EnglishLearnSettingTab = class extends import_obsidian15.PluginSettingTab {
     else ttsVoiceSetting.setDesc("\u58F0\u97F3\u5217\u8868\u5C1A\u672A\u52A0\u8F7D\u5B8C\u6210\uFF0C\u91CD\u65B0\u6253\u5F00\u8BBE\u7F6E\u9875\u5373\u53EF\u9009\u62E9");
     let upgradeBtn;
     addHelpTip(
-      new import_obsidian15.Setting(containerEl).setName("ECDICT \u5206\u7247\u5730\u5740").addText(
-        (t) => t.setValue(s.dictBase).onChange((v) => {
-          s.dictBase = v.trim();
-          this.plugin.store.touch();
-        })
-      ).addButton((b) => {
+      new import_obsidian15.Setting(containerEl).setName("\u57FA\u7840\u8BCD\u5178").addButton((b) => {
         b.setButtonText("\u7ACB\u5373\u4E0B\u8F7D\u8BCD\u5178\u5206\u7247").onClick(async () => {
           await this.plugin.downloadDict();
           if (dictStatusEl.isConnected) void this.renderDictStatus(dictStatusEl, b);
@@ -19091,7 +20090,7 @@ var EnglishLearnSettingTab = class extends import_obsidian15.PluginSettingTab {
         upgradeBtn = b;
         return b;
       }),
-      `\u7559\u7A7A = \u4F7F\u7528\u5185\u7F6E\u57FA\u7840\u8BCD\u5178 v${STARTER_VER}\uFF082.2 \u4E07\u8BCD\uFF0C\u542B\u97F3\u6807/\u8003\u7EA7\u6807\u7B7E/\u540C\u53CD\u4E49\u8BCD/\u540C\u6839\u8BCD/\u8BCD\u5F62\u53D8\u5316/\u4F8B\u53E5\uFF0C\u9996\u6B21\u67E5\u8BCD\u81EA\u52A8\u4E0B\u8F7D\uFF09\uFF1B\u586B\u5199\u540E\u4F18\u5148\u4ECE\u81EA\u6258\u7BA1\u5206\u7247\u52A0\u8F7D`
+      `\u5185\u7F6E\u57FA\u7840\u8BCD\u5178 v${STARTER_VER}\uFF08\u7EA6 8.7 \u4E07\u8BCD\uFF1A\u8003\u8BD5\u8BCD\u4E66 + ECDICT \u5E38\u7528\u8BCD\u7CBE\u7B80\u96C6\uFF0C\u542B\u97F3\u6807/\u8003\u7EA7\u6807\u7B7E/\u540C\u53CD\u4E49\u8BCD/\u540C\u6839\u8BCD/\u8BCD\u5F62\u53D8\u5316/\u8BCD\u9891/\u4F8B\u53E5\uFF09\uFF0C\u9996\u6B21\u67E5\u8BCD\u81EA\u52A8\u4E0B\u8F7D\uFF0C\u4E4B\u540E\u5168\u79BB\u7EBF`
     );
     const dictStatusEl = containerEl.createDiv({ cls: "el-muted el-dict-status" });
     void this.renderDictStatus(dictStatusEl, upgradeBtn);
@@ -19112,6 +20111,15 @@ var EnglishLearnSettingTab = class extends import_obsidian15.PluginSettingTab {
         })
       ),
       "\u5B66\u5F53\u524D\u8BCD\u65F6\u540E\u53F0\u5408\u6279\u8865\u5168\u5B83\u548C\u540E\u9762\u51E0\u4E2A\u8BCD\uFF08\u514D\u8D39\u6E90\u8865\u5728\u7EBF\u97F3\u6807/\u540C\u53CD\u4E49\u8BCD\uFF0C\u914D\u7F6E AI \u540E\u4F8B\u53E5/\u4E49\u9879\u4E5F\u4E00\u5E76\u8865\uFF0C\u7FFB\u8FC7\u53BB\u65F6\u6570\u636E\u5DF2\u5C31\u7EEA\uFF09\uFF0C\u5E76\u9884\u4E0B\u8F7D\u540E\u7EED\u8BCD\u7684\u771F\u4EBA\u8BFB\u97F3\uFF1B\u5173\u95ED\u540E\u8BCD\u5178\u79BB\u7EBF\u6570\u636E\u7167\u5E38\u663E\u793A\uFF0C\u5728\u7EBF\u4E0E AI \u5747\u4E0D\u81EA\u52A8\u8BF7\u6C42\uFF0C\u300C\u8865\u5168\u300D\u547D\u4EE4\u4E0D\u53D7\u5F71\u54CD"
+    );
+    addHelpTip(
+      new import_obsidian15.Setting(containerEl).setName("\u65B0\u8BCD\u6309\u8BCD\u9891\u4F18\u5148").addToggle(
+        (t) => t.setValue(s.freshByFreq !== false).onChange((v) => {
+          s.freshByFreq = v;
+          this.plugin.store.touch();
+        })
+      ),
+      "\u65B0\u8BCD\u6309 BNC \u8BED\u6599\u8BCD\u9891\u5347\u5E8F\u5B66\u4E60\uFF08\u9AD8\u9891\u5E38\u7528\u8BCD\u5148\u5B66\uFF0C\u5355\u4F4D\u5B66\u4E60\u91CF\u7684\u5B9E\u9645\u6536\u76CA\u6700\u5927\uFF09\uFF1B\u5173\u95ED = \u6309\u6536\u5F55\u65F6\u95F4\u964D\u5E8F\uFF08\u6700\u8FD1\u6536\u7684\u5148\u5B66\uFF09\u3002\u8BCD\u9891\u6765\u81EA\u57FA\u7840\u8BCD\u5178\uFF0C\u672A\u5B89\u88C5/\u8BCD\u5178\u65E0\u6570\u636E\u7684\u8BCD\u6392\u5728\u5176\u540E"
     );
     new import_obsidian15.Setting(containerEl).setName("AI \u6269\u8BCD\uFF08LLM\uFF09").setHeading();
     addHelpTip(

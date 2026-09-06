@@ -116,6 +116,12 @@ body:not(.is-mobile) .el-mute:hover {
   padding: 0 var(--el-space-3);
 }
 
+/* 头部「⋯」收纳菜单按钮：与同排文字按钮等高（同 clickable-icon 规格），悬停底色 Obsidian 自带 */
+.el-header .el-more {
+  height: var(--input-height);
+  padding: 0 var(--el-space-2);
+}
+
 .el-totals {
   color: var(--text-muted);
   font-size: var(--el-font-sm);
@@ -1163,6 +1169,23 @@ body:not(.is-mobile) .el-spell-hint:hover {
   white-space: pre-line;
 }
 
+/* —— 弹窗调试编号：左上角「类名#序号」小字（utils.ts SHOW_MODAL_TAG 总开关，排查页面问题用） —— */
+.el-modal-tag {
+  position: absolute;
+  top: 2px;
+  left: var(--el-space-4); /* 留出弹窗圆角（14px）的弧线区，避免小字被裁 */
+  font-size: var(--el-font-xs);
+  line-height: 1;
+  color: var(--text-faint);
+  pointer-events: none;
+  user-select: none;
+}
+
+/* 编号锚定 .modal 盒子：仅带编号的弹窗建立定位上下文，不影响未标注弹窗布局 */
+.modal:has(> .el-modal-tag) {
+  position: relative;
+}
+
 /* —— 词卡弹窗：例句点已收录词弹出对应词卡 —— */
 .el-wordcard-modal {
   width: 480px;
@@ -1980,4 +2003,34 @@ body:not(.is-mobile) .el-vocab-tip-open:hover {
 
 .el-keyguide-row input[type="text"] {
   flex: 1;
+}
+
+/* —— 查词弹窗 —— */
+/* 中查英候选词按钮：候选词本身是主角（统一正文色 + 下划线示意可点），
+   状态只在线型上做第二层信号——已收录虚线（点击弹词卡），未收录实线（点击进收录） */
+/* 未收录：正文黑加粗 + 灰实线（与已收录的主题蓝虚线一眼分色） */
+.el-preview .el-zh-w {
+  height: auto; /* Obsidian 默认按钮高 30px，文字按钮须还原（同 .el-related-w） */
+  background: none;
+  border: none;
+  padding: var(--el-space-1) 0;
+  cursor: pointer;
+  color: var(--text-normal);
+  font-weight: 600;
+  font-size: var(--el-font-md);
+  box-shadow: none;
+  line-height: 1.2;
+  text-decoration: underline;
+  text-decoration-style: solid; /* 未收录：实线 */
+  text-decoration-color: var(--text-faint);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+/* 已收录：主题蓝 + 虚线（与例句已收录词一致），点击弹词卡 */
+.el-preview .el-zh-w.is-owned {
+  color: var(--text-accent);
+  text-decoration-style: dashed;
+}
+body:not(.is-mobile) .el-preview .el-zh-w:hover {
+  text-decoration-color: var(--text-normal); /* hover 提线不变色：蓝色已是强调态 */
 }
