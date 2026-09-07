@@ -615,10 +615,16 @@ body:not(.is-mobile) .el-prev:hover {
 }
 
 /* Obsidian 移动端底部导航栏遮挡内容：学习页与主题面板都加高底部留白 */
-/* Obsidian 移动端底部导航栏让位：导航栏自身已含安全区（实测 ~48px+安全区），
-   之前用整个 --el-mobile-nav-h（76px+安全区）多算了一截，全成了按钮下的空档 */
+/* 键盘让位（与 R94 弹窗 .el-modal-kb 同款机制）：--el-kb-h 由 main.ts 随 visualViewport 写入
+   （键盘高度，键盘收起自动归 0），键盘弹起时整页底边收到键盘上方固定，内容显示不全走卡内滚动
+   （.el-card 已带 overflow-y）；底部导航栏让位随键盘高度递减——导航栏已被键盘盖住时
+   48px+安全区让位是纯浪费，max() 平滑收到普通留白。不做 JS 逐事件跟随（会随键盘动画分帧连跳两次） */
 body.is-mobile .el-learn {
-  padding-bottom: calc(48px + env(safe-area-inset-bottom, 0px));
+  height: calc(100% - var(--el-kb-h, 0px));
+  padding-bottom: max(
+    var(--el-space-3),
+    calc(48px + env(safe-area-inset-bottom, 0px) - var(--el-kb-h, 0px))
+  );
 }
 
 .el-progress-info {
@@ -960,6 +966,12 @@ body:not(.is-mobile) .el-ex-more:hover {
   background: var(--background-secondary);
 }
 
+/* 卡内使用的 el-grade：display:flex 是块级盒会撑满卡宽（text-align 管不到），收成内容宽并居中 */
+.el-grade-inline {
+  width: fit-content;
+  margin: 0 auto;
+}
+
 /* 快捷键键帽：所有按钮上的数字统一淡色小键帽（高亮钮内反色见下方 .el-reveal-ok/.el-grade-ok） */
 .el-kbd {
   font-size: var(--el-font-xs);
@@ -1163,6 +1175,15 @@ body:not(.is-mobile) .el-spell-hint:hover {
 
 .el-opt-text {
   overflow-wrap: anywhere;
+}
+
+/* 作答后选项尾注（靠按钮右缘）：正确答案的 👈 指示 / 错选项所属词括注「这释义其实是哪个词的」 */
+.el-opt-note {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: var(--el-font-sm);
+  line-height: 1; /* emoji 行框陷阱：锁行框，不撑高按钮 */
+  color: var(--text-faint);
 }
 
 .el-quiz-reveal {
@@ -1612,7 +1633,7 @@ body.is-mobile .el-panel {
   display: flex;
   flex-wrap: wrap;
   gap: var(--el-space-3);
-  align-items: center;
+  align-items: baseline; /* 标签/词/中文小标签同一条文本基线：小字号中文标签不再悬浮在词中线上 */
   justify-content: center;
   font-size: var(--el-font-sm);
   color: var(--text-faint);
@@ -1625,45 +1646,65 @@ body.is-mobile .el-panel {
   line-height: 1;
 }
 
-.el-related-w {
+/* button 元素前缀抬高特异性：防主题层 `.theme-x button` 同级规则回填胶囊底色/圆角 */
+button.el-related-w {
   height: auto; /* Obsidian 默认按钮高 30px（--input-height），紧凑按钮须还原 */
+  appearance: none;
   background: none;
   border: none;
+  border-radius: 0;
   padding: 0;
   cursor: pointer;
-  color: var(--text-muted);
+  align-items: baseline; /* 覆盖宿主 button 的 align-items: center：词与「复数」等中文标签同基线，不悬浮 */
+  color: var(--text-normal); /* 可点词不再灰显：正文色 + 下划线即「高亮可点」态 */
   font-size: var(--el-font-sm);
   box-shadow: none;
   line-height: 1.2;
 }
 
+/* hover 只变色不加线：button 是 inline-flex，装饰在按钮上会延伸到全部 flex 子项文本
+   （.el-wf-tag 标签也跟着出线）；状态词的线常驻在内层单词 span 上，此处提色即可。
+   结束页纯发音按钮（.el-end-mastered）无状态 span 也无标签，hover 线单独补，作点击示意 */
 body:not(.is-mobile) .el-related-w:hover {
   color: var(--text-accent);
+}
+body:not(.is-mobile) .el-end-mastered .el-related-w:hover {
   text-decoration: underline;
 }
 
-/* 同反义/同根已收录词（el-rel-card 仅已收录时有）：灰虚线示意可点（与例句点已收录词一致，点弹词卡）；
-   未收录词无下划线纯发音；学习结束页复用 el-related-w 的发音按钮也不受影响 */
+/* 同反义/同根行内词下划线区分子（与例句点词同一套视觉语言）：
+   虚线=已收录（点弹词卡），绿实线=未收录（点进查词卡可顺手收录）。
+   状态类只标在包单词的内层 span 上——button 是 inline-flex，装饰线会延伸到所有 flex 子项
+   文本（含 .el-wf-tag 中文标签），标在按钮上标签必被划线；span 只含单词文本，线自然只落单词下。
+   学习结束页复用 el-related-w 的发音按钮不在 .el-related-row 内，不带下划线 */
 .el-related-row .el-rel-card {
-  border-bottom: 1px dashed var(--text-faint);
+  text-decoration: underline;
+  text-decoration-style: dashed;
+  text-decoration-color: var(--text-faint);
+  text-underline-offset: 3px;
 }
-body:not(.is-mobile) .el-related-row .el-rel-card:hover {
-  text-decoration: none; /* 虚线已示意可点，hover 变色线即可，避免双下划线 */
-  border-bottom-color: var(--text-accent);
+.el-related-row .el-rel-new {
+  text-decoration: underline;
+  text-decoration-style: solid;
+  text-decoration-color: var(--el-c-good);
+  text-underline-offset: 3px;
+}
+body:not(.is-mobile) .el-related-row .el-related-w:hover .el-rel-card,
+body:not(.is-mobile) .el-related-row .el-related-w:hover .el-rel-new {
+  text-decoration-color: var(--text-accent); /* hover 只变色（文字色随按钮继承），不另加线 */
 }
 
 .el-related-ant {
   font-style: italic;
 }
 
-/* 词形变化行内中文标签（went 过去式）：内联可见（移动端无 hover），不随按钮 hover 变色 */
+/* 词形变化行内中文标签（went 过去式）：内联可见（移动端无 hover），保持灰显不随按钮 hover 变色；
+   display:inline-block 摆脱按钮 text-decoration 的传播（装饰线不跨 inline-block 边界，只标单词） */
 .el-wf-tag {
+  display: inline-block;
   font-size: var(--el-font-xs);
   color: var(--text-faint);
   margin-left: 2px;
-}
-body:not(.is-mobile) .el-related-w:hover .el-wf-tag {
-  color: inherit;
 }
 
 /* —— 助记（用户自己的记忆关联） —— */
