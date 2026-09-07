@@ -1678,15 +1678,11 @@ body:not(.is-mobile) .el-end-mastered .el-related-w:hover {
    文本（含 .el-wf-tag 中文标签），标在按钮上标签必被划线；span 只含单词文本，线自然只落单词下。
    学习结束页复用 el-related-w 的发音按钮不在 .el-related-row 内，不带下划线 */
 .el-related-row .el-rel-card {
-  text-decoration: underline;
-  text-decoration-style: dashed;
-  text-decoration-color: var(--text-faint);
+  text-decoration: underline dashed var(--text-faint);
   text-underline-offset: 3px;
 }
 .el-related-row .el-rel-new {
-  text-decoration: underline;
-  text-decoration-style: solid;
-  text-decoration-color: var(--el-c-good);
+  text-decoration: underline solid var(--el-c-good);
   text-underline-offset: 3px;
 }
 body:not(.is-mobile) .el-related-row .el-related-w:hover .el-rel-card,
