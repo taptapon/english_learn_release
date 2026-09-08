@@ -611,16 +611,19 @@ body:not(.is-mobile) .el-prev:hover {
   /* 顶部收紧给主卡让空间；桌面底部留白收最小让按钮贴底（移动端由下方覆写为导航高度） */
   padding: var(--el-space-4) var(--el-space-6) var(--el-space-3);
   height: 100%;
+  /* fitViewport（LearnSession）移动端把内联 height 钉在实测「键盘顶 − 页顶」；此兜底保证
+     内联高度永远不超容器——宿主若比 vv 多缩（如算进键盘工具条），以容器为准被夹住 */
+  max-height: 100%;
   box-sizing: border-box;
 }
 
 /* Obsidian 移动端底部导航栏遮挡内容：学习页与主题面板都加高底部留白 */
-/* 键盘让位（与 R94 弹窗 .el-modal-kb 同款机制）：--el-kb-h 由 main.ts 随 visualViewport 写入
-   （键盘高度，键盘收起自动归 0），键盘弹起时整页底边收到键盘上方固定，内容显示不全走卡内滚动
-   （.el-card 已带 overflow-y）；底部导航栏让位随键盘高度递减——导航栏已被键盘盖住时
-   48px+安全区让位是纯浪费，max() 平滑收到普通留白。不做 JS 逐事件跟随（会随键盘动画分帧连跳两次） */
+/* 键盘让位（机制见 docs/obsidian-dev-tips.md §4）：页面高度由 fitViewport 实测钉死、
+   恰好收缩一次贴键盘顶，不依赖宿主百分比链也不用 --el-kb-h 再压高度。此处只剩一件事：
+   键盘弹起时底部导航已被宿主送出屏幕，48px+安全区的导航让位不再需要，用 --el-kb-h
+   （main.ts 随 visualViewport 去抖写入，键盘高度，桌面恒 0）把内边距递减到最小，
+   保证内容贴键盘顶；键盘收起时导航回归，让位恢复 */
 body.is-mobile .el-learn {
-  height: calc(100% - var(--el-kb-h, 0px));
   padding-bottom: max(
     var(--el-space-3),
     calc(48px + env(safe-area-inset-bottom, 0px) - var(--el-kb-h, 0px))
@@ -1018,6 +1021,25 @@ body:not(.is-mobile) .el-grade-ok:hover {
   color: var(--text-on-accent);
   border-color: transparent;
   background: rgba(0, 0, 0, 0.18);
+}
+
+/* 视口调试浮层：设置页「视口调试」开关，实时显示 innerHeight / vv.height / vv.offsetTop / --el-kb-h */
+.el-vp-debug {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + var(--el-space-2));
+  right: var(--el-space-2);
+  z-index: 9999;
+  pointer-events: none;
+  padding: var(--el-space-1) var(--el-space-2);
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--el-radius-sm);
+  box-shadow: var(--el-shadow);
+  font-family: var(--font-monospace);
+  font-size: var(--el-font-xs);
+  line-height: 1.5;
+  color: var(--text-muted);
+  white-space: pre;
 }
 
 .el-end h2 {

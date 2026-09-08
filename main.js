@@ -950,11 +950,109 @@ var AudioCache = class {
   }
 };
 
+// src/store/sync-state.ts
+function syncStateOf(db) {
+  const { settings: _s, ...rest } = db;
+  return rest;
+}
+function parseSync(text2) {
+  var _a, _b, _c, _d, _e, _f;
+  if (!text2) return null;
+  try {
+    const raw = JSON.parse(text2);
+    if (!raw || typeof raw !== "object") return null;
+    return {
+      themes: (_a = raw.themes) != null ? _a : {},
+      progress: (_b = raw.progress) != null ? _b : {},
+      stats: { streak: (_d = (_c = raw.stats) == null ? void 0 : _c.streak) != null ? _d : 0, days: (_f = (_e = raw.stats) == null ? void 0 : _e.days) != null ? _f : {} },
+      lastRemind: raw.lastRemind,
+      ignored: raw.ignored,
+      dictExhausted: raw.dictExhausted,
+      enriched: raw.enriched
+    };
+  } catch (e) {
+    return null;
+  }
+}
+var lastTs = (p) => p.hist.length ? p.hist[p.hist.length - 1][0] : 0;
+function absorbSync(mem, disk, tombstones) {
+  var _a, _b, _c, _d, _e, _f;
+  let changed = false;
+  const tomb = (key) => !!(tombstones == null ? void 0 : tombstones.has(key));
+  for (const [name, info] of Object.entries(disk.themes)) {
+    if (!mem.themes[name] && !tomb(`theme:${name}`)) {
+      mem.themes[name] = info;
+      changed = true;
+    }
+  }
+  for (const [w, p] of Object.entries(disk.progress)) {
+    if (tomb(`progress:${w}`)) continue;
+    const cur = mem.progress[w];
+    if (!cur || lastTs(p) > lastTs(cur)) {
+      mem.progress[w] = p;
+      changed = true;
+    }
+  }
+  for (const [date, d] of Object.entries(disk.stats.days)) {
+    const cur = mem.stats.days[date];
+    if (!cur) {
+      mem.stats.days[date] = { ...d };
+      changed = true;
+      continue;
+    }
+    for (const k of ["new", "rev", "m"]) {
+      const v = d[k];
+      if (v !== void 0 && v > ((_a = cur[k]) != null ? _a : 0)) {
+        cur[k] = v;
+        changed = true;
+      }
+    }
+  }
+  if (((_b = disk.stats.streak) != null ? _b : 0) > ((_c = mem.stats.streak) != null ? _c : 0)) {
+    mem.stats.streak = disk.stats.streak;
+    changed = true;
+  }
+  if (disk.lastRemind && (!mem.lastRemind || disk.lastRemind > mem.lastRemind)) {
+    mem.lastRemind = disk.lastRemind;
+    changed = true;
+  }
+  for (const [w, v] of Object.entries((_d = disk.ignored) != null ? _d : {})) {
+    if (!((_e = mem.ignored) == null ? void 0 : _e[w])) {
+      ((_f = mem.ignored) != null ? _f : mem.ignored = {})[w] = v;
+      changed = true;
+    }
+  }
+  for (const key of ["dictExhausted", "enriched"]) {
+    const d = disk[key];
+    const m = mem[key];
+    if (d && m && d.ver === m.ver) {
+      for (const [w, v] of Object.entries(d.words)) {
+        if (!m.words[w]) {
+          m.words[w] = v;
+          changed = true;
+        }
+      }
+    }
+  }
+  return changed;
+}
+
 // src/store/data-store.ts
 var DataStore = class {
   constructor(plugin) {
     this.plugin = plugin;
     this.timer = null;
+    /** 本端删过、盘上可能还有的键（theme:<名> / progress:<词>）：吸收时不复活。
+     *  会话级即可——删除随下一次 flush 落盘，此后盘上已无此键 */
+    this.tombstones = /* @__PURE__ */ new Set();
+  }
+  /** 跨端同步文件：跟随词库根目录（与 words/、backup/ 同属一处，整体挪库时一起走） */
+  get syncPath() {
+    return `${this.plugin.db.settings.root}/db.json`;
+  }
+  /** 记删除墓碑：deleteWord / 主题删除与改名处调用，防吸收时被盘上旧数据复活 */
+  forget(kind, key) {
+    this.tombstones.add(`${kind}:${key}`);
   }
   /** 标记数据已变更，2 秒后落盘 */
   touch() {
@@ -973,7 +1071,45 @@ var DataStore = class {
     await this.flush();
   }
   async flush() {
-    await this.plugin.saveData(this.plugin.db);
+    const { app, db } = this.plugin;
+    await this.plugin.saveData({ settings: db.settings });
+    const path = this.syncPath;
+    try {
+      let raw = null;
+      if (await app.vault.adapter.exists(path)) {
+        raw = await app.vault.adapter.read(path);
+      }
+      const disk = parseSync(raw);
+      if (!disk && raw) {
+        void app.vault.adapter.write(`${path}.bad-${Date.now()}`, raw).catch(() => {
+        });
+      }
+      if (disk) absorbSync(syncStateOf(db), disk, this.tombstones);
+      await mkdirp(app, db.settings.root);
+      await app.vault.adapter.write(path, JSON.stringify(syncStateOf(db)));
+    } catch (e) {
+      console.error("\u8DE8\u7AEF\u540C\u6B65\u6587\u4EF6\u5199\u5165\u5931\u8D25:", path, e);
+      throw e;
+    }
+  }
+  /** 从 vault 吸收另一端变更（启动/开始会话/状态栏刷新时调）。streak 随吸收结果重算，
+   *  返回是否有变更；不主动落盘——吸收结果随下一次 flush 自然写回 */
+  async syncNow() {
+    const { app, db } = this.plugin;
+    const path = this.syncPath;
+    try {
+      if (!await app.vault.adapter.exists(path)) return false;
+      const disk = parseSync(await app.vault.adapter.read(path));
+      if (!disk) return false;
+      if (absorbSync(syncStateOf(db), disk, this.tombstones)) {
+        this.plugin.recomputeStreak();
+        return true;
+      }
+      return false;
+    } catch (e) {
+      console.error("\u8DE8\u7AEF\u540C\u6B65\u6587\u4EF6\u8BFB\u53D6\u5931\u8D25:", path, e);
+      return false;
+    }
   }
 };
 
@@ -2335,10 +2471,15 @@ function posOf(sense) {
   return m ? m[1] : "";
 }
 var OPT_MAX = 24;
+var capSense = (t) => t.length > OPT_MAX ? `${t.slice(0, OPT_MAX)}\u2026` : t;
 function shortSense(s) {
-  const head = s.split(/[；;，,、（(]/, 1)[0].trimEnd();
-  const t = head || s;
-  return t.length > OPT_MAX ? `${t.slice(0, OPT_MAX)}\u2026` : t;
+  const stripped = s.replace(/^\s*(?:[a-z]+\.\s*)?(?:[（(][^）)]*[）)]\s*)+/, "").trim();
+  if (!stripped) return capSense(s.trim());
+  for (const seg of stripped.split(/[；;，,、（(]/)) {
+    const t = seg.trim();
+    if (t && !/^[a-z]+\.$/.test(t)) return capSense(t);
+  }
+  return capSense(stripped);
 }
 function preferPos(items, pos, senseOf) {
   return [
@@ -16107,6 +16248,7 @@ function create_fragment6(ctx) {
   let div;
   let current_block_type_index;
   let if_block;
+  let fitViewport_action;
   let current;
   let mounted;
   let dispose;
@@ -16167,12 +16309,15 @@ function create_fragment6(ctx) {
       }
       current = true;
       if (!mounted) {
-        dispose = listen(
-          window_1,
-          "keydown",
-          /*onKey*/
-          ctx[76]
-        );
+        dispose = [
+          listen(
+            window_1,
+            "keydown",
+            /*onKey*/
+            ctx[76]
+          ),
+          action_destroyer(fitViewport_action = fitViewport.call(null, div))
+        ];
         mounted = true;
       }
     },
@@ -16223,14 +16368,68 @@ function create_fragment6(ctx) {
         if_blocks[current_block_type_index].d();
       }
       mounted = false;
-      dispose();
+      run_all(dispose);
     }
   };
 }
 var AUDIO_AHEAD = 5;
 var KEYS_TIP = "1~4 \u8BC4\u5206/\u9009\u9879 \xB7 0 \u5176\u5B9E\u4E0D\u8BA4\u8BC6/\u4E0D\u4F1A\n\u7A7A\u683C \u663E\u793A\u7B54\u6848\nEnter \u8BB0\u4F4F\u4E86/\u63D0\u4EA4\u62FC\u5199\nR \u91CD\u542C\u53D1\u97F3\nB \u8BB0\u52A9\u8BB0\nEsc \u7ED3\u675F\u672C\u8F6E";
+function fitViewport(node) {
+  const destroyFns = [];
+  if (document.body.classList.contains("is-mobile")) {
+    const vv = window.visualViewport;
+    let raf2 = 0;
+    const apply = () => {
+      raf2 = 0;
+      if (!vv || !vv.height) return;
+      const bottom = vv.offsetTop + vv.height;
+      const avail = bottom - node.getBoundingClientRect().top - window.scrollY;
+      if (avail > 100) node.style.height = `${Math.round(avail)}px`;
+    };
+    const schedule = () => {
+      if (!raf2) raf2 = requestAnimationFrame(apply);
+    };
+    vv === null || vv === void 0 ? void 0 : vv.addEventListener("resize", schedule, { passive: true });
+    vv === null || vv === void 0 ? void 0 : vv.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    const onVis = () => {
+      if (document.visibilityState === "visible") schedule();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    destroyFns.push(
+      () => vv === null || vv === void 0 ? void 0 : vv.removeEventListener("resize", schedule),
+      () => vv === null || vv === void 0 ? void 0 : vv.removeEventListener("scroll", schedule),
+      () => window.removeEventListener("resize", schedule),
+      () => document.removeEventListener("visibilitychange", onVis),
+      () => {
+        if (raf2) cancelAnimationFrame(raf2);
+      }
+    );
+    apply();
+  }
+  return {
+    destroy() {
+      for (const fn of destroyFns) fn();
+    }
+  };
+}
 function focusOnMount(node) {
   node.focus();
+  const vv = window.visualViewport;
+  let raf2 = 0;
+  const reveal = () => {
+    cancelAnimationFrame(raf2);
+    raf2 = requestAnimationFrame(() => {
+      if (document.activeElement === node) node.scrollIntoView({ block: "nearest" });
+    });
+  };
+  vv === null || vv === void 0 ? void 0 : vv.addEventListener("resize", reveal, { passive: true });
+  return {
+    destroy() {
+      vv === null || vv === void 0 ? void 0 : vv.removeEventListener("resize", reveal);
+      cancelAnimationFrame(raf2);
+    }
+  };
 }
 function instance6($$self, $$props, $$invalidate) {
   let quizAnswered;
@@ -20274,7 +20473,8 @@ var DEFAULT_DATA = {
     exampleCount: 3,
     expandCount: 12,
     enrichOnLearn: true,
-    freshByFreq: true
+    freshByFreq: true,
+    viewportDebug: false
   },
   themes: {},
   progress: {},
@@ -20298,6 +20498,7 @@ var EnglishLearnPlugin = class extends import_obsidian16.Plugin {
     this.statusEl = null;
     /** 编辑态注入的词笔记顶栏（挂在宿主 markdown 视图上，不要求它一直是活动视图） */
     this.editBar = null;
+    this.vpDebugEl = null;
     /** 后台补全串行队列：连续几批入库不并发打同一批词，前一批跑完自动接下一批 */
     this.enrichQueue = Promise.resolve();
     this.enrichTurnScheduled = false;
@@ -20387,6 +20588,7 @@ var EnglishLearnPlugin = class extends import_obsidian16.Plugin {
     var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p;
     const loaded = await this.loadData();
     const firstInstall = loaded === null;
+    const legacySync = !!((loaded == null ? void 0 : loaded.progress) || (loaded == null ? void 0 : loaded.themes) || (loaded == null ? void 0 : loaded.stats) || (loaded == null ? void 0 : loaded.ignored));
     this.db = {
       ...structuredClone(DEFAULT_DATA),
       ...loaded,
@@ -20531,6 +20733,19 @@ var EnglishLearnPlugin = class extends import_obsidian16.Plugin {
         });
       })
     );
+    if (import_obsidian16.Platform.isDesktop) {
+      this.registerInterval(
+        window.setInterval(() => {
+          if (this.sessionActive) return;
+          void this.store.syncNow().then((changed) => {
+            if (changed) {
+              this.store.touch();
+              void this.refreshStatusBar();
+            }
+          });
+        }, 6e4)
+      );
+    }
     const vv = window.visualViewport;
     if (vv) {
       let lastKb = "";
@@ -20538,6 +20753,7 @@ var EnglishLearnPlugin = class extends import_obsidian16.Plugin {
       const syncKb = () => {
         clearTimeout(timer);
         timer = setTimeout(() => {
+          this.syncViewportDebug();
           if (!vv.height) return;
           const kb = Math.max(0, window.innerHeight - vv.offsetTop - vv.height);
           const px = `${Math.round(kb)}px`;
@@ -20563,6 +20779,7 @@ var EnglishLearnPlugin = class extends import_obsidian16.Plugin {
       void (async () => {
         try {
           await this.ensureFolders();
+          if (await this.store.syncNow() || legacySync) await this.store.touchNow();
           if (firstInstall) await this.seedDefaultThemes();
           this.refreshEditNoteBar();
           this.statusEl = this.addStatusBarItem();
@@ -20578,7 +20795,33 @@ var EnglishLearnPlugin = class extends import_obsidian16.Plugin {
     });
   }
   onunload() {
+    var _a;
+    (_a = this.vpDebugEl) == null ? void 0 : _a.remove();
     void this.store.flush();
+  }
+  /** 视口调试浮层（设置页「视口调试」开关）：排查移动端键盘让位/视口收缩用。
+   *  在 syncKb 的每个落定时刻刷新，键盘弹起/收起、切 App 过渡几何一览无余，不再靠猜宿主行为 */
+  syncViewportDebug() {
+    var _a, _b;
+    const on = this.db.settings.viewportDebug === true;
+    if (!on) {
+      (_a = this.vpDebugEl) == null ? void 0 : _a.remove();
+      this.vpDebugEl = null;
+      return;
+    }
+    (_b = this.vpDebugEl) != null ? _b : this.vpDebugEl = document.body.createEl("div", {
+      cls: "el-vp-debug",
+      attr: { "aria-hidden": "true" }
+    });
+    const vv = window.visualViewport;
+    const kb = getComputedStyle(document.body).getPropertyValue("--el-kb-h").trim() || "0";
+    this.vpDebugEl.setText(
+      `inner ${window.innerHeight}
+vv.h ${vv ? Math.round(vv.height) : "-"}
+vv.top ${vv ? Math.round(vv.offsetTop) : "-"}
+sc ${Math.round(window.scrollY)}
+kb-h ${kb}`
+    );
   }
   async ensureFolders() {
     const root = this.db.settings.root;
@@ -20668,6 +20911,7 @@ var EnglishLearnPlugin = class extends import_obsidian16.Plugin {
     var _a;
     if (!this.statusEl) return null;
     try {
+      await this.store.syncNow();
       await this.words.scan();
       const now2 = Date.now();
       let due = 0;
@@ -20703,6 +20947,7 @@ var EnglishLearnPlugin = class extends import_obsidian16.Plugin {
   async buildSession(theme, hard = false, extraNew = 0) {
     var _a;
     await this.ensureFolders();
+    await this.store.syncNow();
     await this.words.scan();
     const now2 = Date.now();
     if (hard) {
@@ -20818,6 +21063,7 @@ var EnglishLearnPlugin = class extends import_obsidian16.Plugin {
     this.store.touch();
     this.refreshEditNoteBar();
   }
+  /** 从 days 重算连续打卡（吸收另一端学习记录后也需重算，故公开给 DataStore 用） */
   recomputeStreak() {
     const days = this.db.stats.days;
     const d = /* @__PURE__ */ new Date();
@@ -21454,6 +21700,7 @@ var EnglishLearnPlugin = class extends import_obsidian16.Plugin {
       this.words.remove(word);
     }
     void this.audio.forget(word);
+    this.store.forget("progress", word);
     delete this.db.progress[word];
     this.store.touch();
     void this.refreshStatusBar();
@@ -21516,6 +21763,7 @@ var EnglishLearnPlugin = class extends import_obsidian16.Plugin {
   /** 删除主题：词文件保留，仅解除 frontmatter 关联（含被忽略的词） */
   async deleteTheme(name) {
     var _a;
+    this.store.forget("theme", name);
     delete this.db.themes[name];
     if (((_a = this.expandCache) == null ? void 0 : _a.theme) === name) this.expandCache = void 0;
     for (const doc of this.words.byThemeRaw(name)) {
@@ -21541,6 +21789,7 @@ var EnglishLearnPlugin = class extends import_obsidian16.Plugin {
     const info = this.db.themes[oldName];
     if (!info) return "\u4E3B\u9898\u4E0D\u5B58\u5728";
     if (name !== oldName) {
+      this.store.forget("theme", oldName);
       delete this.db.themes[oldName];
       info.name = name;
       this.db.themes[name] = info;
@@ -21837,6 +22086,13 @@ var EnglishLearnSettingTab = class extends import_obsidian16.PluginSettingTab {
         } finally {
           b.setDisabled(false).setButtonText("\u6D4B\u8BD5");
         }
+      })
+    );
+    new import_obsidian16.Setting(containerEl).setName("\u89C6\u53E3\u8C03\u8BD5").setDesc("\u5C4F\u5E55\u89D2\u843D\u5B9E\u65F6\u663E\u793A\u5E03\u5C40\u89C6\u53E3/\u53EF\u89C6\u89C6\u53E3/\u952E\u76D8\u8BA9\u4F4D\u6570\u503C\uFF0C\u6392\u67E5\u79FB\u52A8\u7AEF\u952E\u76D8\u6536\u7F29\u95EE\u9898\u7528").addToggle(
+      (t) => t.setValue(s.viewportDebug === true).onChange((v) => {
+        s.viewportDebug = v;
+        this.plugin.store.touch();
+        this.plugin.syncViewportDebug();
       })
     );
   }
