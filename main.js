@@ -2334,6 +2334,12 @@ function posOf(sense) {
   const m = sense.match(/^\s*([a-z]+\.)\s?/);
   return m ? m[1] : "";
 }
+var OPT_MAX = 24;
+function shortSense(s) {
+  const head = s.split(/[；;，,、（(]/, 1)[0].trimEnd();
+  const t = head || s;
+  return t.length > OPT_MAX ? `${t.slice(0, OPT_MAX)}\u2026` : t;
+}
 function preferPos(items, pos, senseOf) {
   return [
     ...shuffle(items.filter((x) => posOf(senseOf(x)) === pos)),
@@ -2430,11 +2436,18 @@ function buildCheckQuiz(doc, pool) {
     { s: mine, w: doc.word },
     ...preferPos(pairs, pos, (x) => x.s).slice(0, 3)
   ]);
+  const seenOpt = /* @__PURE__ */ new Set();
+  const options = picks.map((x) => {
+    const t = shortSense(x.s);
+    if (seenOpt.has(t)) return x.s;
+    seenOpt.add(t);
+    return t;
+  });
   return {
     kind: "meaning",
     question: doc.word,
     phonetic: doc.phonetic,
-    options: picks.map((x) => x.s),
+    options,
     optionWords: picks.map((x) => x.w),
     answer: picks.findIndex((x) => x.s === mine),
     reveal: `${doc.word}  ${mine}`
@@ -11269,6 +11282,7 @@ function create_if_block_93(ctx) {
       attr(div0, "class", "el-end-stats");
       set_style(div1, "margin-top", "14px");
       set_style(div1, "display", "flex");
+      set_style(div1, "flex-wrap", "wrap");
       set_style(div1, "gap", "8px");
       set_style(div1, "justify-content", "center");
       attr(div2, "class", "el-card el-end");
@@ -11573,6 +11587,7 @@ function create_if_block_43(ctx) {
       attr(div0, "class", "el-end-emoji");
       set_style(div1, "margin-top", "14px");
       set_style(div1, "display", "flex");
+      set_style(div1, "flex-wrap", "wrap");
       set_style(div1, "gap", "8px");
       set_style(div1, "justify-content", "center");
       attr(div2, "class", "el-card el-end");
@@ -11840,6 +11855,7 @@ function create_if_block_111(ctx) {
       attr(button0, "class", "mod-cta");
       set_style(div2, "margin-top", "14px");
       set_style(div2, "display", "flex");
+      set_style(div2, "flex-wrap", "wrap");
       set_style(div2, "gap", "8px");
       set_style(div2, "justify-content", "center");
       attr(div3, "class", "el-card el-end");
@@ -13492,7 +13508,7 @@ function create_if_block_51(ctx) {
       attr(button0, "class", "el-spell-go");
       attr(div, "class", "el-spell");
       attr(button1, "class", "el-spell-hint");
-      attr(button2, "class", "el-grade el-grade-inline");
+      attr(button2, "class", "el-grade el-grade-inline el-grade-sub");
     },
     m(target, anchor) {
       if (if_block0) if_block0.m(target, anchor);
@@ -13989,7 +14005,7 @@ function create_if_block_47(ctx) {
     c() {
       button = element("button");
       button.innerHTML = `\u4E0D\u4F1A<span class="el-kbd">0</span>`;
-      attr(button, "class", "el-grade");
+      attr(button, "class", "el-grade el-grade-sub");
     },
     m(target, anchor) {
       insert(target, button, anchor);
@@ -14143,7 +14159,7 @@ function create_if_block_41(ctx) {
     c() {
       button = element("button");
       button.innerHTML = `\u5176\u5B9E\u4E0D\u8BA4\u8BC6<span class="el-kbd">0</span>`;
-      attr(button, "class", "el-grade");
+      attr(button, "class", "el-grade el-grade-sub");
     },
     m(target, anchor) {
       insert(target, button, anchor);
@@ -14937,7 +14953,7 @@ function create_if_block_31(ctx) {
       t0 = space();
       button = element("button");
       button.innerHTML = `\u5176\u5B9E\u4E0D\u8BA4\u8BC6<span class="el-kbd">0</span>`;
-      attr(button, "class", "el-grade");
+      attr(button, "class", "el-grade el-grade-sub");
     },
     m(target, anchor) {
       mount_component(quizoptions, target, anchor);
@@ -15048,7 +15064,7 @@ function create_if_block_272(ctx) {
       button2.innerHTML = `\u5176\u5B9E\u4E0D\u8BA4\u8BC6<span class="el-kbd">3</span>`;
       attr(button0, "class", "el-grade g3");
       attr(button1, "class", "el-grade el-grade-ok");
-      attr(button2, "class", "el-grade g1");
+      attr(button2, "class", "el-grade g1 el-grade-sub");
       attr(div, "class", "el-grade-btns");
     },
     m(target, anchor) {
@@ -20518,18 +20534,28 @@ var EnglishLearnPlugin = class extends import_obsidian16.Plugin {
     const vv = window.visualViewport;
     if (vv) {
       let lastKb = "";
+      let timer;
       const syncKb = () => {
-        const kb = Math.max(0, window.innerHeight - vv.offsetTop - vv.height);
-        const px = `${Math.round(kb)}px`;
-        if (px === lastKb) return;
-        lastKb = px;
-        document.body.style.setProperty("--el-kb-h", px);
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+          if (!vv.height) return;
+          const kb = Math.max(0, window.innerHeight - vv.offsetTop - vv.height);
+          const px = `${Math.round(kb)}px`;
+          if (px === lastKb) return;
+          lastKb = px;
+          document.body.style.setProperty("--el-kb-h", px);
+        }, 120);
       };
       vv.addEventListener("resize", syncKb, { passive: true });
       vv.addEventListener("scroll", syncKb, { passive: true });
+      this.registerDomEvent(document, "visibilitychange", () => {
+        if (document.visibilityState === "visible")
+          requestAnimationFrame(() => requestAnimationFrame(syncKb));
+      });
       this.register(() => {
         vv.removeEventListener("resize", syncKb);
         vv.removeEventListener("scroll", syncKb);
+        clearTimeout(timer);
       });
       syncKb();
     }

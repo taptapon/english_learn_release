@@ -972,6 +972,22 @@ body:not(.is-mobile) .el-ex-more:hover {
   margin: 0 auto;
 }
 
+/* 逃生口弱化钮（其实不认识 / 不会）：纯文字态——无边框无底色的小字淡色钮，不与主路径按钮抢视觉权重 */
+.el-grade-sub {
+  background: none;
+  border: none;
+  box-shadow: none;
+  height: auto; /* 原生 button 被强制 30px 高：文字态必须显式放开，否则调字号/内边距无效 */
+  padding: var(--el-space-1) var(--el-space-2);
+  font-size: var(--el-font-sm);
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+body:not(.is-mobile) .el-grade-sub:hover {
+  color: var(--text-normal);
+}
+
 /* 快捷键键帽：所有按钮上的数字统一淡色小键帽（高亮钮内反色见下方 .el-reveal-ok/.el-grade-ok） */
 .el-kbd {
   font-size: var(--el-font-xs);
@@ -1174,6 +1190,7 @@ body:not(.is-mobile) .el-spell-hint:hover {
 }
 
 .el-opt-text {
+  min-width: 0; /* flex 项默认 min-width:auto 不许收缩：长释义整行顶破按钮（宿主按钮居中时两侧穿出被屏裁），归 0 才能在按钮内换行 */
   overflow-wrap: anywhere;
 }
 
@@ -1615,6 +1632,11 @@ body.is-mobile .el-kbd {
 
 body.is-mobile .el-grade {
   padding: var(--el-btn-lg);
+}
+
+/* 移动端评分钮放大到 lg；逃生口弱化钮保持纯文字态，横向多留一点按面积 */
+body.is-mobile .el-grade-sub {
+  padding: var(--el-space-1) var(--el-space-3);
 }
 
 body.is-mobile .el-panel {
