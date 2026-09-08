@@ -26,7 +26,7 @@ __export(main_exports, {
   default: () => EnglishLearnPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian15 = require("obsidian");
+var import_obsidian16 = require("obsidian");
 
 // src/editor/vocab-hover.ts
 var import_view = require("@codemirror/view");
@@ -103,8 +103,8 @@ function wordStatus(word, progress, ignored) {
   if (ignored == null ? void 0 : ignored[word]) return "ignored";
   const p = progress[word];
   if (!p) return "fresh";
-  if (isHardWord(p)) return "hard";
   if (isMastered(p)) return "mastered";
+  if (isHardWord(p)) return "hard";
   return p.next <= Date.now() ? "due" : "learn";
 }
 function sortWordsByStatus(list, progress, ignored) {
@@ -1509,7 +1509,7 @@ function showTipBubble(anchor, tip) {
 }
 
 // src/ui/learn-view.ts
-var import_obsidian11 = require("obsidian");
+var import_obsidian12 = require("obsidian");
 
 // node_modules/svelte/src/runtime/internal/utils.js
 function noop() {
@@ -2289,7 +2289,7 @@ if (typeof window !== "undefined")
   (window.__svelte || (window.__svelte = { v: /* @__PURE__ */ new Set() })).v.add(PUBLIC_VERSION);
 
 // src/components/LearnSession.svelte
-var import_obsidian10 = require("obsidian");
+var import_obsidian11 = require("obsidian");
 
 // src/cloze.ts
 var POS_RE = /^(?:n|v|vt|vi|adj|adv|prep|conj|pron|art|num|interj|aux|abbr)\./;
@@ -7033,6 +7033,9 @@ var AiSetupModal = class extends import_obsidian9.Modal {
   }
 };
 
+// src/components/WordFullCard.svelte
+var import_obsidian10 = require("obsidian");
+
 // src/components/SenseList.svelte
 function get_each_context2(ctx, list, i) {
   const child_ctx = ctx.slice();
@@ -7319,40 +7322,40 @@ var SenseList_default = SenseList;
 // src/components/WordFullCard.svelte
 function get_each_context3(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[65] = list[i];
-  child_ctx[67] = i;
+  child_ctx[73] = list[i];
+  child_ctx[75] = i;
   return child_ctx;
 }
 function get_each_context_12(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[68] = list[i];
+  child_ctx[76] = list[i];
   return child_ctx;
 }
 function get_each_context_2(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[71] = list[i][0];
-  child_ctx[72] = list[i][1];
+  child_ctx[79] = list[i][0];
+  child_ctx[80] = list[i][1];
   return child_ctx;
 }
 function get_each_context_3(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[71] = list[i][0];
-  child_ctx[75] = list[i][1];
+  child_ctx[79] = list[i][0];
+  child_ctx[83] = list[i][1];
   return child_ctx;
 }
 function get_each_context_4(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[71] = list[i];
+  child_ctx[79] = list[i];
   return child_ctx;
 }
 function get_each_context_5(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[71] = list[i];
+  child_ctx[79] = list[i];
   return child_ctx;
 }
 function get_each_context_6(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[75] = list[i];
+  child_ctx[83] = list[i];
   return child_ctx;
 }
 function create_if_block_26(ctx) {
@@ -7446,13 +7449,13 @@ function create_if_block_24(ctx) {
             button0,
             "click",
             /*click_handler*/
-            ctx[36]
+            ctx[40]
           ),
           listen(
             button1,
             "click",
             /*click_handler_1*/
-            ctx[37]
+            ctx[41]
           )
         ];
         mounted = true;
@@ -7819,7 +7822,7 @@ function create_if_block_17(ctx) {
   );
   const get_key = (ctx2) => (
     /*t*/
-    ctx2[75]
+    ctx2[83]
   );
   for (let i = 0; i < each_value_6.length; i += 1) {
     let child_ctx = get_each_context_6(ctx, each_value_6, i);
@@ -8038,7 +8041,7 @@ function create_else_block_3(ctx) {
   let t0;
   let t1_value = (
     /*t*/
-    ctx[75] + ""
+    ctx[83] + ""
   );
   let t1;
   return {
@@ -8057,7 +8060,7 @@ function create_else_block_3(ctx) {
     p(ctx2, dirty) {
       if (dirty[0] & /*doc*/
       1 && t1_value !== (t1_value = /*t*/
-      ctx2[75] + "")) set_data(t1, t1_value);
+      ctx2[83] + "")) set_data(t1, t1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -8071,7 +8074,7 @@ function create_if_block_18(ctx) {
   let t0;
   let t1_value = (
     /*t*/
-    ctx[75] + ""
+    ctx[83] + ""
   );
   let t1;
   let mounted;
@@ -8103,7 +8106,7 @@ function create_if_block_18(ctx) {
             span,
             "keydown",
             /*keydown_handler_1*/
-            ctx[39]
+            ctx[43]
           )
         ];
         mounted = true;
@@ -8112,7 +8115,7 @@ function create_if_block_18(ctx) {
     p(ctx2, dirty) {
       if (dirty[0] & /*doc*/
       1 && t1_value !== (t1_value = /*t*/
-      ctx2[75] + "")) set_data(t1, t1_value);
+      ctx2[83] + "")) set_data(t1, t1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -8239,7 +8242,7 @@ function create_if_block_16(ctx) {
             div,
             "keydown",
             /*keydown_handler_3*/
-            ctx[41]
+            ctx[45]
           )
         ];
         mounted = true;
@@ -8298,7 +8301,7 @@ function create_if_block_152(ctx) {
             div,
             "keydown",
             /*keydown_handler_2*/
-            ctx[40]
+            ctx[44]
           )
         ];
         mounted = true;
@@ -8418,8 +8421,9 @@ function create_if_block_142(ctx) {
       insert(target, each_1_anchor, anchor);
     },
     p(ctx2, dirty) {
-      if (dirty[0] & /*relTitle, synonyms, relClick, libHits*/
-      805830660) {
+      if (dirty[0] & /*synonyms, libHits*/
+      524292 | dirty[1] & /*relTitle, relClick*/
+      6) {
         each_value_5 = ensure_array_like(
           /*synonyms*/
           ctx2[2]
@@ -8456,7 +8460,7 @@ function create_each_block_5(ctx) {
   let span;
   let t_1_value = (
     /*w*/
-    ctx[71] + ""
+    ctx[79] + ""
   );
   let t_1;
   let span_class_value;
@@ -8466,9 +8470,9 @@ function create_each_block_5(ctx) {
   function click_handler_3() {
     return (
       /*click_handler_3*/
-      ctx[42](
+      ctx[46](
         /*w*/
-        ctx[71]
+        ctx[79]
       )
     );
   }
@@ -8480,13 +8484,13 @@ function create_each_block_5(ctx) {
       attr(span, "class", span_class_value = /*libHits*/
       ctx[19].has(
         /*w*/
-        ctx[71]
+        ctx[79]
       ) ? "el-rel-card" : "el-rel-new");
       attr(button, "class", "el-related-w");
       attr(button, "title", button_title_value = /*relTitle*/
-      ctx[29](
+      ctx[33](
         /*w*/
-        ctx[71]
+        ctx[79]
       ));
     },
     m(target, anchor) {
@@ -8502,20 +8506,20 @@ function create_each_block_5(ctx) {
       ctx = new_ctx;
       if (dirty[0] & /*synonyms*/
       4 && t_1_value !== (t_1_value = /*w*/
-      ctx[71] + "")) set_data(t_1, t_1_value);
+      ctx[79] + "")) set_data(t_1, t_1_value);
       if (dirty[0] & /*libHits, synonyms*/
       524292 && span_class_value !== (span_class_value = /*libHits*/
       ctx[19].has(
         /*w*/
-        ctx[71]
+        ctx[79]
       ) ? "el-rel-card" : "el-rel-new")) {
         attr(span, "class", span_class_value);
       }
       if (dirty[0] & /*synonyms*/
       4 && button_title_value !== (button_title_value = /*relTitle*/
-      ctx[29](
+      ctx[33](
         /*w*/
-        ctx[71]
+        ctx[79]
       ))) {
         attr(button, "title", button_title_value);
       }
@@ -8563,8 +8567,9 @@ function create_if_block_132(ctx) {
       insert(target, each_1_anchor, anchor);
     },
     p(ctx2, dirty) {
-      if (dirty[0] & /*relTitle, antonyms, relClick, libHits*/
-      805830664) {
+      if (dirty[0] & /*antonyms, libHits*/
+      524296 | dirty[1] & /*relTitle, relClick*/
+      6) {
         each_value_4 = ensure_array_like(
           /*antonyms*/
           ctx2[3]
@@ -8601,7 +8606,7 @@ function create_each_block_4(ctx) {
   let span;
   let t_1_value = (
     /*w*/
-    ctx[71] + ""
+    ctx[79] + ""
   );
   let t_1;
   let span_class_value;
@@ -8611,9 +8616,9 @@ function create_each_block_4(ctx) {
   function click_handler_4() {
     return (
       /*click_handler_4*/
-      ctx[43](
+      ctx[47](
         /*w*/
-        ctx[71]
+        ctx[79]
       )
     );
   }
@@ -8625,13 +8630,13 @@ function create_each_block_4(ctx) {
       attr(span, "class", span_class_value = /*libHits*/
       ctx[19].has(
         /*w*/
-        ctx[71]
+        ctx[79]
       ) ? "el-rel-card" : "el-rel-new");
       attr(button, "class", "el-related-w el-related-ant");
       attr(button, "title", button_title_value = /*relTitle*/
-      ctx[29](
+      ctx[33](
         /*w*/
-        ctx[71]
+        ctx[79]
       ));
     },
     m(target, anchor) {
@@ -8647,20 +8652,20 @@ function create_each_block_4(ctx) {
       ctx = new_ctx;
       if (dirty[0] & /*antonyms*/
       8 && t_1_value !== (t_1_value = /*w*/
-      ctx[71] + "")) set_data(t_1, t_1_value);
+      ctx[79] + "")) set_data(t_1, t_1_value);
       if (dirty[0] & /*libHits, antonyms*/
       524296 && span_class_value !== (span_class_value = /*libHits*/
       ctx[19].has(
         /*w*/
-        ctx[71]
+        ctx[79]
       ) ? "el-rel-card" : "el-rel-new")) {
         attr(span, "class", span_class_value);
       }
       if (dirty[0] & /*antonyms*/
       8 && button_title_value !== (button_title_value = /*relTitle*/
-      ctx[29](
+      ctx[33](
         /*w*/
-        ctx[71]
+        ctx[79]
       ))) {
         attr(button, "title", button_title_value);
       }
@@ -8709,8 +8714,9 @@ function create_if_block_112(ctx) {
       }
     },
     p(ctx2, dirty) {
-      if (dirty[0] & /*relTitle, dictRel, relClick, libHits*/
-      805831168) {
+      if (dirty[0] & /*dictRel, libHits*/
+      524800 | dirty[1] & /*relTitle, relClick*/
+      6) {
         each_value_3 = ensure_array_like(
           /*dictRel*/
           ctx2[9]
@@ -8745,7 +8751,7 @@ function create_each_block_3(ctx) {
   let span;
   let t_1_value = (
     /*w*/
-    ctx[71] + ""
+    ctx[79] + ""
   );
   let t_1;
   let span_class_value;
@@ -8755,11 +8761,11 @@ function create_each_block_3(ctx) {
   function click_handler_5() {
     return (
       /*click_handler_5*/
-      ctx[44](
+      ctx[48](
         /*w*/
-        ctx[71],
+        ctx[79],
         /*t*/
-        ctx[75]
+        ctx[83]
       )
     );
   }
@@ -8771,15 +8777,15 @@ function create_each_block_3(ctx) {
       attr(span, "class", span_class_value = /*libHits*/
       ctx[19].has(
         /*w*/
-        ctx[71]
+        ctx[79]
       ) ? "el-rel-card" : "el-rel-new");
       attr(button, "class", "el-related-w");
       attr(button, "title", button_title_value = /*relTitle*/
-      ctx[29](
+      ctx[33](
         /*w*/
-        ctx[71],
+        ctx[79],
         /*t*/
-        ctx[75]
+        ctx[83]
       ));
     },
     m(target, anchor) {
@@ -8795,22 +8801,22 @@ function create_each_block_3(ctx) {
       ctx = new_ctx;
       if (dirty[0] & /*dictRel*/
       512 && t_1_value !== (t_1_value = /*w*/
-      ctx[71] + "")) set_data(t_1, t_1_value);
+      ctx[79] + "")) set_data(t_1, t_1_value);
       if (dirty[0] & /*libHits, dictRel*/
       524800 && span_class_value !== (span_class_value = /*libHits*/
       ctx[19].has(
         /*w*/
-        ctx[71]
+        ctx[79]
       ) ? "el-rel-card" : "el-rel-new")) {
         attr(span, "class", span_class_value);
       }
       if (dirty[0] & /*dictRel*/
       512 && button_title_value !== (button_title_value = /*relTitle*/
-      ctx[29](
+      ctx[33](
         /*w*/
-        ctx[71],
+        ctx[79],
         /*t*/
-        ctx[75]
+        ctx[83]
       ))) {
         attr(button, "title", button_title_value);
       }
@@ -8899,8 +8905,9 @@ function create_else_block_12(ctx) {
       insert(target, each_1_anchor, anchor);
     },
     p(ctx2, dirty) {
-      if (dirty[0] & /*relTitle, dictWf, relClick, libHits*/
-      805831680) {
+      if (dirty[0] & /*dictWf, libHits*/
+      525312 | dirty[1] & /*relTitle, relClick*/
+      6) {
         each_value_2 = ensure_array_like(
           /*dictWf*/
           ctx2[10].forms
@@ -8958,7 +8965,7 @@ function create_if_block_102(ctx) {
       attr(span1, "class", "el-wf-tag");
       attr(button, "class", "el-related-w");
       attr(button, "title", button_title_value = `\u672C\u8BCD\u7684\u539F\u5F62\uFF0C${/*relTitle*/
-      ctx[29](
+      ctx[33](
         /*dictWf*/
         ctx[10].lemma
       )}`);
@@ -8973,7 +8980,7 @@ function create_if_block_102(ctx) {
           button,
           "click",
           /*click_handler_6*/
-          ctx[45]
+          ctx[49]
         );
         mounted = true;
       }
@@ -8992,7 +8999,7 @@ function create_if_block_102(ctx) {
       }
       if (dirty[0] & /*dictWf*/
       1024 && button_title_value !== (button_title_value = `\u672C\u8BCD\u7684\u539F\u5F62\uFF0C${/*relTitle*/
-      ctx2[29](
+      ctx2[33](
         /*dictWf*/
         ctx2[10].lemma
       )}`)) {
@@ -9013,14 +9020,14 @@ function create_each_block_2(ctx) {
   let span0;
   let t0_value = (
     /*w*/
-    ctx[71] + ""
+    ctx[79] + ""
   );
   let t0;
   let span0_class_value;
   let span1;
   let t1_value = (
     /*label*/
-    ctx[72] + ""
+    ctx[80] + ""
   );
   let t1;
   let button_title_value;
@@ -9029,9 +9036,9 @@ function create_each_block_2(ctx) {
   function click_handler_7() {
     return (
       /*click_handler_7*/
-      ctx[46](
+      ctx[50](
         /*w*/
-        ctx[71]
+        ctx[79]
       )
     );
   }
@@ -9045,14 +9052,14 @@ function create_each_block_2(ctx) {
       attr(span0, "class", span0_class_value = /*libHits*/
       ctx[19].has(
         /*w*/
-        ctx[71]
+        ctx[79]
       ) ? "el-rel-card" : "el-rel-new");
       attr(span1, "class", "el-wf-tag");
       attr(button, "class", "el-related-w");
       attr(button, "title", button_title_value = /*relTitle*/
-      ctx[29](
+      ctx[33](
         /*w*/
-        ctx[71]
+        ctx[79]
       ));
     },
     m(target, anchor) {
@@ -9070,23 +9077,23 @@ function create_each_block_2(ctx) {
       ctx = new_ctx;
       if (dirty[0] & /*dictWf*/
       1024 && t0_value !== (t0_value = /*w*/
-      ctx[71] + "")) set_data(t0, t0_value);
+      ctx[79] + "")) set_data(t0, t0_value);
       if (dirty[0] & /*libHits, dictWf*/
       525312 && span0_class_value !== (span0_class_value = /*libHits*/
       ctx[19].has(
         /*w*/
-        ctx[71]
+        ctx[79]
       ) ? "el-rel-card" : "el-rel-new")) {
         attr(span0, "class", span0_class_value);
       }
       if (dirty[0] & /*dictWf*/
       1024 && t1_value !== (t1_value = /*label*/
-      ctx[72] + "")) set_data(t1, t1_value);
+      ctx[80] + "")) set_data(t1, t1_value);
       if (dirty[0] & /*dictWf*/
       1024 && button_title_value !== (button_title_value = /*relTitle*/
-      ctx[29](
+      ctx[33](
         /*w*/
-        ctx[71]
+        ctx[79]
       ))) {
         attr(button, "title", button_title_value);
       }
@@ -9127,8 +9134,9 @@ function create_if_block_27(ctx) {
       }
     },
     p(ctx2, dirty) {
-      if (dirty[0] & /*readExample, exViews, delExample, segsList, tokClick*/
-      153108736) {
+      if (dirty[0] & /*readExample, exViews, exPointerDown, exPointerMove, exPointerCancel, delExample, segsList, tokClick*/
+      2032156928 | dirty[1] & /*exClickCapture*/
+      1) {
         each_value = ensure_array_like(
           /*exViews*/
           ctx2[8]
@@ -9161,7 +9169,7 @@ function create_if_block_27(ctx) {
 function create_else_block3(ctx) {
   let t_1_value = (
     /*seg*/
-    ctx[68].t + ""
+    ctx[76].t + ""
   );
   let t_1;
   return {
@@ -9174,7 +9182,7 @@ function create_else_block3(ctx) {
     p(ctx2, dirty) {
       if (dirty[0] & /*segsList*/
       16384 && t_1_value !== (t_1_value = /*seg*/
-      ctx2[68].t + "")) set_data(t_1, t_1_value);
+      ctx2[76].t + "")) set_data(t_1, t_1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -9187,7 +9195,7 @@ function create_if_block_82(ctx) {
   let span;
   let t_1_value = (
     /*seg*/
-    ctx[68].t + ""
+    ctx[76].t + ""
   );
   let t_1;
   let mounted;
@@ -9195,18 +9203,18 @@ function create_if_block_82(ctx) {
   function click_handler_11() {
     return (
       /*click_handler_11*/
-      ctx[53](
+      ctx[57](
         /*seg*/
-        ctx[68]
+        ctx[76]
       )
     );
   }
   function keydown_handler_7(...args) {
     return (
       /*keydown_handler_7*/
-      ctx[54](
+      ctx[58](
         /*seg*/
-        ctx[68],
+        ctx[76],
         ...args
       )
     );
@@ -9235,7 +9243,7 @@ function create_if_block_82(ctx) {
       ctx = new_ctx;
       if (dirty[0] & /*segsList*/
       16384 && t_1_value !== (t_1_value = /*seg*/
-      ctx[68].t + "")) set_data(t_1, t_1_value);
+      ctx[76].t + "")) set_data(t_1, t_1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -9250,7 +9258,7 @@ function create_if_block_72(ctx) {
   let span;
   let t_1_value = (
     /*seg*/
-    ctx[68].t + ""
+    ctx[76].t + ""
   );
   let t_1;
   let mounted;
@@ -9258,18 +9266,18 @@ function create_if_block_72(ctx) {
   function click_handler_10() {
     return (
       /*click_handler_10*/
-      ctx[51](
+      ctx[55](
         /*seg*/
-        ctx[68]
+        ctx[76]
       )
     );
   }
   function keydown_handler_6(...args) {
     return (
       /*keydown_handler_6*/
-      ctx[52](
+      ctx[56](
         /*seg*/
-        ctx[68],
+        ctx[76],
         ...args
       )
     );
@@ -9298,7 +9306,7 @@ function create_if_block_72(ctx) {
       ctx = new_ctx;
       if (dirty[0] & /*segsList*/
       16384 && t_1_value !== (t_1_value = /*seg*/
-      ctx[68].t + "")) set_data(t_1, t_1_value);
+      ctx[76].t + "")) set_data(t_1, t_1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -9313,7 +9321,7 @@ function create_if_block_62(ctx) {
   let span;
   let t_1_value = (
     /*seg*/
-    ctx[68].t + ""
+    ctx[76].t + ""
   );
   let t_1;
   let mounted;
@@ -9321,18 +9329,18 @@ function create_if_block_62(ctx) {
   function click_handler_9() {
     return (
       /*click_handler_9*/
-      ctx[49](
+      ctx[53](
         /*seg*/
-        ctx[68]
+        ctx[76]
       )
     );
   }
   function keydown_handler_5(...args) {
     return (
       /*keydown_handler_5*/
-      ctx[50](
+      ctx[54](
         /*seg*/
-        ctx[68],
+        ctx[76],
         ...args
       )
     );
@@ -9361,7 +9369,7 @@ function create_if_block_62(ctx) {
       ctx = new_ctx;
       if (dirty[0] & /*segsList*/
       16384 && t_1_value !== (t_1_value = /*seg*/
-      ctx[68].t + "")) set_data(t_1, t_1_value);
+      ctx[76].t + "")) set_data(t_1, t_1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -9376,7 +9384,7 @@ function create_if_block_52(ctx) {
   let span;
   let t_1_value = (
     /*seg*/
-    ctx[68].t + ""
+    ctx[76].t + ""
   );
   let t_1;
   let mounted;
@@ -9384,18 +9392,18 @@ function create_if_block_52(ctx) {
   function click_handler_8() {
     return (
       /*click_handler_8*/
-      ctx[47](
+      ctx[51](
         /*seg*/
-        ctx[68]
+        ctx[76]
       )
     );
   }
   function keydown_handler_4(...args) {
     return (
       /*keydown_handler_4*/
-      ctx[48](
+      ctx[52](
         /*seg*/
-        ctx[68],
+        ctx[76],
         ...args
       )
     );
@@ -9424,7 +9432,7 @@ function create_if_block_52(ctx) {
       ctx = new_ctx;
       if (dirty[0] & /*segsList*/
       16384 && t_1_value !== (t_1_value = /*seg*/
-      ctx[68].t + "")) set_data(t_1, t_1_value);
+      ctx[76].t + "")) set_data(t_1, t_1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -9440,19 +9448,19 @@ function create_each_block_12(ctx) {
   function select_block_type_4(ctx2, dirty) {
     if (
       /*seg*/
-      ctx2[68].kind === "self"
+      ctx2[76].kind === "self"
     ) return create_if_block_52;
     if (
       /*seg*/
-      ctx2[68].kind === "rel"
+      ctx2[76].kind === "rel"
     ) return create_if_block_62;
     if (
       /*seg*/
-      ctx2[68].kind === "lib"
+      ctx2[76].kind === "lib"
     ) return create_if_block_72;
     if (
       /*seg*/
-      ctx2[68].kind === "new"
+      ctx2[76].kind === "new"
     ) return create_if_block_82;
     return create_else_block3;
   }
@@ -9491,7 +9499,7 @@ function create_if_block_42(ctx) {
   let span;
   let t_1_value = (
     /*v*/
-    ctx[65].e.source + ""
+    ctx[73].e.source + ""
   );
   let t_1;
   return {
@@ -9507,7 +9515,7 @@ function create_if_block_42(ctx) {
     p(ctx2, dirty) {
       if (dirty[0] & /*exViews*/
       256 && t_1_value !== (t_1_value = /*v*/
-      ctx2[65].e.source + "")) set_data(t_1, t_1_value);
+      ctx2[73].e.source + "")) set_data(t_1, t_1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -9520,7 +9528,7 @@ function create_if_block_32(ctx) {
   let div;
   let t_1_value = (
     /*v*/
-    ctx[65].e.translation + ""
+    ctx[73].e.translation + ""
   );
   let t_1;
   return {
@@ -9536,7 +9544,7 @@ function create_if_block_32(ctx) {
     p(ctx2, dirty) {
       if (dirty[0] & /*exViews*/
       256 && t_1_value !== (t_1_value = /*v*/
-      ctx2[65].e.translation + "")) set_data(t_1, t_1_value);
+      ctx2[73].e.translation + "")) set_data(t_1, t_1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -9557,7 +9565,7 @@ function create_each_block3(ctx) {
     /*segsList*/
     (_a = ctx[14][
       /*vi*/
-      ctx[67]
+      ctx[75]
     ]) != null ? _a : []
   );
   let each_blocks = [];
@@ -9567,44 +9575,44 @@ function create_each_block3(ctx) {
   function click_handler_12() {
     return (
       /*click_handler_12*/
-      ctx[55](
+      ctx[59](
         /*v*/
-        ctx[65]
+        ctx[73]
       )
     );
   }
   let if_block0 = (
     /*v*/
-    ctx[65].e.source && create_if_block_42(ctx)
+    ctx[73].e.source && create_if_block_42(ctx)
   );
   function click_handler_13() {
     return (
       /*click_handler_13*/
-      ctx[56](
+      ctx[60](
         /*v*/
-        ctx[65]
+        ctx[73]
       )
     );
   }
   let if_block1 = (
     /*v*/
-    ctx[65].e.translation && create_if_block_32(ctx)
+    ctx[73].e.translation && create_if_block_32(ctx)
   );
   function click_handler_14() {
     return (
       /*click_handler_14*/
-      ctx[57](
+      ctx[61](
         /*v*/
-        ctx[65]
+        ctx[73]
       )
     );
   }
   function keydown_handler_8(...args) {
     return (
       /*keydown_handler_8*/
-      ctx[58](
+      ctx[62](
         /*v*/
-        ctx[65],
+        ctx[73],
         ...args
       )
     );
@@ -9647,6 +9655,43 @@ function create_each_block3(ctx) {
           listen(button0, "click", stop_propagation(click_handler_12)),
           listen(button1, "click", stop_propagation(click_handler_13)),
           listen(div, "click", click_handler_14),
+          listen(
+            div,
+            "click",
+            /*exClickCapture*/
+            ctx[31],
+            true
+          ),
+          listen(
+            div,
+            "pointerdown",
+            /*exPointerDown*/
+            ctx[28]
+          ),
+          listen(
+            div,
+            "pointermove",
+            /*exPointerMove*/
+            ctx[29]
+          ),
+          listen(
+            div,
+            "pointerup",
+            /*exPointerCancel*/
+            ctx[30]
+          ),
+          listen(
+            div,
+            "pointercancel",
+            /*exPointerCancel*/
+            ctx[30]
+          ),
+          listen(
+            div,
+            "pointerleave",
+            /*exPointerCancel*/
+            ctx[30]
+          ),
           listen(div, "keydown", keydown_handler_8)
         ];
         mounted = true;
@@ -9661,7 +9706,7 @@ function create_each_block3(ctx) {
           /*segsList*/
           (_a2 = ctx[14][
             /*vi*/
-            ctx[67]
+            ctx[75]
           ]) != null ? _a2 : []
         );
         let i;
@@ -9682,7 +9727,7 @@ function create_each_block3(ctx) {
       }
       if (
         /*v*/
-        ctx[65].e.source
+        ctx[73].e.source
       ) {
         if (if_block0) {
           if_block0.p(ctx, dirty);
@@ -9697,7 +9742,7 @@ function create_each_block3(ctx) {
       }
       if (
         /*v*/
-        ctx[65].e.translation
+        ctx[73].e.translation
       ) {
         if (if_block1) {
           if_block1.p(ctx, dirty);
@@ -9835,13 +9880,13 @@ function create_fragment4(ctx) {
             div,
             "keydown",
             /*keydown_handler*/
-            ctx[35]
+            ctx[39]
           ),
           listen(
             button,
             "click",
             /*click_handler_2*/
-            ctx[38]
+            ctx[42]
           )
         ];
         mounted = true;
@@ -10086,7 +10131,7 @@ function instance4($$self, $$props, $$invalidate) {
   let exViews = [];
   function tokClick(seg) {
     if (seg.kind === "new") {
-      new AddWordModal(plugin.app, plugin, seg.t, () => $$invalidate(33, libVer += 1), doc.themes[0]).open();
+      new AddWordModal(plugin.app, plugin, seg.t, () => $$invalidate(37, libVer += 1), doc.themes[0]).open();
       return;
     }
     if (seg.kind === "self") {
@@ -10097,10 +10142,64 @@ function instance4($$self, $$props, $$invalidate) {
     if (d) plugin.openWordCard(d);
     else plugin.speakWord(seg.t);
   }
+  let lpTimer;
+  let lpFrom = null;
+  let lpSuppressClick = false;
+  function exPointerDown(ev) {
+    var _a2;
+    lpSuppressClick = false;
+    if (!import_obsidian10.Platform.isMobile || ((_a2 = ev.target) === null || _a2 === void 0 ? void 0 : _a2.closest("button"))) return;
+    lpFrom = { x: ev.clientX, y: ev.clientY };
+    lpTimer = setTimeout(
+      () => {
+        lpTimer = void 0;
+        lpSuppressClick = true;
+        longPressLookup(ev.clientX, ev.clientY);
+      },
+      500
+    );
+  }
+  function exPointerMove(ev) {
+    if (lpTimer && lpFrom && (Math.abs(ev.clientX - lpFrom.x) > 10 || Math.abs(ev.clientY - lpFrom.y) > 10)) exPointerCancel();
+  }
+  function exPointerCancel() {
+    if (lpTimer) clearTimeout(lpTimer);
+    lpTimer = void 0;
+    lpFrom = null;
+  }
+  function exClickCapture(ev) {
+    if (!lpSuppressClick) return;
+    lpSuppressClick = false;
+    ev.stopPropagation();
+    ev.preventDefault();
+  }
+  function longPressLookup(x, y) {
+    var _a2;
+    const range = document.caretRangeFromPoint(x, y);
+    const node = range === null || range === void 0 ? void 0 : range.startContainer;
+    if (!node || node.nodeType !== Node.TEXT_NODE) return;
+    const text2 = (_a2 = node.textContent) !== null && _a2 !== void 0 ? _a2 : "";
+    const off = range.startOffset;
+    let word = null;
+    for (const m of text2.matchAll(WORD_RE)) {
+      if (off >= m.index && off <= m.index + m[0].length) {
+        word = m[0];
+        break;
+      }
+    }
+    if (!word) return;
+    const d = plugin.words.resolveWord(word);
+    if (d) {
+      plugin.openWordCard(d);
+      return;
+    }
+    if (/['’](?:s|t|re|ve|ll|d|m)$/.test(word.toLowerCase())) return;
+    new AddWordModal(plugin.app, plugin, word, () => $$invalidate(37, libVer += 1), doc.themes[0]).open();
+  }
   function relClick(w, t) {
     const d = plugin.words.get(w);
     if (d) plugin.openWordCard(d);
-    else new AddWordModal(plugin.app, plugin, w, () => $$invalidate(33, libVer += 1), doc.themes[0], t).open();
+    else new AddWordModal(plugin.app, plugin, w, () => $$invalidate(37, libVer += 1), doc.themes[0], t).open();
   }
   function relTitle(w, t) {
     const state = libHits.has(w) ? "\u5DF2\u6536\u5F55\uFF0C\u70B9\u51FB\u67E5\u770B\u8BCD\u5361" : "\u672A\u6536\u5F55\uFF0C\u70B9\u51FB\u67E5\u8BCD";
@@ -10166,7 +10265,7 @@ function instance4($$self, $$props, $$invalidate) {
     if ("showBody" in $$props2) $$invalidate(5, showBody = $$props2.showBody);
     if ("themeEditable" in $$props2) $$invalidate(6, themeEditable = $$props2.themeEditable);
     if ("onBackfill" in $$props2) $$invalidate(7, onBackfill = $$props2.onBackfill);
-    if ("onEditThemes" in $$props2) $$invalidate(30, onEditThemes = $$props2.onEditThemes);
+    if ("onEditThemes" in $$props2) $$invalidate(34, onEditThemes = $$props2.onEditThemes);
   };
   $$self.$$.update = () => {
     if ($$self.$$.dirty[0] & /*doc*/
@@ -10175,7 +10274,7 @@ function instance4($$self, $$props, $$invalidate) {
     }
     if ($$self.$$.dirty[0] & /*doc*/
     1) {
-      $: $$invalidate(32, relatedList = relatedWords(doc));
+      $: $$invalidate(36, relatedList = relatedWords(doc));
     }
     if ($$self.$$.dirty[0] & /*doc*/
     1) {
@@ -10183,14 +10282,14 @@ function instance4($$self, $$props, $$invalidate) {
     }
     if ($$self.$$.dirty[0] & /*exViews*/
     256 | $$self.$$.dirty[1] & /*relatedList, libVer*/
-    6) {
+    96) {
       $: $$invalidate(14, segsList = (relatedList, libVer, exViews.map((v) => splitExample(v.e.text))));
     }
     if ($$self.$$.dirty[0] & /*doc*/
     1 | $$self.$$.dirty[1] & /*shownWord*/
-    8) {
+    128) {
       $: if (doc.word !== shownWord) {
-        $$invalidate(34, shownWord = doc.word);
+        $$invalidate(38, shownWord = doc.word);
         $$invalidate(15, showAllEx = false);
       }
     }
@@ -10200,13 +10299,13 @@ function instance4($$self, $$props, $$invalidate) {
     }
     if ($$self.$$.dirty[0] & /*synonyms, antonyms, dictRel, dictWf, doc, plugin*/
     1551 | $$self.$$.dirty[1] & /*libVer, _a*/
-    5) {
+    80) {
       $: $$invalidate(19, libHits = (libVer, new Set([
         ...synonyms,
         ...antonyms,
         ...dictRel.map(([w]) => w),
         ...dictWf ? [
-          $$invalidate(31, _a = dictWf.lemma) !== null && _a !== void 0 ? _a : doc.word,
+          $$invalidate(35, _a = dictWf.lemma) !== null && _a !== void 0 ? _a : doc.word,
           ...dictWf.forms.map(([w]) => w)
         ] : []
       ].filter((w) => !!plugin.words.get(w)))));
@@ -10241,6 +10340,10 @@ function instance4($$self, $$props, $$invalidate) {
     aiExamples,
     aiSenses,
     tokClick,
+    exPointerDown,
+    exPointerMove,
+    exPointerCancel,
+    exClickCapture,
     relClick,
     relTitle,
     onEditThemes,
@@ -10293,7 +10396,7 @@ var WordFullCard = class extends SvelteComponent {
         showBody: 5,
         themeEditable: 6,
         onBackfill: 7,
-        onEditThemes: 30
+        onEditThemes: 34
       },
       null,
       [-1, -1, -1]
@@ -10613,7 +10716,7 @@ function get_if_ctx(ctx) {
   const child_ctx = ctx.slice();
   const constants_0 = (
     /*cur*/
-    child_ctx[10].doc.word
+    child_ctx[11].doc.word
   );
   child_ctx[134] = constants_0;
   return child_ctx;
@@ -10636,7 +10739,7 @@ function create_if_block_212(ctx) {
   let t1;
   let t2_value = (
     /*hardMode*/
-    ctx[14] ? " \xB7 \u96BE\u8BCD" : ""
+    ctx[15] ? " \xB7 \u96BE\u8BCD" : ""
   );
   let t2;
   let t3;
@@ -10695,25 +10798,25 @@ function create_if_block_212(ctx) {
     ) return 0;
     if (
       /*cur*/
-      ctx2[10].kind === "new"
+      ctx2[11].kind === "new"
     ) return 1;
     if (
       /*cur*/
-      ctx2[10].kind === "study" || /*cur*/
-      ctx2[10].kind === "confirm" || /*cur*/
-      ctx2[10].kind === "restudy"
+      ctx2[11].kind === "study" || /*cur*/
+      ctx2[11].kind === "confirm" || /*cur*/
+      ctx2[11].kind === "restudy"
     ) return 2;
     if (
       /*cur*/
-      ctx2[10].kind === "review"
+      ctx2[11].kind === "review"
     ) return 3;
     if (
       /*cur*/
-      ctx2[10].kind === "check"
+      ctx2[11].kind === "check"
     ) return 4;
     if (
       /*cur*/
-      ctx2[10].kind === "quiz"
+      ctx2[11].kind === "quiz"
     ) return 5;
     return -1;
   }
@@ -10727,11 +10830,11 @@ function create_if_block_212(ctx) {
       span0 = element("span");
       t0 = text(
         /*themeLabel*/
-        ctx[41]
+        ctx[42]
       );
       t1 = text(
         /*roundLabel*/
-        ctx[42]
+        ctx[43]
       );
       t2 = text(t2_value);
       t3 = space();
@@ -10751,7 +10854,7 @@ function create_if_block_212(ctx) {
       t10 = text(" / ");
       t11 = text(
         /*total*/
-        ctx[11]
+        ctx[12]
       );
       t12 = space();
       div4 = element("div");
@@ -10765,13 +10868,13 @@ function create_if_block_212(ctx) {
         button0,
         "title",
         /*muteTip*/
-        ctx[44]
+        ctx[45]
       );
       attr(
         button0,
         "aria-label",
         /*muteTip*/
-        ctx[44]
+        ctx[45]
       );
       attr(button1, "class", "el-exit");
       attr(button1, "title", "\u6682\u505C\u672C\u8F6E\uFF08\u5DF2\u5B66\u8FDB\u5EA6\u5DF2\u4FDD\u5B58\uFF0C\u53EF\u7EE7\u7EED\uFF09");
@@ -10783,7 +10886,7 @@ function create_if_block_212(ctx) {
         div3,
         "width",
         /*pct*/
-        ctx[43] + "%"
+        ctx[44] + "%"
       );
       attr(div4, "class", "el-progress-bar");
     },
@@ -10822,20 +10925,20 @@ function create_if_block_212(ctx) {
       if (!mounted) {
         dispose = [
           action_destroyer(icon_action = /*icon*/
-          ctx[45].call(
+          ctx[46].call(
             null,
             button0,
             /*audioMuted*/
-            ctx[9] ? "volume-x" : "volume-2"
+            ctx[10] ? "volume-x" : "volume-2"
           )),
           listen(
             button0,
             "click",
             /*toggleMute*/
-            ctx[46]
+            ctx[47]
           ),
           action_destroyer(icon_action_1 = /*icon*/
-          ctx[45].call(null, button1, "x")),
+          ctx[46].call(null, button1, "x")),
           listen(
             button1,
             "click",
@@ -10848,20 +10951,20 @@ function create_if_block_212(ctx) {
     },
     p(ctx2, dirty) {
       if (!current || dirty[1] & /*themeLabel*/
-      1024) set_data(
+      2048) set_data(
         t0,
         /*themeLabel*/
-        ctx2[41]
-      );
-      if (!current || dirty[1] & /*roundLabel*/
-      2048) set_data(
-        t1,
-        /*roundLabel*/
         ctx2[42]
       );
+      if (!current || dirty[1] & /*roundLabel*/
+      4096) set_data(
+        t1,
+        /*roundLabel*/
+        ctx2[43]
+      );
       if ((!current || dirty[0] & /*hardMode*/
-      16384) && t2_value !== (t2_value = /*hardMode*/
-      ctx2[14] ? " \xB7 \u96BE\u8BCD" : "")) set_data(t2, t2_value);
+      32768) && t2_value !== (t2_value = /*hardMode*/
+      ctx2[15] ? " \xB7 \u96BE\u8BCD" : "")) set_data(t2, t2_value);
       if (
         /*idx*/
         ctx2[3] > 0 && /*browseFrom*/
@@ -10879,28 +10982,28 @@ function create_if_block_212(ctx) {
         if_block0 = null;
       }
       if (!current || dirty[1] & /*muteTip*/
-      8192) {
+      16384) {
         attr(
           button0,
           "title",
           /*muteTip*/
-          ctx2[44]
+          ctx2[45]
         );
       }
       if (!current || dirty[1] & /*muteTip*/
-      8192) {
+      16384) {
         attr(
           button0,
           "aria-label",
           /*muteTip*/
-          ctx2[44]
+          ctx2[45]
         );
       }
       if (icon_action && is_function(icon_action.update) && dirty[0] & /*audioMuted*/
-      512) icon_action.update.call(
+      1024) icon_action.update.call(
         null,
         /*audioMuted*/
-        ctx2[9] ? "volume-x" : "volume-2"
+        ctx2[10] ? "volume-x" : "volume-2"
       );
       if (
         /*browseFrom*/
@@ -10921,18 +11024,18 @@ function create_if_block_212(ctx) {
       8) && t9_value !== (t9_value = /*idx*/
       ctx2[3] + 1 + "")) set_data(t9, t9_value);
       if (!current || dirty[0] & /*total*/
-      2048) set_data(
+      4096) set_data(
         t11,
         /*total*/
-        ctx2[11]
+        ctx2[12]
       );
       if (!current || dirty[1] & /*pct*/
-      4096) {
+      8192) {
         set_style(
           div3,
           "width",
           /*pct*/
-          ctx2[43] + "%"
+          ctx2[44] + "%"
         );
       }
       let previous_block_index = current_block_type_index;
@@ -11002,7 +11105,7 @@ function create_if_block_93(ctx) {
   let t1;
   let t2_value = (
     /*stats*/
-    ctx[16].rev + ""
+    ctx[17].rev + ""
   );
   let t2;
   let t3;
@@ -11010,7 +11113,7 @@ function create_if_block_93(ctx) {
   let t4;
   let t5_value = (
     /*stats*/
-    ctx[16].new + ""
+    ctx[17].new + ""
   );
   let t5;
   let t6;
@@ -11019,11 +11122,11 @@ function create_if_block_93(ctx) {
   let t8;
   let t9_value = (
     /*stats*/
-    ctx[16].quizOk + /*stats*/
-    ctx[16].quizBad > 0 ? `${/*stats*/
-    ctx[16].quizOk}/${/*stats*/
-    ctx[16].quizOk + /*stats*/
-    ctx[16].quizBad}` : "\u2014"
+    ctx[17].quizOk + /*stats*/
+    ctx[17].quizBad > 0 ? `${/*stats*/
+    ctx[17].quizOk}/${/*stats*/
+    ctx[17].quizOk + /*stats*/
+    ctx[17].quizBad}` : "\u2014"
   );
   let t9;
   let t10;
@@ -11056,7 +11159,7 @@ function create_if_block_93(ctx) {
   function select_block_type_2(ctx2, dirty) {
     if (
       /*exitedEarly*/
-      ctx2[13]
+      ctx2[14]
     ) return create_if_block_202;
     return create_else_block_13;
   }
@@ -11064,53 +11167,53 @@ function create_if_block_93(ctx) {
   let if_block0 = current_block_type(ctx);
   let if_block1 = (
     /*stats*/
-    ctx[16].easy && create_if_block_192(ctx)
+    ctx[17].easy && create_if_block_192(ctx)
   );
   let if_block2 = (
     /*todayTotals*/
-    ctx[28].new + /*todayTotals*/
-    ctx[28].rev > /*stats*/
-    ctx[16].rev + /*stats*/
-    ctx[16].new + /*stats*/
-    ctx[16].easy && create_if_block_182(ctx)
+    ctx[29].new + /*todayTotals*/
+    ctx[29].rev > /*stats*/
+    ctx[17].rev + /*stats*/
+    ctx[17].new + /*stats*/
+    ctx[17].easy && create_if_block_182(ctx)
   );
   let if_block3 = (
     /*masteredNow*/
-    ctx[17].length && create_if_block_172(ctx)
+    ctx[18].length && create_if_block_172(ctx)
   );
   let if_block4 = (
     /*weakNow*/
-    ctx[18].length && create_if_block_162(ctx)
+    ctx[19].length && create_if_block_162(ctx)
   );
   let if_block5 = !/*hardMode*/
-  ctx[14] && /*dueTotal*/
-  ctx[15] > /*stats*/
-  ctx[16].rev && create_if_block_153(ctx);
+  ctx[15] && /*dueTotal*/
+  ctx[16] > /*stats*/
+  ctx[17].rev && create_if_block_153(ctx);
   let if_block6 = (
     /*tomorrowDue*/
-    ctx[27] > 0 && create_if_block_143(ctx)
+    ctx[28] > 0 && create_if_block_143(ctx)
   );
   function select_block_type_3(ctx2, dirty) {
     if (
       /*exitedEarly*/
-      ctx2[13]
+      ctx2[14]
     ) return create_if_block_123;
     if (
       /*remaining*/
-      ctx2[19] > 0
+      ctx2[20] > 0
     ) return create_if_block_133;
   }
   let current_block_type_1 = select_block_type_3(ctx, [-1, -1, -1, -1, -1]);
   let if_block7 = current_block_type_1 && current_block_type_1(ctx);
   let if_block8 = !/*exitedEarly*/
-  ctx[13] && !/*hardMode*/
-  ctx[14] && /*remaining*/
-  ctx[19] === 0 && /*finishFresh*/
-  ctx[26] > 0 && /*dailyLimit*/
-  ctx[24] > 0 && create_if_block_113(ctx);
+  ctx[14] && !/*hardMode*/
+  ctx[15] && /*remaining*/
+  ctx[20] === 0 && /*finishFresh*/
+  ctx[27] > 0 && /*dailyLimit*/
+  ctx[25] > 0 && create_if_block_113(ctx);
   let if_block9 = !/*hardMode*/
-  ctx[14] && /*hardInTheme*/
-  ctx[33] > 0 && create_if_block_103(ctx);
+  ctx[15] && /*hardInTheme*/
+  ctx[34] > 0 && create_if_block_103(ctx);
   return {
     c() {
       div2 = element("div");
@@ -11135,7 +11238,7 @@ function create_if_block_93(ctx) {
       t11 = text("\u7528\u65F6 ");
       t12 = text(
         /*sessionMinutes*/
-        ctx[29]
+        ctx[30]
       );
       t13 = text(" \u5206\u949F");
       t14 = space();
@@ -11222,7 +11325,7 @@ function create_if_block_93(ctx) {
           button,
           "click",
           /*back*/
-          ctx[77]
+          ctx[78]
         );
         mounted = true;
       }
@@ -11239,14 +11342,14 @@ function create_if_block_93(ctx) {
         }
       }
       if (dirty[0] & /*stats*/
-      65536 && t2_value !== (t2_value = /*stats*/
-      ctx2[16].rev + "")) set_data(t2, t2_value);
+      131072 && t2_value !== (t2_value = /*stats*/
+      ctx2[17].rev + "")) set_data(t2, t2_value);
       if (dirty[0] & /*stats*/
-      65536 && t5_value !== (t5_value = /*stats*/
-      ctx2[16].new + "")) set_data(t5, t5_value);
+      131072 && t5_value !== (t5_value = /*stats*/
+      ctx2[17].new + "")) set_data(t5, t5_value);
       if (
         /*stats*/
-        ctx2[16].easy
+        ctx2[17].easy
       ) {
         if (if_block1) {
           if_block1.p(ctx2, dirty);
@@ -11260,28 +11363,28 @@ function create_if_block_93(ctx) {
         if_block1 = null;
       }
       if (dirty[0] & /*stats*/
-      65536 && t9_value !== (t9_value = /*stats*/
-      ctx2[16].quizOk + /*stats*/
-      ctx2[16].quizBad > 0 ? `${/*stats*/
-      ctx2[16].quizOk}/${/*stats*/
-      ctx2[16].quizOk + /*stats*/
-      ctx2[16].quizBad}` : "\u2014")) set_data(t9, t9_value);
+      131072 && t9_value !== (t9_value = /*stats*/
+      ctx2[17].quizOk + /*stats*/
+      ctx2[17].quizBad > 0 ? `${/*stats*/
+      ctx2[17].quizOk}/${/*stats*/
+      ctx2[17].quizOk + /*stats*/
+      ctx2[17].quizBad}` : "\u2014")) set_data(t9, t9_value);
       if (dirty[0] & /*sessionMinutes*/
-      536870912) set_data(
+      1073741824) set_data(
         t12,
         /*sessionMinutes*/
-        ctx2[29]
+        ctx2[30]
       );
       if (dirty[0] & /*plugin*/
       1 && t16_value !== (t16_value = /*plugin*/
       ctx2[0].db.stats.streak + "")) set_data(t16, t16_value);
       if (
         /*todayTotals*/
-        ctx2[28].new + /*todayTotals*/
-        ctx2[28].rev > /*stats*/
-        ctx2[16].rev + /*stats*/
-        ctx2[16].new + /*stats*/
-        ctx2[16].easy
+        ctx2[29].new + /*todayTotals*/
+        ctx2[29].rev > /*stats*/
+        ctx2[17].rev + /*stats*/
+        ctx2[17].new + /*stats*/
+        ctx2[17].easy
       ) {
         if (if_block2) {
           if_block2.p(ctx2, dirty);
@@ -11296,7 +11399,7 @@ function create_if_block_93(ctx) {
       }
       if (
         /*masteredNow*/
-        ctx2[17].length
+        ctx2[18].length
       ) {
         if (if_block3) {
           if_block3.p(ctx2, dirty);
@@ -11311,7 +11414,7 @@ function create_if_block_93(ctx) {
       }
       if (
         /*weakNow*/
-        ctx2[18].length
+        ctx2[19].length
       ) {
         if (if_block4) {
           if_block4.p(ctx2, dirty);
@@ -11325,9 +11428,9 @@ function create_if_block_93(ctx) {
         if_block4 = null;
       }
       if (!/*hardMode*/
-      ctx2[14] && /*dueTotal*/
-      ctx2[15] > /*stats*/
-      ctx2[16].rev) {
+      ctx2[15] && /*dueTotal*/
+      ctx2[16] > /*stats*/
+      ctx2[17].rev) {
         if (if_block5) {
           if_block5.p(ctx2, dirty);
         } else {
@@ -11341,7 +11444,7 @@ function create_if_block_93(ctx) {
       }
       if (
         /*tomorrowDue*/
-        ctx2[27] > 0
+        ctx2[28] > 0
       ) {
         if (if_block6) {
           if_block6.p(ctx2, dirty);
@@ -11365,11 +11468,11 @@ function create_if_block_93(ctx) {
         }
       }
       if (!/*exitedEarly*/
-      ctx2[13] && !/*hardMode*/
-      ctx2[14] && /*remaining*/
-      ctx2[19] === 0 && /*finishFresh*/
-      ctx2[26] > 0 && /*dailyLimit*/
-      ctx2[24] > 0) {
+      ctx2[14] && !/*hardMode*/
+      ctx2[15] && /*remaining*/
+      ctx2[20] === 0 && /*finishFresh*/
+      ctx2[27] > 0 && /*dailyLimit*/
+      ctx2[25] > 0) {
         if (if_block8) {
           if_block8.p(ctx2, dirty);
         } else {
@@ -11382,8 +11485,8 @@ function create_if_block_93(ctx) {
         if_block8 = null;
       }
       if (!/*hardMode*/
-      ctx2[14] && /*hardInTheme*/
-      ctx2[33] > 0) {
+      ctx2[15] && /*hardInTheme*/
+      ctx2[34] > 0) {
         if (if_block9) {
           if_block9.p(ctx2, dirty);
         } else {
@@ -11428,7 +11531,7 @@ function create_if_block_43(ctx) {
   let t3;
   let show_if = (
     /*hardInThemeLive*/
-    ctx[69]() > 0
+    ctx[70]() > 0
   );
   let t4;
   let button;
@@ -11437,20 +11540,20 @@ function create_if_block_43(ctx) {
   function select_block_type_1(ctx2, dirty) {
     if (
       /*hardMode*/
-      ctx2[14]
+      ctx2[15]
     ) return create_if_block_73;
     if (
       /*themeName*/
-      ctx2[8]
+      ctx2[9]
     ) return create_if_block_83;
     return create_else_block4;
   }
   let current_block_type = select_block_type_1(ctx, [-1, -1, -1, -1, -1]);
   let if_block0 = current_block_type(ctx);
   let if_block1 = !/*hardMode*/
-  ctx[14] && /*doneFresh*/
-  ctx[25] > 0 && /*dailyLimit*/
-  ctx[24] > 0 && create_if_block_67(ctx);
+  ctx[15] && /*doneFresh*/
+  ctx[26] > 0 && /*dailyLimit*/
+  ctx[25] > 0 && create_if_block_67(ctx);
   let if_block2 = show_if && create_if_block_510(ctx);
   return {
     c() {
@@ -11491,7 +11594,7 @@ function create_if_block_43(ctx) {
           button,
           "click",
           /*back*/
-          ctx[77]
+          ctx[78]
         );
         mounted = true;
       }
@@ -11508,9 +11611,9 @@ function create_if_block_43(ctx) {
         }
       }
       if (!/*hardMode*/
-      ctx2[14] && /*doneFresh*/
-      ctx2[25] > 0 && /*dailyLimit*/
-      ctx2[24] > 0) {
+      ctx2[15] && /*doneFresh*/
+      ctx2[26] > 0 && /*dailyLimit*/
+      ctx2[25] > 0) {
         if (if_block1) {
           if_block1.p(ctx2, dirty);
         } else {
@@ -11563,7 +11666,7 @@ function create_if_block_33(ctx) {
       t2 = text("\u4E3B\u9898\u300C");
       t3 = text(
         /*themeName*/
-        ctx[8]
+        ctx[9]
       );
       t4 = text("\u300D\u8FD8\u6CA1\u6709\u8BCD");
       t5 = space();
@@ -11597,17 +11700,17 @@ function create_if_block_33(ctx) {
           button,
           "click",
           /*back*/
-          ctx[77]
+          ctx[78]
         );
         mounted = true;
       }
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*themeName*/
-      256) set_data(
+      512) set_data(
         t3,
         /*themeName*/
-        ctx2[8]
+        ctx2[9]
       );
     },
     i: noop,
@@ -11628,7 +11731,7 @@ function create_if_block_28(ctx) {
   let h2;
   let t2_value = (
     /*hardMode*/
-    ctx[14] ? "\u6CA1\u6709\u9700\u8981\u4E13\u9879\u8BAD\u7EC3\u7684\u96BE\u8BCD" : "\u8FD8\u6CA1\u6709\u53EF\u5B66\u7684\u8BCD"
+    ctx[15] ? "\u6CA1\u6709\u9700\u8981\u4E13\u9879\u8BAD\u7EC3\u7684\u96BE\u8BCD" : "\u8FD8\u6CA1\u6709\u53EF\u5B66\u7684\u8BCD"
   );
   let t2;
   let t3;
@@ -11675,15 +11778,15 @@ function create_if_block_28(ctx) {
           button,
           "click",
           /*back*/
-          ctx[77]
+          ctx[78]
         );
         mounted = true;
       }
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*hardMode*/
-      16384 && t2_value !== (t2_value = /*hardMode*/
-      ctx2[14] ? "\u6CA1\u6709\u9700\u8981\u4E13\u9879\u8BAD\u7EC3\u7684\u96BE\u8BCD" : "\u8FD8\u6CA1\u6709\u53EF\u5B66\u7684\u8BCD")) set_data(t2, t2_value);
+      32768 && t2_value !== (t2_value = /*hardMode*/
+      ctx2[15] ? "\u6CA1\u6709\u9700\u8981\u4E13\u9879\u8BAD\u7EC3\u7684\u96BE\u8BCD" : "\u8FD8\u6CA1\u6709\u53EF\u5B66\u7684\u8BCD")) set_data(t2, t2_value);
     },
     i: noop,
     o: noop,
@@ -11723,7 +11826,7 @@ function create_if_block_111(ctx) {
       div1 = element("div");
       t4 = text(
         /*loadError*/
-        ctx[30]
+        ctx[31]
       );
       t5 = space();
       div2 = element("div");
@@ -11766,18 +11869,18 @@ function create_if_block_111(ctx) {
             button1,
             "click",
             /*back*/
-            ctx[77]
+            ctx[78]
           )
         ];
         mounted = true;
       }
     },
     p(ctx2, dirty) {
-      if (dirty[0] & /*loadError*/
-      1073741824) set_data(
+      if (dirty[1] & /*loadError*/
+      1) set_data(
         t4,
         /*loadError*/
-        ctx2[30]
+        ctx2[31]
       );
     },
     i: noop,
@@ -11830,7 +11933,7 @@ function create_if_block_66(ctx) {
           button,
           "click",
           /*goBack*/
-          ctx[48]
+          ctx[49]
         );
         mounted = true;
       }
@@ -11862,12 +11965,12 @@ function create_if_block_65(ctx) {
       if (!mounted) {
         dispose = [
           action_destroyer(icon_action = /*icon*/
-          ctx[45].call(null, button, "trash-2")),
+          ctx[46].call(null, button, "trash-2")),
           listen(
             button,
             "click",
             /*deleteCurrent*/
-            ctx[76]
+            ctx[77]
           )
         ];
         mounted = true;
@@ -11894,16 +11997,16 @@ function create_if_block_46(ctx) {
   function select_block_type_11(ctx2, dirty) {
     if (
       /*cur*/
-      ctx2[10].quiz.kind === "spell"
+      ctx2[11].quiz.kind === "spell"
     ) return create_if_block_50;
     if (
       /*cur*/
-      ctx2[10].quiz.kind === "cloze"
+      ctx2[11].quiz.kind === "cloze"
     ) return create_if_block_61;
     if (
       /*cur*/
-      ctx2[10].quiz.question === /*cur*/
-      ctx2[10].doc.word
+      ctx2[11].quiz.question === /*cur*/
+      ctx2[11].doc.word
     ) return create_if_block_622;
     return create_else_block_9;
   }
@@ -11915,14 +12018,14 @@ function create_if_block_46(ctx) {
   let if_block0 = current_block_type(select_block_ctx(ctx, current_block_type));
   let if_block1 = (
     /*quizAnswered*/
-    ctx[38] && !/*quizCorrect*/
-    ctx[12] && create_if_block_49(ctx)
+    ctx[39] && !/*quizCorrect*/
+    ctx[13] && create_if_block_49(ctx)
   );
   quizoptions = new QuizOptions_default({
     props: {
       quiz: (
         /*cur*/
-        ctx[10].quiz
+        ctx[11].quiz
       ),
       picked: (
         /*quizPicked*/
@@ -11930,23 +12033,23 @@ function create_if_block_46(ctx) {
       ),
       answered: (
         /*quizAnswered*/
-        ctx[38]
+        ctx[39]
       ),
       correct: (
         /*quizCorrect*/
-        ctx[12]
+        ctx[13]
       ),
       onpick: (
         /*pick*/
-        ctx[67]
+        ctx[68]
       )
     }
   });
   function select_block_type_16(ctx2, dirty) {
     if (!/*quizAnswered*/
-    ctx2[38]) return create_if_block_47;
+    ctx2[39]) return create_if_block_47;
     if (!/*quizCorrect*/
-    ctx2[12]) return create_if_block_48;
+    ctx2[13]) return create_if_block_48;
   }
   let current_block_type_1 = select_block_type_16(ctx, [-1, -1, -1, -1, -1]);
   let if_block2 = current_block_type_1 && current_block_type_1(ctx);
@@ -11988,14 +12091,14 @@ function create_if_block_46(ctx) {
       }
       if (
         /*quizAnswered*/
-        ctx2[38] && !/*quizCorrect*/
-        ctx2[12]
+        ctx2[39] && !/*quizCorrect*/
+        ctx2[13]
       ) {
         if (if_block1) {
           if_block1.p(ctx2, dirty);
           if (dirty[0] & /*quizCorrect*/
-          4096 | dirty[1] & /*quizAnswered*/
-          128) {
+          8192 | dirty[1] & /*quizAnswered*/
+          256) {
             transition_in(if_block1, 1);
           }
         } else {
@@ -12013,17 +12116,17 @@ function create_if_block_46(ctx) {
       }
       const quizoptions_changes = {};
       if (dirty[0] & /*cur*/
-      1024) quizoptions_changes.quiz = /*cur*/
-      ctx2[10].quiz;
+      2048) quizoptions_changes.quiz = /*cur*/
+      ctx2[11].quiz;
       if (dirty[0] & /*quizPicked*/
       64) quizoptions_changes.picked = /*quizPicked*/
       ctx2[6];
       if (dirty[1] & /*quizAnswered*/
-      128) quizoptions_changes.answered = /*quizAnswered*/
-      ctx2[38];
+      256) quizoptions_changes.answered = /*quizAnswered*/
+      ctx2[39];
       if (dirty[0] & /*quizCorrect*/
-      4096) quizoptions_changes.correct = /*quizCorrect*/
-      ctx2[12];
+      8192) quizoptions_changes.correct = /*quizCorrect*/
+      ctx2[13];
       quizoptions.$set(quizoptions_changes);
       if (current_block_type_1 === (current_block_type_1 = select_block_type_16(ctx2, dirty)) && if_block2) {
         if_block2.p(ctx2, dirty);
@@ -12070,12 +12173,12 @@ function create_if_block_40(ctx) {
   let div1;
   let t2_value = (
     /*cur*/
-    ctx[10].quiz.question + ""
+    ctx[11].quiz.question + ""
   );
   let t2;
   let show_if = isPhrase(
     /*cur*/
-    ctx[10].doc.word
+    ctx[11].doc.word
   );
   let fitText_action;
   let t3;
@@ -12090,18 +12193,18 @@ function create_if_block_40(ctx) {
   let if_block0 = show_if && create_if_block_45(ctx);
   let if_block1 = (
     /*cur*/
-    ctx[10].quiz.phonetic && create_if_block_44(ctx)
+    ctx[11].quiz.phonetic && create_if_block_44(ctx)
   );
   let if_block2 = (
     /*quizAnswered*/
-    ctx[38] && !/*quizCorrect*/
-    ctx[12] && create_if_block_432(ctx)
+    ctx[39] && !/*quizCorrect*/
+    ctx[13] && create_if_block_432(ctx)
   );
   quizoptions = new QuizOptions_default({
     props: {
       quiz: (
         /*cur*/
-        ctx[10].quiz
+        ctx[11].quiz
       ),
       picked: (
         /*quizPicked*/
@@ -12109,23 +12212,23 @@ function create_if_block_40(ctx) {
       ),
       answered: (
         /*quizAnswered*/
-        ctx[38]
+        ctx[39]
       ),
       correct: (
         /*quizCorrect*/
-        ctx[12]
+        ctx[13]
       ),
       onpick: (
         /*checkPick*/
-        ctx[52]
+        ctx[53]
       )
     }
   });
   function select_block_type_10(ctx2, dirty) {
     if (!/*quizAnswered*/
-    ctx2[38]) return create_if_block_41;
+    ctx2[39]) return create_if_block_41;
     if (!/*quizCorrect*/
-    ctx2[12]) return create_if_block_422;
+    ctx2[13]) return create_if_block_422;
   }
   let current_block_type = select_block_type_10(ctx, [-1, -1, -1, -1, -1]);
   let if_block3 = current_block_type && current_block_type(ctx);
@@ -12172,19 +12275,19 @@ function create_if_block_40(ctx) {
       if (!mounted) {
         dispose = action_destroyer(fitText_action = fitText.call(null, div1, { dep: (
           /*cur*/
-          ctx[10].quiz.question
+          ctx[11].quiz.question
         ) }));
         mounted = true;
       }
     },
     p(ctx2, dirty) {
       if ((!current || dirty[0] & /*cur*/
-      1024) && t2_value !== (t2_value = /*cur*/
-      ctx2[10].quiz.question + "")) set_data(t2, t2_value);
+      2048) && t2_value !== (t2_value = /*cur*/
+      ctx2[11].quiz.question + "")) set_data(t2, t2_value);
       if (dirty[0] & /*cur*/
-      1024) show_if = isPhrase(
+      2048) show_if = isPhrase(
         /*cur*/
-        ctx2[10].doc.word
+        ctx2[11].doc.word
       );
       if (show_if) {
         if (if_block0) {
@@ -12198,13 +12301,13 @@ function create_if_block_40(ctx) {
         if_block0 = null;
       }
       if (fitText_action && is_function(fitText_action.update) && dirty[0] & /*cur*/
-      1024) fitText_action.update.call(null, { dep: (
+      2048) fitText_action.update.call(null, { dep: (
         /*cur*/
-        ctx2[10].quiz.question
+        ctx2[11].quiz.question
       ) });
       if (
         /*cur*/
-        ctx2[10].quiz.phonetic
+        ctx2[11].quiz.phonetic
       ) {
         if (if_block1) {
           if_block1.p(ctx2, dirty);
@@ -12219,8 +12322,8 @@ function create_if_block_40(ctx) {
       }
       if (
         /*quizAnswered*/
-        ctx2[38] && !/*quizCorrect*/
-        ctx2[12]
+        ctx2[39] && !/*quizCorrect*/
+        ctx2[13]
       ) {
         if (if_block2) {
           if_block2.p(ctx2, dirty);
@@ -12235,17 +12338,17 @@ function create_if_block_40(ctx) {
       }
       const quizoptions_changes = {};
       if (dirty[0] & /*cur*/
-      1024) quizoptions_changes.quiz = /*cur*/
-      ctx2[10].quiz;
+      2048) quizoptions_changes.quiz = /*cur*/
+      ctx2[11].quiz;
       if (dirty[0] & /*quizPicked*/
       64) quizoptions_changes.picked = /*quizPicked*/
       ctx2[6];
       if (dirty[1] & /*quizAnswered*/
-      128) quizoptions_changes.answered = /*quizAnswered*/
-      ctx2[38];
+      256) quizoptions_changes.answered = /*quizAnswered*/
+      ctx2[39];
       if (dirty[0] & /*quizCorrect*/
-      4096) quizoptions_changes.correct = /*quizCorrect*/
-      ctx2[12];
+      8192) quizoptions_changes.correct = /*quizCorrect*/
+      ctx2[13];
       quizoptions.$set(quizoptions_changes);
       if (current_block_type === (current_block_type = select_block_type_10(ctx2, dirty)) && if_block3) {
         if_block3.p(ctx2, dirty);
@@ -12300,12 +12403,12 @@ function create_if_block_29(ctx) {
   function select_block_type_6(ctx2, dirty) {
     if (
       /*cur*/
-      ctx2[10].check && !/*quizAnswered*/
-      ctx2[38]
+      ctx2[11].check && !/*quizAnswered*/
+      ctx2[39]
     ) return 0;
     if (
       /*cur*/
-      ctx2[10].reverse && !/*revealed*/
+      ctx2[11].reverse && !/*revealed*/
       ctx2[5]
     ) return 1;
     return 2;
@@ -12417,41 +12520,41 @@ function create_if_block_252(ctx) {
       ),
       doc: (
         /*cur*/
-        ctx[10].doc
+        ctx[11].doc
       ),
       synonyms: (
         /*synRow*/
-        ctx[31]
+        ctx[32]
       ),
       antonyms: (
         /*antRow*/
-        ctx[32]
+        ctx[33]
       ),
       showAi: (
         /*showFull*/
-        ctx[39]
+        ctx[40]
       ),
       showBody: (
         /*showFull*/
-        ctx[39]
+        ctx[40]
       )
     }
   });
   let if_block0 = (
     /*cur*/
-    ctx[10].kind === "restudy" && !/*revealed*/
+    ctx[11].kind === "restudy" && !/*revealed*/
     ctx[5] && create_if_block_282(ctx)
   );
   function select_block_type_5(ctx2, dirty) {
     if (
       /*cur*/
-      ctx2[10].kind === "study" || /*cur*/
-      ctx2[10].kind === "restudy" && /*revealed*/
+      ctx2[11].kind === "study" || /*cur*/
+      ctx2[11].kind === "restudy" && /*revealed*/
       ctx2[5]
     ) return create_if_block_262;
     if (
       /*cur*/
-      ctx2[10].kind === "confirm"
+      ctx2[11].kind === "confirm"
     ) return create_if_block_272;
   }
   let current_block_type = select_block_type_5(ctx, [-1, -1, -1, -1, -1]);
@@ -12483,24 +12586,24 @@ function create_if_block_252(ctx) {
       1) wordfullcard_changes.plugin = /*plugin*/
       ctx2[0];
       if (dirty[0] & /*cur*/
-      1024) wordfullcard_changes.doc = /*cur*/
-      ctx2[10].doc;
+      2048) wordfullcard_changes.doc = /*cur*/
+      ctx2[11].doc;
       if (dirty[1] & /*synRow*/
-      1) wordfullcard_changes.synonyms = /*synRow*/
-      ctx2[31];
-      if (dirty[1] & /*antRow*/
-      2) wordfullcard_changes.antonyms = /*antRow*/
+      2) wordfullcard_changes.synonyms = /*synRow*/
       ctx2[32];
+      if (dirty[1] & /*antRow*/
+      4) wordfullcard_changes.antonyms = /*antRow*/
+      ctx2[33];
       if (dirty[1] & /*showFull*/
-      256) wordfullcard_changes.showAi = /*showFull*/
-      ctx2[39];
+      512) wordfullcard_changes.showAi = /*showFull*/
+      ctx2[40];
       if (dirty[1] & /*showFull*/
-      256) wordfullcard_changes.showBody = /*showFull*/
-      ctx2[39];
+      512) wordfullcard_changes.showBody = /*showFull*/
+      ctx2[40];
       wordfullcard.$set(wordfullcard_changes);
       if (
         /*cur*/
-        ctx2[10].kind === "restudy" && !/*revealed*/
+        ctx2[11].kind === "restudy" && !/*revealed*/
         ctx2[5]
       ) {
         if (if_block0) {
@@ -12569,7 +12672,7 @@ function create_if_block_242(ctx) {
       ),
       doc: (
         /*cur*/
-        ctx[10].doc
+        ctx[11].doc
       ),
       showAi: false,
       showBody: false
@@ -12612,19 +12715,19 @@ function create_if_block_242(ctx) {
             button0,
             "click",
             /*tooEasy*/
-            ctx[50]
+            ctx[51]
           ),
           listen(
             button1,
             "click",
             /*knowIt*/
-            ctx[51]
+            ctx[52]
           ),
           listen(
             button2,
             "click",
             /*unknownWord*/
-            ctx[54]
+            ctx[55]
           )
         ];
         mounted = true;
@@ -12636,8 +12739,8 @@ function create_if_block_242(ctx) {
       1) wordfullcard_changes.plugin = /*plugin*/
       ctx2[0];
       if (dirty[0] & /*cur*/
-      1024) wordfullcard_changes.doc = /*cur*/
-      ctx2[10].doc;
+      2048) wordfullcard_changes.doc = /*cur*/
+      ctx2[11].doc;
       wordfullcard.$set(wordfullcard_changes);
     },
     i(local) {
@@ -12679,15 +12782,15 @@ function create_if_block_222(ctx) {
       ),
       doc: (
         /*cur*/
-        ctx[10].doc
+        ctx[11].doc
       ),
       synonyms: (
         /*synRow*/
-        ctx[31]
+        ctx[32]
       ),
       antonyms: (
         /*antRow*/
-        ctx[32]
+        ctx[33]
       )
     }
   });
@@ -12723,7 +12826,7 @@ function create_if_block_222(ctx) {
           button,
           "click",
           /*goForward*/
-          ctx[49]
+          ctx[50]
         );
         mounted = true;
       }
@@ -12734,14 +12837,14 @@ function create_if_block_222(ctx) {
       1) wordfullcard_changes.plugin = /*plugin*/
       ctx2[0];
       if (dirty[0] & /*cur*/
-      1024) wordfullcard_changes.doc = /*cur*/
-      ctx2[10].doc;
+      2048) wordfullcard_changes.doc = /*cur*/
+      ctx2[11].doc;
       if (dirty[1] & /*synRow*/
-      1) wordfullcard_changes.synonyms = /*synRow*/
-      ctx2[31];
-      if (dirty[1] & /*antRow*/
-      2) wordfullcard_changes.antonyms = /*antRow*/
+      2) wordfullcard_changes.synonyms = /*synRow*/
       ctx2[32];
+      if (dirty[1] & /*antRow*/
+      4) wordfullcard_changes.antonyms = /*antRow*/
+      ctx2[33];
       wordfullcard.$set(wordfullcard_changes);
       if (
         /*idx*/
@@ -12787,7 +12890,7 @@ function create_else_block_9(ctx) {
   let div1;
   let t2_value = (
     /*cur*/
-    ctx[10].quiz.question + ""
+    ctx[11].quiz.question + ""
   );
   let t2;
   return {
@@ -12808,8 +12911,8 @@ function create_else_block_9(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*cur*/
-      1024 && t2_value !== (t2_value = /*cur*/
-      ctx2[10].quiz.question + "")) set_data(t2, t2_value);
+      2048 && t2_value !== (t2_value = /*cur*/
+      ctx2[11].quiz.question + "")) set_data(t2, t2_value);
     },
     d(detaching) {
       if (detaching) {
@@ -12826,12 +12929,12 @@ function create_if_block_622(ctx) {
   let div1;
   let t2_value = (
     /*cur*/
-    ctx[10].quiz.question + ""
+    ctx[11].quiz.question + ""
   );
   let t2;
   let show_if = isPhrase(
     /*cur*/
-    ctx[10].doc.word
+    ctx[11].doc.word
   );
   let fitText_action;
   let t3;
@@ -12841,7 +12944,7 @@ function create_if_block_622(ctx) {
   let if_block0 = show_if && create_if_block_64(ctx);
   let if_block1 = (
     /*cur*/
-    ctx[10].quiz.phonetic && create_if_block_63(ctx)
+    ctx[11].quiz.phonetic && create_if_block_63(ctx)
   );
   return {
     c() {
@@ -12870,19 +12973,19 @@ function create_if_block_622(ctx) {
       if (!mounted) {
         dispose = action_destroyer(fitText_action = fitText.call(null, div1, { dep: (
           /*cur*/
-          ctx[10].quiz.question
+          ctx[11].quiz.question
         ) }));
         mounted = true;
       }
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*cur*/
-      1024 && t2_value !== (t2_value = /*cur*/
-      ctx2[10].quiz.question + "")) set_data(t2, t2_value);
+      2048 && t2_value !== (t2_value = /*cur*/
+      ctx2[11].quiz.question + "")) set_data(t2, t2_value);
       if (dirty[0] & /*cur*/
-      1024) show_if = isPhrase(
+      2048) show_if = isPhrase(
         /*cur*/
-        ctx2[10].doc.word
+        ctx2[11].doc.word
       );
       if (show_if) {
         if (if_block0) {
@@ -12896,13 +12999,13 @@ function create_if_block_622(ctx) {
         if_block0 = null;
       }
       if (fitText_action && is_function(fitText_action.update) && dirty[0] & /*cur*/
-      1024) fitText_action.update.call(null, { dep: (
+      2048) fitText_action.update.call(null, { dep: (
         /*cur*/
-        ctx2[10].quiz.question
+        ctx2[11].quiz.question
       ) });
       if (
         /*cur*/
-        ctx2[10].quiz.phonetic
+        ctx2[11].quiz.phonetic
       ) {
         if (if_block1) {
           if_block1.p(ctx2, dirty);
@@ -12937,7 +13040,7 @@ function create_if_block_61(ctx) {
   let div1;
   let t2_value = (
     /*cur*/
-    ctx[10].quiz.question + ""
+    ctx[11].quiz.question + ""
   );
   let t2;
   return {
@@ -12958,8 +13061,8 @@ function create_if_block_61(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*cur*/
-      1024 && t2_value !== (t2_value = /*cur*/
-      ctx2[10].quiz.question + "")) set_data(t2, t2_value);
+      2048 && t2_value !== (t2_value = /*cur*/
+      ctx2[11].quiz.question + "")) set_data(t2, t2_value);
     },
     d(detaching) {
       if (detaching) {
@@ -12976,7 +13079,7 @@ function create_if_block_50(ctx) {
   function select_block_type_12(ctx2, dirty) {
     if (
       /*cur*/
-      ctx2[10].quiz.audioOnly
+      ctx2[11].quiz.audioOnly
     ) return create_if_block_58;
     return create_else_block_8;
   }
@@ -12984,10 +13087,10 @@ function create_if_block_50(ctx) {
   let if_block0 = current_block_type(ctx);
   function select_block_type_14(ctx2, dirty) {
     if (!/*quizAnswered*/
-    ctx2[38]) return create_if_block_51;
+    ctx2[39]) return create_if_block_51;
     if (
       /*quizCorrect*/
-      ctx2[12]
+      ctx2[13]
     ) return create_if_block_57;
   }
   let current_block_type_1 = select_block_type_14(ctx, [-1, -1, -1, -1, -1]);
@@ -13061,7 +13164,7 @@ function create_if_block_63(ctx) {
   let div;
   let t_value = (
     /*cur*/
-    ctx[10].quiz.phonetic + ""
+    ctx[11].quiz.phonetic + ""
   );
   let t;
   return {
@@ -13076,8 +13179,8 @@ function create_if_block_63(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*cur*/
-      1024 && t_value !== (t_value = /*cur*/
-      ctx2[10].quiz.phonetic + "")) set_data(t, t_value);
+      2048 && t_value !== (t_value = /*cur*/
+      ctx2[11].quiz.phonetic + "")) set_data(t, t_value);
     },
     d(detaching) {
       if (detaching) {
@@ -13092,14 +13195,14 @@ function create_else_block_8(ctx) {
   let div1;
   let t2_value = (
     /*cur*/
-    ctx[10].quiz.question + ""
+    ctx[11].quiz.question + ""
   );
   let t2;
   let t3;
   let if_block_anchor;
   let if_block = (
     /*cur*/
-    ctx[10].quiz.phonetic && create_if_block_60(ctx)
+    ctx[11].quiz.phonetic && create_if_block_60(ctx)
   );
   return {
     c() {
@@ -13125,11 +13228,11 @@ function create_else_block_8(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*cur*/
-      1024 && t2_value !== (t2_value = /*cur*/
-      ctx2[10].quiz.question + "")) set_data(t2, t2_value);
+      2048 && t2_value !== (t2_value = /*cur*/
+      ctx2[11].quiz.question + "")) set_data(t2, t2_value);
       if (
         /*cur*/
-        ctx2[10].quiz.phonetic
+        ctx2[11].quiz.phonetic
       ) {
         if (if_block) {
           if_block.p(ctx2, dirty);
@@ -13165,7 +13268,7 @@ function create_if_block_58(ctx) {
   function select_block_type_13(ctx2, dirty) {
     if (
       /*hasAudio*/
-      ctx2[34]
+      ctx2[35]
     ) return create_if_block_59;
     return create_else_block_7;
   }
@@ -13190,7 +13293,7 @@ function create_if_block_58(ctx) {
       attr(div, "class", "el-hint");
       attr(button, "class", "el-spell-audio");
       attr(button, "title", button_title_value = /*hasAudio*/
-      ctx[34] ? "\u6807\u51C6\u53D1\u97F3 \xB7 \u518D\u542C\u4E00\u904D" : "\u7CFB\u7EDF TTS \xB7 \u518D\u542C\u4E00\u904D");
+      ctx[35] ? "\u6807\u51C6\u53D1\u97F3 \xB7 \u518D\u542C\u4E00\u904D" : "\u7CFB\u7EDF TTS \xB7 \u518D\u542C\u4E00\u904D");
     },
     m(target, anchor) {
       insert(target, div, anchor);
@@ -13213,8 +13316,8 @@ function create_if_block_58(ctx) {
         }
       }
       if (dirty[1] & /*hasAudio*/
-      8 && button_title_value !== (button_title_value = /*hasAudio*/
-      ctx[34] ? "\u6807\u51C6\u53D1\u97F3 \xB7 \u518D\u542C\u4E00\u904D" : "\u7CFB\u7EDF TTS \xB7 \u518D\u542C\u4E00\u904D")) {
+      16 && button_title_value !== (button_title_value = /*hasAudio*/
+      ctx[35] ? "\u6807\u51C6\u53D1\u97F3 \xB7 \u518D\u542C\u4E00\u904D" : "\u7CFB\u7EDF TTS \xB7 \u518D\u542C\u4E00\u904D")) {
         attr(button, "title", button_title_value);
       }
     },
@@ -13234,7 +13337,7 @@ function create_if_block_60(ctx) {
   let div;
   let t_value = (
     /*cur*/
-    ctx[10].quiz.phonetic + ""
+    ctx[11].quiz.phonetic + ""
   );
   let t;
   return {
@@ -13249,8 +13352,8 @@ function create_if_block_60(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*cur*/
-      1024 && t_value !== (t_value = /*cur*/
-      ctx2[10].quiz.phonetic + "")) set_data(t, t_value);
+      2048 && t_value !== (t_value = /*cur*/
+      ctx2[11].quiz.phonetic + "")) set_data(t, t_value);
     },
     d(detaching) {
       if (detaching) {
@@ -13298,7 +13401,7 @@ function create_if_block_57(ctx) {
   let t0;
   let t1_value = (
     /*cur*/
-    ctx[10].quiz.reveal + ""
+    ctx[11].quiz.reveal + ""
   );
   let t1;
   return {
@@ -13315,8 +13418,8 @@ function create_if_block_57(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*cur*/
-      1024 && t1_value !== (t1_value = /*cur*/
-      ctx2[10].quiz.reveal + "")) set_data(t1, t1_value);
+      2048 && t1_value !== (t1_value = /*cur*/
+      ctx2[11].quiz.reveal + "")) set_data(t1, t1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -13338,13 +13441,13 @@ function create_if_block_51(ctx) {
   let button1;
   let t6_value = (
     /*spellHinted*/
-    ctx[36] ? `${/*cur*/
-    ctx[10].doc.word.slice(0, 1)}${"\xB7".repeat(Math.max(
+    ctx[37] ? `${/*cur*/
+    ctx[11].doc.word.slice(0, 1)}${"\xB7".repeat(Math.max(
       /*cur*/
-      ctx[10].doc.word.length - 1,
+      ctx[11].doc.word.length - 1,
       0
     ))}\uFF08${/*cur*/
-    ctx[10].doc.word.length} \u4E2A\u5B57\u6BCD\uFF09` : "\u8981\u63D0\u793A\u5417\uFF1F"
+    ctx[11].doc.word.length} \u4E2A\u5B57\u6BCD\uFF09` : "\u8981\u63D0\u793A\u5417\uFF1F"
   );
   let t6;
   let t7;
@@ -13353,14 +13456,14 @@ function create_if_block_51(ctx) {
   let dispose;
   let if_block0 = (
     /*cur*/
-    ctx[10].quiz.audioOnly && !/*spellShowQ*/
-    ctx[37] && create_if_block_56(ctx)
+    ctx[11].quiz.audioOnly && !/*spellShowQ*/
+    ctx[38] && create_if_block_56(ctx)
   );
   let if_block1 = (!/*cur*/
-  ctx[10].quiz.audioOnly || /*spellShowQ*/
-  ctx[37]) && create_if_block_54(ctx);
+  ctx[11].quiz.audioOnly || /*spellShowQ*/
+  ctx[38]) && create_if_block_54(ctx);
   let if_block2 = !/*cur*/
-  ctx[10].quiz.audioOnly && create_if_block_522(ctx);
+  ctx[11].quiz.audioOnly && create_if_block_522(ctx);
   return {
     c() {
       if (if_block0) if_block0.c();
@@ -13401,7 +13504,7 @@ function create_if_block_51(ctx) {
       set_input_value(
         input,
         /*spellInput*/
-        ctx[35]
+        ctx[36]
       );
       append(div, t2);
       if (if_block2) if_block2.m(div, null);
@@ -13425,13 +13528,13 @@ function create_if_block_51(ctx) {
             input,
             "keydown",
             /*spellKeydown*/
-            ctx[65]
+            ctx[66]
           ),
           listen(
             button0,
             "click",
             /*submitSpell*/
-            ctx[66]
+            ctx[67]
           ),
           listen(
             button1,
@@ -13443,7 +13546,7 @@ function create_if_block_51(ctx) {
             button2,
             "click",
             /*quizGiveUp*/
-            ctx[68]
+            ctx[69]
           )
         ];
         mounted = true;
@@ -13452,8 +13555,8 @@ function create_if_block_51(ctx) {
     p(ctx2, dirty) {
       if (
         /*cur*/
-        ctx2[10].quiz.audioOnly && !/*spellShowQ*/
-        ctx2[37]
+        ctx2[11].quiz.audioOnly && !/*spellShowQ*/
+        ctx2[38]
       ) {
         if (if_block0) {
           if_block0.p(ctx2, dirty);
@@ -13467,8 +13570,8 @@ function create_if_block_51(ctx) {
         if_block0 = null;
       }
       if (!/*cur*/
-      ctx2[10].quiz.audioOnly || /*spellShowQ*/
-      ctx2[37]) {
+      ctx2[11].quiz.audioOnly || /*spellShowQ*/
+      ctx2[38]) {
         if (if_block1) {
           if_block1.p(ctx2, dirty);
         } else {
@@ -13481,16 +13584,16 @@ function create_if_block_51(ctx) {
         if_block1 = null;
       }
       if (dirty[1] & /*spellInput*/
-      16 && input.value !== /*spellInput*/
-      ctx2[35]) {
+      32 && input.value !== /*spellInput*/
+      ctx2[36]) {
         set_input_value(
           input,
           /*spellInput*/
-          ctx2[35]
+          ctx2[36]
         );
       }
       if (!/*cur*/
-      ctx2[10].quiz.audioOnly) {
+      ctx2[11].quiz.audioOnly) {
         if (if_block2) {
           if_block2.p(ctx2, dirty);
         } else {
@@ -13503,15 +13606,15 @@ function create_if_block_51(ctx) {
         if_block2 = null;
       }
       if (dirty[0] & /*cur*/
-      1024 | dirty[1] & /*spellHinted*/
-      32 && t6_value !== (t6_value = /*spellHinted*/
-      ctx2[36] ? `${/*cur*/
-      ctx2[10].doc.word.slice(0, 1)}${"\xB7".repeat(Math.max(
+      2048 | dirty[1] & /*spellHinted*/
+      64 && t6_value !== (t6_value = /*spellHinted*/
+      ctx2[37] ? `${/*cur*/
+      ctx2[11].doc.word.slice(0, 1)}${"\xB7".repeat(Math.max(
         /*cur*/
-        ctx2[10].doc.word.length - 1,
+        ctx2[11].doc.word.length - 1,
         0
       ))}\uFF08${/*cur*/
-      ctx2[10].doc.word.length} \u4E2A\u5B57\u6BCD\uFF09` : "\u8981\u63D0\u793A\u5417\uFF1F")) set_data(t6, t6_value);
+      ctx2[11].doc.word.length} \u4E2A\u5B57\u6BCD\uFF09` : "\u8981\u63D0\u793A\u5417\uFF1F")) set_data(t6, t6_value);
     },
     d(detaching) {
       if (detaching) {
@@ -13567,14 +13670,14 @@ function create_if_block_54(ctx) {
   let div;
   let t0_value = (
     /*cur*/
-    ctx[10].quiz.question + ""
+    ctx[11].quiz.question + ""
   );
   let t0;
   let t1;
   let if_block_anchor;
   let if_block = (
     /*cur*/
-    ctx[10].quiz.phonetic && create_if_block_55(ctx)
+    ctx[11].quiz.phonetic && create_if_block_55(ctx)
   );
   return {
     c() {
@@ -13594,11 +13697,11 @@ function create_if_block_54(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*cur*/
-      1024 && t0_value !== (t0_value = /*cur*/
-      ctx2[10].quiz.question + "")) set_data(t0, t0_value);
+      2048 && t0_value !== (t0_value = /*cur*/
+      ctx2[11].quiz.question + "")) set_data(t0, t0_value);
       if (
         /*cur*/
-        ctx2[10].quiz.phonetic
+        ctx2[11].quiz.phonetic
       ) {
         if (if_block) {
           if_block.p(ctx2, dirty);
@@ -13626,7 +13729,7 @@ function create_if_block_55(ctx) {
   let div;
   let t_value = (
     /*cur*/
-    ctx[10].quiz.phonetic + ""
+    ctx[11].quiz.phonetic + ""
   );
   let t;
   return {
@@ -13641,8 +13744,8 @@ function create_if_block_55(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*cur*/
-      1024 && t_value !== (t_value = /*cur*/
-      ctx2[10].quiz.phonetic + "")) set_data(t, t_value);
+      2048 && t_value !== (t_value = /*cur*/
+      ctx2[11].quiz.phonetic + "")) set_data(t, t_value);
     },
     d(detaching) {
       if (detaching) {
@@ -13659,7 +13762,7 @@ function create_if_block_522(ctx) {
   function select_block_type_15(ctx2, dirty) {
     if (
       /*hasAudio*/
-      ctx2[34]
+      ctx2[35]
     ) return create_if_block_53;
     return create_else_block_6;
   }
@@ -13680,7 +13783,7 @@ function create_if_block_522(ctx) {
       if_block.c();
       attr(button, "class", "el-tts");
       attr(button, "title", button_title_value = /*hasAudio*/
-      ctx[34] ? "\u6807\u51C6\u53D1\u97F3\u63D0\u793A\uFF08\u7B97\u4F5C\u63D0\u793A\uFF0C\u4E0D\u6CC4\u62FC\u5199\uFF09" : "TTS \u53D1\u97F3\u63D0\u793A\uFF08\u7B97\u4F5C\u63D0\u793A\uFF0C\u4E0D\u6CC4\u62FC\u5199\uFF09");
+      ctx[35] ? "\u6807\u51C6\u53D1\u97F3\u63D0\u793A\uFF08\u7B97\u4F5C\u63D0\u793A\uFF0C\u4E0D\u6CC4\u62FC\u5199\uFF09" : "TTS \u53D1\u97F3\u63D0\u793A\uFF08\u7B97\u4F5C\u63D0\u793A\uFF0C\u4E0D\u6CC4\u62FC\u5199\uFF09");
     },
     m(target, anchor) {
       insert(target, button, anchor);
@@ -13701,8 +13804,8 @@ function create_if_block_522(ctx) {
         }
       }
       if (dirty[1] & /*hasAudio*/
-      8 && button_title_value !== (button_title_value = /*hasAudio*/
-      ctx[34] ? "\u6807\u51C6\u53D1\u97F3\u63D0\u793A\uFF08\u7B97\u4F5C\u63D0\u793A\uFF0C\u4E0D\u6CC4\u62FC\u5199\uFF09" : "TTS \u53D1\u97F3\u63D0\u793A\uFF08\u7B97\u4F5C\u63D0\u793A\uFF0C\u4E0D\u6CC4\u62FC\u5199\uFF09")) {
+      16 && button_title_value !== (button_title_value = /*hasAudio*/
+      ctx[35] ? "\u6807\u51C6\u53D1\u97F3\u63D0\u793A\uFF08\u7B97\u4F5C\u63D0\u793A\uFF0C\u4E0D\u6CC4\u62FC\u5199\uFF09" : "TTS \u53D1\u97F3\u63D0\u793A\uFF08\u7B97\u4F5C\u63D0\u793A\uFF0C\u4E0D\u6CC4\u62FC\u5199\uFF09")) {
         attr(button, "title", button_title_value);
       }
     },
@@ -13755,7 +13858,7 @@ function create_if_block_49(ctx) {
   let t0;
   let t1_value = (
     /*cur*/
-    ctx[10].quiz.reveal + ""
+    ctx[11].quiz.reveal + ""
   );
   let t1;
   let t2;
@@ -13771,15 +13874,15 @@ function create_if_block_49(ctx) {
       ),
       doc: (
         /*cur*/
-        ctx[10].doc
+        ctx[11].doc
       ),
       synonyms: (
         /*synRow*/
-        ctx[31]
+        ctx[32]
       ),
       antonyms: (
         /*antRow*/
-        ctx[32]
+        ctx[33]
       )
     }
   });
@@ -13809,21 +13912,21 @@ function create_if_block_49(ctx) {
     },
     p(ctx2, dirty) {
       if ((!current || dirty[0] & /*cur*/
-      1024) && t1_value !== (t1_value = /*cur*/
-      ctx2[10].quiz.reveal + "")) set_data(t1, t1_value);
+      2048) && t1_value !== (t1_value = /*cur*/
+      ctx2[11].quiz.reveal + "")) set_data(t1, t1_value);
       const wordfullcard_changes = {};
       if (dirty[0] & /*plugin*/
       1) wordfullcard_changes.plugin = /*plugin*/
       ctx2[0];
       if (dirty[0] & /*cur*/
-      1024) wordfullcard_changes.doc = /*cur*/
-      ctx2[10].doc;
+      2048) wordfullcard_changes.doc = /*cur*/
+      ctx2[11].doc;
       if (dirty[1] & /*synRow*/
-      1) wordfullcard_changes.synonyms = /*synRow*/
-      ctx2[31];
-      if (dirty[1] & /*antRow*/
-      2) wordfullcard_changes.antonyms = /*antRow*/
+      2) wordfullcard_changes.synonyms = /*synRow*/
       ctx2[32];
+      if (dirty[1] & /*antRow*/
+      4) wordfullcard_changes.antonyms = /*antRow*/
+      ctx2[33];
       wordfullcard.$set(wordfullcard_changes);
     },
     i(local) {
@@ -13863,7 +13966,7 @@ function create_if_block_48(ctx) {
           button,
           "click",
           /*advance*/
-          ctx[47]
+          ctx[48]
         );
         mounted = true;
       }
@@ -13895,7 +13998,7 @@ function create_if_block_47(ctx) {
           button,
           "click",
           /*quizGiveUp*/
-          ctx[68]
+          ctx[69]
         );
         mounted = true;
       }
@@ -13932,7 +14035,7 @@ function create_if_block_44(ctx) {
   let div;
   let t_value = (
     /*cur*/
-    ctx[10].quiz.phonetic + ""
+    ctx[11].quiz.phonetic + ""
   );
   let t;
   return {
@@ -13947,8 +14050,8 @@ function create_if_block_44(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*cur*/
-      1024 && t_value !== (t_value = /*cur*/
-      ctx2[10].quiz.phonetic + "")) set_data(t, t_value);
+      2048 && t_value !== (t_value = /*cur*/
+      ctx2[11].quiz.phonetic + "")) set_data(t, t_value);
     },
     d(detaching) {
       if (detaching) {
@@ -13962,7 +14065,7 @@ function create_if_block_432(ctx) {
   let t0;
   let t1_value = (
     /*cur*/
-    ctx[10].quiz.reveal + ""
+    ctx[11].quiz.reveal + ""
   );
   let t1;
   let t2;
@@ -13988,8 +14091,8 @@ function create_if_block_432(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*cur*/
-      1024 && t1_value !== (t1_value = /*cur*/
-      ctx2[10].quiz.reveal + "")) set_data(t1, t1_value);
+      2048 && t1_value !== (t1_value = /*cur*/
+      ctx2[11].quiz.reveal + "")) set_data(t1, t1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -14017,7 +14120,7 @@ function create_if_block_422(ctx) {
           button,
           "click",
           /*advance*/
-          ctx[47]
+          ctx[48]
         );
         mounted = true;
       }
@@ -14049,7 +14152,7 @@ function create_if_block_41(ctx) {
           button,
           "click",
           /*checkUnknown*/
-          ctx[53]
+          ctx[54]
         );
         mounted = true;
       }
@@ -14077,15 +14180,15 @@ function create_else_block_5(ctx) {
       ),
       doc: (
         /*cur*/
-        ctx[10].doc
+        ctx[11].doc
       ),
       synonyms: (
         /*synRow*/
-        ctx[31]
+        ctx[32]
       ),
       antonyms: (
         /*antRow*/
-        ctx[32]
+        ctx[33]
       ),
       showBody: (
         /*revealed*/
@@ -14095,8 +14198,8 @@ function create_else_block_5(ctx) {
   });
   let if_block = (
     /*cur*/
-    ctx[10].check && /*quizAnswered*/
-    ctx[38] && create_if_block_39(ctx)
+    ctx[11].check && /*quizAnswered*/
+    ctx[39] && create_if_block_39(ctx)
   );
   return {
     c() {
@@ -14118,22 +14221,22 @@ function create_else_block_5(ctx) {
       1) wordfullcard_changes.plugin = /*plugin*/
       ctx2[0];
       if (dirty[0] & /*cur*/
-      1024) wordfullcard_changes.doc = /*cur*/
-      ctx2[10].doc;
+      2048) wordfullcard_changes.doc = /*cur*/
+      ctx2[11].doc;
       if (dirty[1] & /*synRow*/
-      1) wordfullcard_changes.synonyms = /*synRow*/
-      ctx2[31];
-      if (dirty[1] & /*antRow*/
-      2) wordfullcard_changes.antonyms = /*antRow*/
+      2) wordfullcard_changes.synonyms = /*synRow*/
       ctx2[32];
+      if (dirty[1] & /*antRow*/
+      4) wordfullcard_changes.antonyms = /*antRow*/
+      ctx2[33];
       if (dirty[0] & /*revealed*/
       32) wordfullcard_changes.showBody = /*revealed*/
       ctx2[5];
       wordfullcard.$set(wordfullcard_changes);
       if (
         /*cur*/
-        ctx2[10].check && /*quizAnswered*/
-        ctx2[38]
+        ctx2[11].check && /*quizAnswered*/
+        ctx2[39]
       ) {
         if (if_block) {
           if_block.p(ctx2, dirty);
@@ -14172,14 +14275,14 @@ function create_if_block_37(ctx) {
   let div1;
   let t2_value = (sensesOf(
     /*cur*/
-    ctx[10].doc
+    ctx[11].doc
   )[0] || "\uFF08\u91CA\u4E49\u5F85\u8865\u5145\uFF09") + "";
   let t2;
   let t3;
   let if_block_anchor;
   let if_block = (
     /*reverseHint*/
-    ctx[40] && create_if_block_38(ctx)
+    ctx[41] && create_if_block_38(ctx)
   );
   return {
     c() {
@@ -14206,13 +14309,13 @@ function create_if_block_37(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*cur*/
-      1024 && t2_value !== (t2_value = (sensesOf(
+      2048 && t2_value !== (t2_value = (sensesOf(
         /*cur*/
-        ctx2[10].doc
+        ctx2[11].doc
       )[0] || "\uFF08\u91CA\u4E49\u5F85\u8865\u5145\uFF09") + "")) set_data(t2, t2_value);
       if (
         /*reverseHint*/
-        ctx2[40]
+        ctx2[41]
       ) {
         if (if_block) {
           if_block.p(ctx2, dirty);
@@ -14245,8 +14348,8 @@ function create_if_block_322(ctx) {
   function select_block_type_7(ctx2, dirty) {
     if (
       /*cur*/
-      ctx2[10].check.question === /*cur*/
-      ctx2[10].doc.word
+      ctx2[11].check.question === /*cur*/
+      ctx2[11].doc.word
     ) return create_if_block_332;
     return create_else_block_42;
   }
@@ -14287,8 +14390,12 @@ function create_if_block_39(ctx) {
   let div;
   let t_value = (
     /*quizCorrect*/
-    ctx[12] ? "\u2705 \u9009\u5BF9\u4E86" : `\u274C \u6B63\u786E\u7B54\u6848\uFF1A${/*cur*/
-    ctx[10].check.reveal}`
+    ctx[13] ? "\u2705 \u9009\u5BF9\u4E86" : (
+      /*quizGaveUp*/
+      ctx[7] ? `\u6B63\u786E\u7B54\u6848\uFF1A${/*cur*/
+      ctx[11].check.reveal}` : `\u274C \u6B63\u786E\u7B54\u6848\uFF1A${/*cur*/
+      ctx[11].check.reveal}`
+    )
   );
   let t;
   return {
@@ -14303,10 +14410,14 @@ function create_if_block_39(ctx) {
       append(div, t);
     },
     p(ctx2, dirty) {
-      if (dirty[0] & /*quizCorrect, cur*/
-      5120 && t_value !== (t_value = /*quizCorrect*/
-      ctx2[12] ? "\u2705 \u9009\u5BF9\u4E86" : `\u274C \u6B63\u786E\u7B54\u6848\uFF1A${/*cur*/
-      ctx2[10].check.reveal}`)) set_data(t, t_value);
+      if (dirty[0] & /*quizCorrect, quizGaveUp, cur*/
+      10368 && t_value !== (t_value = /*quizCorrect*/
+      ctx2[13] ? "\u2705 \u9009\u5BF9\u4E86" : (
+        /*quizGaveUp*/
+        ctx2[7] ? `\u6B63\u786E\u7B54\u6848\uFF1A${/*cur*/
+        ctx2[11].check.reveal}` : `\u274C \u6B63\u786E\u7B54\u6848\uFF1A${/*cur*/
+        ctx2[11].check.reveal}`
+      ))) set_data(t, t_value);
     },
     d(detaching) {
       if (detaching) {
@@ -14323,7 +14434,7 @@ function create_if_block_38(ctx) {
       div = element("div");
       t = text(
         /*reverseHint*/
-        ctx[40]
+        ctx[41]
       );
       attr(div, "class", "el-example");
       set_style(div, "margin-top", "10px");
@@ -14334,10 +14445,10 @@ function create_if_block_38(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[1] & /*reverseHint*/
-      512) set_data(
+      1024) set_data(
         t,
         /*reverseHint*/
-        ctx2[40]
+        ctx2[41]
       );
     },
     d(detaching) {
@@ -14353,14 +14464,14 @@ function create_else_block_42(ctx) {
   let div1;
   let t2_value = (
     /*cur*/
-    ctx[10].check.question + ""
+    ctx[11].check.question + ""
   );
   let t2;
   let t3;
   let if_block_anchor;
   let if_block = (
     /*reverseHint*/
-    ctx[40] && create_if_block_36(ctx)
+    ctx[41] && create_if_block_36(ctx)
   );
   return {
     c() {
@@ -14387,11 +14498,11 @@ function create_else_block_42(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*cur*/
-      1024 && t2_value !== (t2_value = /*cur*/
-      ctx2[10].check.question + "")) set_data(t2, t2_value);
+      2048 && t2_value !== (t2_value = /*cur*/
+      ctx2[11].check.question + "")) set_data(t2, t2_value);
       if (
         /*reverseHint*/
-        ctx2[40]
+        ctx2[41]
       ) {
         if (if_block) {
           if_block.p(ctx2, dirty);
@@ -14423,12 +14534,12 @@ function create_if_block_332(ctx) {
   let div1;
   let t2_value = (
     /*cur*/
-    ctx[10].check.question + ""
+    ctx[11].check.question + ""
   );
   let t2;
   let show_if = isPhrase(
     /*cur*/
-    ctx[10].doc.word
+    ctx[11].doc.word
   );
   let fitText_action;
   let t3;
@@ -14438,7 +14549,7 @@ function create_if_block_332(ctx) {
   let if_block0 = show_if && create_if_block_35(ctx);
   let if_block1 = (
     /*cur*/
-    ctx[10].check.phonetic && create_if_block_34(ctx)
+    ctx[11].check.phonetic && create_if_block_34(ctx)
   );
   return {
     c() {
@@ -14467,19 +14578,19 @@ function create_if_block_332(ctx) {
       if (!mounted) {
         dispose = action_destroyer(fitText_action = fitText.call(null, div1, { dep: (
           /*cur*/
-          ctx[10].check.question
+          ctx[11].check.question
         ) }));
         mounted = true;
       }
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*cur*/
-      1024 && t2_value !== (t2_value = /*cur*/
-      ctx2[10].check.question + "")) set_data(t2, t2_value);
+      2048 && t2_value !== (t2_value = /*cur*/
+      ctx2[11].check.question + "")) set_data(t2, t2_value);
       if (dirty[0] & /*cur*/
-      1024) show_if = isPhrase(
+      2048) show_if = isPhrase(
         /*cur*/
-        ctx2[10].doc.word
+        ctx2[11].doc.word
       );
       if (show_if) {
         if (if_block0) {
@@ -14493,13 +14604,13 @@ function create_if_block_332(ctx) {
         if_block0 = null;
       }
       if (fitText_action && is_function(fitText_action.update) && dirty[0] & /*cur*/
-      1024) fitText_action.update.call(null, { dep: (
+      2048) fitText_action.update.call(null, { dep: (
         /*cur*/
-        ctx2[10].check.question
+        ctx2[11].check.question
       ) });
       if (
         /*cur*/
-        ctx2[10].check.phonetic
+        ctx2[11].check.phonetic
       ) {
         if (if_block1) {
           if_block1.p(ctx2, dirty);
@@ -14536,7 +14647,7 @@ function create_if_block_36(ctx) {
       div = element("div");
       t = text(
         /*reverseHint*/
-        ctx[40]
+        ctx[41]
       );
       attr(div, "class", "el-example");
       set_style(div, "margin-top", "10px");
@@ -14547,10 +14658,10 @@ function create_if_block_36(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[1] & /*reverseHint*/
-      512) set_data(
+      1024) set_data(
         t,
         /*reverseHint*/
-        ctx2[40]
+        ctx2[41]
       );
     },
     d(detaching) {
@@ -14582,7 +14693,7 @@ function create_if_block_34(ctx) {
   let div;
   let t_value = (
     /*cur*/
-    ctx[10].check.phonetic + ""
+    ctx[11].check.phonetic + ""
   );
   let t;
   return {
@@ -14597,8 +14708,8 @@ function create_if_block_34(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*cur*/
-      1024 && t_value !== (t_value = /*cur*/
-      ctx2[10].check.phonetic + "")) set_data(t, t_value);
+      2048 && t_value !== (t_value = /*cur*/
+      ctx2[11].check.phonetic + "")) set_data(t, t_value);
     },
     d(detaching) {
       if (detaching) {
@@ -14672,7 +14783,7 @@ function create_else_block_32(ctx) {
             button3,
             "click",
             /*reviewEasy*/
-            ctx[64]
+            ctx[65]
           )
         ];
         mounted = true;
@@ -14700,7 +14811,7 @@ function create_if_block_30(ctx) {
   function select_block_type_9(ctx2, dirty) {
     if (
       /*cur*/
-      ctx2[10].check
+      ctx2[11].check
     ) return 0;
     return 1;
   }
@@ -14772,7 +14883,7 @@ function create_else_block_22(ctx) {
           button,
           "click",
           /*reveal*/
-          ctx[60]
+          ctx[61]
         );
         mounted = true;
       }
@@ -14800,7 +14911,7 @@ function create_if_block_31(ctx) {
     props: {
       quiz: (
         /*cur*/
-        ctx[10].check
+        ctx[11].check
       ),
       picked: (
         /*quizPicked*/
@@ -14808,15 +14919,15 @@ function create_if_block_31(ctx) {
       ),
       answered: (
         /*quizAnswered*/
-        ctx[38]
+        ctx[39]
       ),
       correct: (
         /*quizCorrect*/
-        ctx[12]
+        ctx[13]
       ),
       onpick: (
         /*reviewPick*/
-        ctx[61]
+        ctx[62]
       )
     }
   });
@@ -14838,7 +14949,7 @@ function create_if_block_31(ctx) {
           button,
           "click",
           /*reviewUnknown*/
-          ctx[62]
+          ctx[63]
         );
         mounted = true;
       }
@@ -14846,17 +14957,17 @@ function create_if_block_31(ctx) {
     p(ctx2, dirty) {
       const quizoptions_changes = {};
       if (dirty[0] & /*cur*/
-      1024) quizoptions_changes.quiz = /*cur*/
-      ctx2[10].check;
+      2048) quizoptions_changes.quiz = /*cur*/
+      ctx2[11].check;
       if (dirty[0] & /*quizPicked*/
       64) quizoptions_changes.picked = /*quizPicked*/
       ctx2[6];
       if (dirty[1] & /*quizAnswered*/
-      128) quizoptions_changes.answered = /*quizAnswered*/
-      ctx2[38];
+      256) quizoptions_changes.answered = /*quizAnswered*/
+      ctx2[39];
       if (dirty[0] & /*quizCorrect*/
-      4096) quizoptions_changes.correct = /*quizCorrect*/
-      ctx2[12];
+      8192) quizoptions_changes.correct = /*quizCorrect*/
+      ctx2[13];
       quizoptions.$set(quizoptions_changes);
     },
     i(local) {
@@ -14900,7 +15011,7 @@ function create_if_block_282(ctx) {
           button,
           "click",
           /*reveal*/
-          ctx[60]
+          ctx[61]
         );
         mounted = true;
       }
@@ -14953,19 +15064,19 @@ function create_if_block_272(ctx) {
             button0,
             "click",
             /*studyEasy*/
-            ctx[57]
+            ctx[58]
           ),
           listen(
             button1,
             "click",
             /*confirmContinue*/
-            ctx[58]
+            ctx[59]
           ),
           listen(
             button2,
             "click",
             /*confirmNo*/
-            ctx[59]
+            ctx[60]
           )
         ];
         mounted = true;
@@ -15019,19 +15130,19 @@ function create_if_block_262(ctx) {
             button0,
             "click",
             /*studyEasy*/
-            ctx[57]
+            ctx[58]
           ),
           listen(
             button1,
             "click",
             /*studied*/
-            ctx[55]
+            ctx[56]
           ),
           listen(
             button2,
             "click",
             /*restudy*/
-            ctx[56]
+            ctx[57]
           )
         ];
         mounted = true;
@@ -15064,7 +15175,7 @@ function create_if_block_232(ctx) {
           button,
           "click",
           /*goBack*/
-          ctx[48]
+          ctx[49]
         );
         mounted = true;
       }
@@ -15085,12 +15196,12 @@ function create_else_block_13(ctx) {
   let h2;
   let t2_value = (
     /*hardMode*/
-    ctx[14] || /*themeName*/
-    ctx[8] ? `${sessionLabel(
+    ctx[15] || /*themeName*/
+    ctx[9] ? `${sessionLabel(
       /*themeName*/
-      ctx[8],
+      ctx[9],
       /*hardMode*/
-      ctx[14]
+      ctx[15]
     )}\u5B66\u4E60\u5B8C\u6210` : "\u4ECA\u65E5\u5B66\u4E60\u5B8C\u6210"
   );
   let t2;
@@ -15111,13 +15222,13 @@ function create_else_block_13(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*hardMode, themeName*/
-      16640 && t2_value !== (t2_value = /*hardMode*/
-      ctx2[14] || /*themeName*/
-      ctx2[8] ? `${sessionLabel(
+      33280 && t2_value !== (t2_value = /*hardMode*/
+      ctx2[15] || /*themeName*/
+      ctx2[9] ? `${sessionLabel(
         /*themeName*/
-        ctx2[8],
+        ctx2[9],
         /*hardMode*/
-        ctx2[14]
+        ctx2[15]
       )}\u5B66\u4E60\u5B8C\u6210` : "\u4ECA\u65E5\u5B66\u4E60\u5B8C\u6210")) set_data(t2, t2_value);
     },
     d(detaching) {
@@ -15135,9 +15246,9 @@ function create_if_block_202(ctx) {
   let h2;
   let t2_value = sessionLabel(
     /*themeName*/
-    ctx[8],
+    ctx[9],
     /*hardMode*/
-    ctx[14]
+    ctx[15]
   ) + "";
   let t2;
   let t3;
@@ -15160,11 +15271,11 @@ function create_if_block_202(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*themeName, hardMode*/
-      16640 && t2_value !== (t2_value = sessionLabel(
+      33280 && t2_value !== (t2_value = sessionLabel(
         /*themeName*/
-        ctx2[8],
+        ctx2[9],
         /*hardMode*/
-        ctx2[14]
+        ctx2[15]
       ) + "")) set_data(t2, t2_value);
     },
     d(detaching) {
@@ -15181,7 +15292,7 @@ function create_if_block_192(ctx) {
   let t0;
   let t1_value = (
     /*stats*/
-    ctx[16].easy + ""
+    ctx[17].easy + ""
   );
   let t1;
   return {
@@ -15197,8 +15308,8 @@ function create_if_block_192(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*stats*/
-      65536 && t1_value !== (t1_value = /*stats*/
-      ctx2[16].easy + "")) set_data(t1, t1_value);
+      131072 && t1_value !== (t1_value = /*stats*/
+      ctx2[17].easy + "")) set_data(t1, t1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -15212,13 +15323,13 @@ function create_if_block_182(ctx) {
   let t0;
   let t1_value = (
     /*todayTotals*/
-    ctx[28].new + ""
+    ctx[29].new + ""
   );
   let t1;
   let t2;
   let t3_value = (
     /*todayTotals*/
-    ctx[28].rev + ""
+    ctx[29].rev + ""
   );
   let t3;
   return {
@@ -15240,11 +15351,11 @@ function create_if_block_182(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*todayTotals*/
-      268435456 && t1_value !== (t1_value = /*todayTotals*/
-      ctx2[28].new + "")) set_data(t1, t1_value);
+      536870912 && t1_value !== (t1_value = /*todayTotals*/
+      ctx2[29].new + "")) set_data(t1, t1_value);
       if (dirty[0] & /*todayTotals*/
-      268435456 && t3_value !== (t3_value = /*todayTotals*/
-      ctx2[28].rev + "")) set_data(t3, t3_value);
+      536870912 && t3_value !== (t3_value = /*todayTotals*/
+      ctx2[29].rev + "")) set_data(t3, t3_value);
     },
     d(detaching) {
       if (detaching) {
@@ -15258,7 +15369,7 @@ function create_if_block_172(ctx) {
   let t;
   let each_value_1 = ensure_array_like(
     /*masteredNow*/
-    ctx[17]
+    ctx[18]
   );
   let each_blocks = [];
   for (let i = 0; i < each_value_1.length; i += 1) {
@@ -15284,10 +15395,10 @@ function create_if_block_172(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*plugin, masteredNow*/
-      131073) {
+      262145) {
         each_value_1 = ensure_array_like(
           /*masteredNow*/
-          ctx2[17]
+          ctx2[18]
         );
         let i;
         for (i = 0; i < each_value_1.length; i += 1) {
@@ -15350,7 +15461,7 @@ function create_each_block_13(ctx) {
     p(new_ctx, dirty) {
       ctx = new_ctx;
       if (dirty[0] & /*masteredNow*/
-      131072 && t_value !== (t_value = /*w*/
+      262144 && t_value !== (t_value = /*w*/
       ctx[129] + "")) set_data(t, t_value);
     },
     d(detaching) {
@@ -15367,7 +15478,7 @@ function create_if_block_162(ctx) {
   let t;
   let each_value = ensure_array_like(
     /*weakNow*/
-    ctx[18]
+    ctx[19]
   );
   let each_blocks = [];
   for (let i = 0; i < each_value.length; i += 1) {
@@ -15393,10 +15504,10 @@ function create_if_block_162(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*plugin, weakNow*/
-      262145) {
+      524289) {
         each_value = ensure_array_like(
           /*weakNow*/
-          ctx2[18]
+          ctx2[19]
         );
         let i;
         for (i = 0; i < each_value.length; i += 1) {
@@ -15459,7 +15570,7 @@ function create_each_block5(ctx) {
     p(new_ctx, dirty) {
       ctx = new_ctx;
       if (dirty[0] & /*weakNow*/
-      262144 && t_value !== (t_value = /*w*/
+      524288 && t_value !== (t_value = /*w*/
       ctx[129] + "")) set_data(t, t_value);
     },
     d(detaching) {
@@ -15476,8 +15587,8 @@ function create_if_block_153(ctx) {
   let t0;
   let t1_value = (
     /*dueTotal*/
-    ctx[15] - /*stats*/
-    ctx[16].rev + ""
+    ctx[16] - /*stats*/
+    ctx[17].rev + ""
   );
   let t1;
   let t2;
@@ -15497,9 +15608,9 @@ function create_if_block_153(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*dueTotal, stats*/
-      98304 && t1_value !== (t1_value = /*dueTotal*/
-      ctx2[15] - /*stats*/
-      ctx2[16].rev + "")) set_data(t1, t1_value);
+      196608 && t1_value !== (t1_value = /*dueTotal*/
+      ctx2[16] - /*stats*/
+      ctx2[17].rev + "")) set_data(t1, t1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -15519,7 +15630,7 @@ function create_if_block_143(ctx) {
       t0 = text("\u660E\u5929\u5C06\u6709 ");
       t1 = text(
         /*tomorrowDue*/
-        ctx[27]
+        ctx[28]
       );
       t2 = text(" \u4E2A\u8BCD\u5230\u671F\u590D\u4E60");
       attr(div, "class", "el-muted");
@@ -15532,10 +15643,10 @@ function create_if_block_143(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*tomorrowDue*/
-      134217728) set_data(
+      268435456) set_data(
         t1,
         /*tomorrowDue*/
-        ctx2[27]
+        ctx2[28]
       );
     },
     d(detaching) {
@@ -15558,7 +15669,7 @@ function create_if_block_133(ctx) {
       t0 = text("\u518D\u6765\u4E00\u8F6E\uFF08");
       t1 = text(
         /*remaining*/
-        ctx[19]
+        ctx[20]
       );
       t2 = text("\uFF09");
       attr(button, "class", "mod-cta");
@@ -15580,10 +15691,10 @@ function create_if_block_133(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*remaining*/
-      524288) set_data(
+      1048576) set_data(
         t1,
         /*remaining*/
-        ctx2[19]
+        ctx2[20]
       );
     },
     d(detaching) {
@@ -15626,7 +15737,7 @@ function create_if_block_123(ctx) {
           button,
           "click",
           /*resume*/
-          ctx[73]
+          ctx[74]
         );
         mounted = true;
       }
@@ -15651,9 +15762,9 @@ function create_if_block_113(ctx) {
   let t0;
   let t1_value = Math.min(
     /*finishFresh*/
-    ctx[26],
+    ctx[27],
     /*dailyLimit*/
-    ctx[24]
+    ctx[25]
   ) + "";
   let t1;
   let t2;
@@ -15685,11 +15796,11 @@ function create_if_block_113(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*finishFresh, dailyLimit*/
-      83886080 && t1_value !== (t1_value = Math.min(
+      167772160 && t1_value !== (t1_value = Math.min(
         /*finishFresh*/
-        ctx2[26],
+        ctx2[27],
         /*dailyLimit*/
-        ctx2[24]
+        ctx2[25]
       ) + "")) set_data(t1, t1_value);
     },
     d(detaching) {
@@ -15714,7 +15825,7 @@ function create_if_block_103(ctx) {
       t0 = text("\u96BE\u8BCD\u590D\u4E60\uFF08");
       t1 = text(
         /*hardInTheme*/
-        ctx[33]
+        ctx[34]
       );
       t2 = text("\uFF09");
       attr(button, "class", "mod-warning");
@@ -15736,10 +15847,10 @@ function create_if_block_103(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[1] & /*hardInTheme*/
-      4) set_data(
+      8) set_data(
         t1,
         /*hardInTheme*/
-        ctx2[33]
+        ctx2[34]
       );
     },
     d(detaching) {
@@ -15769,12 +15880,12 @@ function create_else_block4(ctx) {
       t2 = text("\u4ECA\u65E5\u65B0\u8BCD ");
       t3 = text(
         /*todayNew*/
-        ctx[23]
+        ctx[24]
       );
       t4 = text("/");
       t5 = text(
         /*dailyLimit*/
-        ctx[24]
+        ctx[25]
       );
       t6 = text("\uFF0C\u5230\u671F\u590D\u4E60\u4E5F\u6E05\u7A7A\u4E86\u3002");
       attr(div, "class", "el-muted");
@@ -15791,16 +15902,16 @@ function create_else_block4(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*todayNew*/
-      8388608) set_data(
+      16777216) set_data(
         t3,
         /*todayNew*/
-        ctx2[23]
+        ctx2[24]
       );
       if (dirty[0] & /*dailyLimit*/
-      16777216) set_data(
+      33554432) set_data(
         t5,
         /*dailyLimit*/
-        ctx2[24]
+        ctx2[25]
       );
     },
     d(detaching) {
@@ -15827,17 +15938,17 @@ function create_if_block_83(ctx) {
       t0 = text("\u4E3B\u9898\u300C");
       t1 = text(
         /*themeName*/
-        ctx[8]
+        ctx[9]
       );
       t2 = text("\u300D\u73B0\u5728\u6CA1\u6709\u8981\u5B66\u7684\u8BCD");
       t3 = space();
       div0 = element("div");
       div0.textContent = `${/*themeIdleText*/
-      ctx[70]()}\u3002`;
+      ctx[71]()}\u3002`;
       t6 = space();
       div1 = element("div");
       div1.textContent = `${/*todayQuotaText*/
-      ctx[71]()}\u3002`;
+      ctx[72]()}\u3002`;
       attr(div0, "class", "el-muted");
       attr(div1, "class", "el-muted");
     },
@@ -15853,10 +15964,10 @@ function create_if_block_83(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*themeName*/
-      256) set_data(
+      512) set_data(
         t1,
         /*themeName*/
-        ctx2[8]
+        ctx2[9]
       );
     },
     d(detaching) {
@@ -15893,9 +16004,9 @@ function create_if_block_67(ctx) {
   let t0;
   let t1_value = Math.min(
     /*doneFresh*/
-    ctx[25],
+    ctx[26],
     /*dailyLimit*/
-    ctx[24]
+    ctx[25]
   ) + "";
   let t1;
   let t2;
@@ -15927,11 +16038,11 @@ function create_if_block_67(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*doneFresh, dailyLimit*/
-      50331648 && t1_value !== (t1_value = Math.min(
+      100663296 && t1_value !== (t1_value = Math.min(
         /*doneFresh*/
-        ctx2[25],
+        ctx2[26],
         /*dailyLimit*/
-        ctx2[24]
+        ctx2[25]
       ) + "")) set_data(t1, t1_value);
     },
     d(detaching) {
@@ -15951,7 +16062,7 @@ function create_if_block_510(ctx) {
     c() {
       button = element("button");
       button.textContent = `\u96BE\u8BCD\u590D\u4E60\uFF08${/*hardInThemeLive*/
-      ctx[69]()}\uFF09`;
+      ctx[70]()}\uFF09`;
       attr(button, "class", "mod-warning");
     },
     m(target, anchor) {
@@ -16000,27 +16111,27 @@ function create_fragment6(ctx) {
     ) return 0;
     if (
       /*loadError*/
-      ctx2[30]
+      ctx2[31]
     ) return 1;
     if (
       /*empty*/
-      ctx2[20]
+      ctx2[21]
     ) return 2;
     if (
       /*emptyTheme*/
-      ctx2[21]
+      ctx2[22]
     ) return 3;
     if (
       /*done*/
-      ctx2[22]
+      ctx2[23]
     ) return 4;
     if (
       /*finished*/
-      ctx2[7]
+      ctx2[8]
     ) return 5;
     if (
       /*cur*/
-      ctx2[10]
+      ctx2[11]
     ) return 6;
     return -1;
   }
@@ -16044,7 +16155,7 @@ function create_fragment6(ctx) {
           window_1,
           "keydown",
           /*onKey*/
-          ctx[75]
+          ctx[76]
         );
         mounted = true;
       }
@@ -16159,14 +16270,14 @@ function instance6($$self, $$props, $$invalidate) {
   let loadError = "";
   let audioMuted = plugin.muted;
   function icon(node, name) {
-    (0, import_obsidian10.setIcon)(node, name);
-    return { update: (n) => (0, import_obsidian10.setIcon)(node, n) };
+    (0, import_obsidian11.setIcon)(node, name);
+    return { update: (n) => (0, import_obsidian11.setIcon)(node, n) };
   }
   function toggleMute() {
     plugin.toggleMute();
   }
   onMount(() => {
-    const syncMute = () => $$invalidate(9, audioMuted = plugin.muted);
+    const syncMute = () => $$invalidate(10, audioMuted = plugin.muted);
     window.addEventListener("el-mute-changed", syncMute);
     return () => window.removeEventListener("el-mute-changed", syncMute);
   });
@@ -16175,19 +16286,19 @@ function instance6($$self, $$props, $$invalidate) {
   let relLoadSeq = 0;
   async function loadRelWords(doc) {
     if (!doc) {
-      $$invalidate(31, synRow = []);
-      $$invalidate(32, antRow = []);
+      $$invalidate(32, synRow = []);
+      $$invalidate(33, antRow = []);
       return;
     }
     const seq = ++relLoadSeq;
-    $$invalidate(31, synRow = []);
-    $$invalidate(32, antRow = []);
+    $$invalidate(32, synRow = []);
+    $$invalidate(33, antRow = []);
     const r = await plugin.relWords(doc, {
       online: plugin.db.settings.enrichOnLearn !== false
     });
     if (seq !== relLoadSeq) return;
-    $$invalidate(31, synRow = r.synonyms);
-    $$invalidate(32, antRow = r.antonyms);
+    $$invalidate(32, synRow = r.synonyms);
+    $$invalidate(33, antRow = r.antonyms);
   }
   const enrichTried = /* @__PURE__ */ new Set();
   function enrichAll() {
@@ -16231,7 +16342,7 @@ function instance6($$self, $$props, $$invalidate) {
     const seq = ++audioSeq;
     const ok = w ? await plugin.audio.has(w) : false;
     if (seq !== audioSeq) return;
-    $$invalidate(34, hasAudio = ok);
+    $$invalidate(35, hasAudio = ok);
   }
   onDestroy(() => {
     cancelFlip();
@@ -16240,8 +16351,8 @@ function instance6($$self, $$props, $$invalidate) {
   onDestroy(plugin.audio.onCached(() => void checkAudio(cur === null || cur === void 0 ? void 0 : cur.doc.word)));
   onMount(async () => {
     var _a, _b, _c;
-    $$invalidate(8, themeName = (_a = plugin.sessionTheme) !== null && _a !== void 0 ? _a : "");
-    $$invalidate(14, hardMode = plugin.sessionHard);
+    $$invalidate(9, themeName = (_a = plugin.sessionTheme) !== null && _a !== void 0 ? _a : "");
+    $$invalidate(15, hardMode = plugin.sessionHard);
     $$invalidate(0, plugin.sessionActive = true, plugin);
     let s;
     try {
@@ -16249,12 +16360,12 @@ function instance6($$self, $$props, $$invalidate) {
     } catch (e) {
       if (destroyed) return;
       $$invalidate(0, plugin.sessionActive = false, plugin);
-      $$invalidate(30, loadError = e instanceof Error ? e.message : String(e));
+      $$invalidate(31, loadError = e instanceof Error ? e.message : String(e));
       $$invalidate(1, loading = false);
       return;
     }
     if (destroyed) return;
-    $$invalidate(15, dueTotal = s.dueTotal);
+    $$invalidate(16, dueTotal = s.dueTotal);
     sessionPool = themeName ? plugin.words.byTheme(themeName) : plugin.activeWords();
     $$invalidate(2, cards = [
       ...s.queue.slice(0, s.dueFirst).map((doc) => reviewCard(doc, sessionPool)),
@@ -16265,13 +16376,13 @@ function instance6($$self, $$props, $$invalidate) {
     if (!cards.length) {
       $$invalidate(0, plugin.sessionActive = false, plugin);
       if (!sessionPool.length) {
-        if (themeName && !hardMode) $$invalidate(21, emptyTheme = true);
-        else $$invalidate(20, empty2 = true);
+        if (themeName && !hardMode) $$invalidate(22, emptyTheme = true);
+        else $$invalidate(21, empty2 = true);
       } else {
-        $$invalidate(22, done = true);
-        $$invalidate(23, todayNew = (_c = (_b = plugin.db.stats.days[fmtDate(Date.now())]) === null || _b === void 0 ? void 0 : _b.new) !== null && _c !== void 0 ? _c : 0);
-        $$invalidate(24, dailyLimit = plugin.db.settings.dailyNew);
-        $$invalidate(25, doneFresh = sessionPool.filter((w) => !plugin.db.progress[w.word]).length);
+        $$invalidate(23, done = true);
+        $$invalidate(24, todayNew = (_c = (_b = plugin.db.stats.days[fmtDate(Date.now())]) === null || _b === void 0 ? void 0 : _b.new) !== null && _c !== void 0 ? _c : 0);
+        $$invalidate(25, dailyLimit = plugin.db.settings.dailyNew);
+        $$invalidate(26, doneFresh = sessionPool.filter((w) => !plugin.db.progress[w.word]).length);
       }
     } else autoSpeak(cards[0]);
   });
@@ -16367,10 +16478,10 @@ function instance6($$self, $$props, $$invalidate) {
     $$invalidate(3, idx++, idx);
     $$invalidate(5, revealed = false);
     $$invalidate(6, quizPicked = -1);
-    $$invalidate(78, quizGaveUp = false);
-    $$invalidate(35, spellInput = "");
-    $$invalidate(36, spellHinted = false);
-    $$invalidate(37, spellShowQ = false);
+    $$invalidate(7, quizGaveUp = false);
+    $$invalidate(36, spellInput = "");
+    $$invalidate(37, spellHinted = false);
+    $$invalidate(38, spellShowQ = false);
     settleTail();
   }
   function insertNext(card) {
@@ -16395,14 +16506,14 @@ function instance6($$self, $$props, $$invalidate) {
     landCurrent();
   }
   function finishGrade(r) {
-    if (r.isNew) $$invalidate(16, stats.new++, stats);
-    else $$invalidate(16, stats.rev++, stats);
+    if (r.isNew) $$invalidate(17, stats.new++, stats);
+    else $$invalidate(17, stats.rev++, stats);
     if (r.masteredNow && cur) masteredNow.push(cur.doc.word);
   }
   function tooEasy() {
     if ((cur === null || cur === void 0 ? void 0 : cur.kind) !== "new") return;
     plugin.markMastered(cur.doc.word);
-    $$invalidate(16, stats.easy++, stats);
+    $$invalidate(17, stats.easy++, stats);
     masteredNow.push(cur.doc.word);
     advance();
   }
@@ -16424,7 +16535,7 @@ function instance6($$self, $$props, $$invalidate) {
   function checkPick(i) {
     if ((cur === null || cur === void 0 ? void 0 : cur.kind) !== "check" || quizAnswered) return;
     $$invalidate(6, quizPicked = i);
-    $$invalidate(12, quizCorrect = i === cur.quiz.answer);
+    $$invalidate(13, quizCorrect = i === cur.quiz.answer);
     if (quizCorrect) {
       finishGrade(plugin.recordGrade(cur.doc.word, 3));
       plugin.speakWord(cur.doc.word);
@@ -16465,7 +16576,7 @@ function instance6($$self, $$props, $$invalidate) {
     if (!c || c.kind !== "study" && c.kind !== "confirm" && c.kind !== "restudy") return;
     studiedDocs = studiedDocs.filter((d) => d.word !== c.doc.word);
     plugin.markMastered(c.doc.word);
-    $$invalidate(16, stats.easy++, stats);
+    $$invalidate(17, stats.easy++, stats);
     masteredNow.push(c.doc.word);
     advance();
   }
@@ -16475,7 +16586,7 @@ function instance6($$self, $$props, $$invalidate) {
   function confirmNo() {
     if ((cur === null || cur === void 0 ? void 0 : cur.kind) !== "confirm") return;
     plugin.recordGrade(cur.doc.word, 1);
-    $$invalidate(16, stats.rev++, stats);
+    $$invalidate(17, stats.rev++, stats);
     insertNext({ kind: "study", doc: cur.doc });
     advance();
   }
@@ -16486,12 +16597,13 @@ function instance6($$self, $$props, $$invalidate) {
   function reviewPick(i) {
     if ((cur === null || cur === void 0 ? void 0 : cur.kind) !== "review" || !cur.check || quizAnswered) return;
     $$invalidate(6, quizPicked = i);
-    $$invalidate(12, quizCorrect = i === cur.check.answer);
+    $$invalidate(13, quizCorrect = i === cur.check.answer);
     $$invalidate(5, revealed = true);
     plugin.speakWord(cur.doc.word);
   }
   function reviewUnknown() {
     if ((cur === null || cur === void 0 ? void 0 : cur.kind) !== "review" || !cur.check || quizAnswered) return;
+    $$invalidate(7, quizGaveUp = true);
     $$invalidate(5, revealed = true);
     plugin.speakWord(cur.doc.word);
   }
@@ -16503,7 +16615,7 @@ function instance6($$self, $$props, $$invalidate) {
   function reviewEasy() {
     if ((cur === null || cur === void 0 ? void 0 : cur.kind) !== "review" || !revealed) return;
     plugin.markMastered(cur.doc.word);
-    $$invalidate(16, stats.rev++, stats);
+    $$invalidate(17, stats.rev++, stats);
     masteredNow.push(cur.doc.word);
     advance();
   }
@@ -16520,10 +16632,10 @@ function instance6($$self, $$props, $$invalidate) {
     if (!spellInput.trim()) return;
     const ok = normalizeWord(spellInput) === cur.doc.word;
     $$invalidate(6, quizPicked = 0);
-    $$invalidate(12, quizCorrect = ok);
+    $$invalidate(13, quizCorrect = ok);
     const r = plugin.recordGrade(cur.doc.word, ok ? 3 : 1);
-    if (!r.isNew) $$invalidate(16, stats.rev++, stats);
-    if (ok) $$invalidate(16, stats.quizOk++, stats);
+    if (!r.isNew) $$invalidate(17, stats.rev++, stats);
+    if (ok) $$invalidate(17, stats.quizOk++, stats);
     else quizWrong(cur.doc, cur.quiz);
     if (r.masteredNow) masteredNow.push(cur.doc.word);
     if (ok) {
@@ -16533,7 +16645,7 @@ function instance6($$self, $$props, $$invalidate) {
   }
   function quizWrong(doc, fallback) {
     var _a;
-    $$invalidate(16, stats.quizBad++, stats);
+    $$invalidate(17, stats.quizBad++, stats);
     if (!weakNow.includes(doc.word)) weakNow.push(doc.word);
     autoSpeak();
     if (!retested.has(doc.word)) {
@@ -16550,11 +16662,11 @@ function instance6($$self, $$props, $$invalidate) {
     if ((cur === null || cur === void 0 ? void 0 : cur.kind) !== "quiz" || quizAnswered) return;
     if (cur.quiz.kind === "spell") return;
     $$invalidate(6, quizPicked = i);
-    $$invalidate(12, quizCorrect = i === cur.quiz.answer);
+    $$invalidate(13, quizCorrect = i === cur.quiz.answer);
     const r = plugin.recordGrade(cur.doc.word, quizCorrect ? 3 : 1);
-    if (!r.isNew) $$invalidate(16, stats.rev++, stats);
+    if (!r.isNew) $$invalidate(17, stats.rev++, stats);
     if (quizCorrect) {
-      $$invalidate(16, stats.quizOk++, stats);
+      $$invalidate(17, stats.quizOk++, stats);
       plugin.speakWord(cur.doc.word);
       armFlip();
     } else {
@@ -16567,11 +16679,11 @@ function instance6($$self, $$props, $$invalidate) {
     if (cur.quiz.kind === "spell") {
       $$invalidate(6, quizPicked = 0);
     } else {
-      $$invalidate(78, quizGaveUp = true);
+      $$invalidate(7, quizGaveUp = true);
     }
-    $$invalidate(12, quizCorrect = false);
+    $$invalidate(13, quizCorrect = false);
     const r = plugin.recordGrade(cur.doc.word, 1);
-    if (!r.isNew) $$invalidate(16, stats.rev++, stats);
+    if (!r.isNew) $$invalidate(17, stats.rev++, stats);
     quizWrong(cur.doc, cur.quiz);
     if (r.masteredNow) masteredNow.push(cur.doc.word);
   }
@@ -16636,17 +16748,17 @@ function instance6($$self, $$props, $$invalidate) {
     var _a;
     if (finished) return;
     cancelFlip();
-    $$invalidate(7, finished = true);
-    $$invalidate(13, exitedEarly = early);
+    $$invalidate(8, finished = true);
+    $$invalidate(14, exitedEarly = early);
     $$invalidate(4, browseFrom = -1);
     $$invalidate(0, plugin.sessionActive = false, plugin);
-    $$invalidate(29, sessionMinutes = Math.max(1, Math.round((Date.now() - startedAt) / 6e4)));
-    $$invalidate(28, todayTotals = (_a = plugin.db.stats.days[fmtDate(Date.now())]) !== null && _a !== void 0 ? _a : { new: 0, rev: 0 });
-    $$invalidate(33, hardInTheme = hardInThemeLive());
-    $$invalidate(26, finishFresh = freshLeftCount());
+    $$invalidate(30, sessionMinutes = Math.max(1, Math.round((Date.now() - startedAt) / 6e4)));
+    $$invalidate(29, todayTotals = (_a = plugin.db.stats.days[fmtDate(Date.now())]) !== null && _a !== void 0 ? _a : { new: 0, rev: 0 });
+    $$invalidate(34, hardInTheme = hardInThemeLive());
+    $$invalidate(27, finishFresh = freshLeftCount());
     const now2 = Date.now();
     const tmrEnd = (/* @__PURE__ */ new Date()).setHours(24, 0, 0, 0) + 864e5;
-    $$invalidate(27, tomorrowDue = plugin.activeWords().filter((w) => {
+    $$invalidate(28, tomorrowDue = plugin.activeWords().filter((w) => {
       const p = plugin.db.progress[w.word];
       return p && !isMastered(p) && p.next > now2 && p.next <= tmrEnd;
     }).length);
@@ -16655,14 +16767,14 @@ function instance6($$self, $$props, $$invalidate) {
   }
   async function updateRemaining() {
     if (hardMode) {
-      $$invalidate(19, remaining = 0);
+      $$invalidate(20, remaining = 0);
       return;
     }
     try {
       const s = await plugin.buildSession(themeName || null, false);
-      $$invalidate(19, remaining = s.queue.length);
+      $$invalidate(20, remaining = s.queue.length);
     } catch (_a) {
-      $$invalidate(19, remaining = 0);
+      $$invalidate(20, remaining = 0);
     }
   }
   function resume() {
@@ -16671,11 +16783,11 @@ function instance6($$self, $$props, $$invalidate) {
       return;
     }
     if (flipPending() && idx + 1 >= cards.length) {
-      $$invalidate(13, exitedEarly = false);
+      $$invalidate(14, exitedEarly = false);
       return;
     }
-    $$invalidate(7, finished = false);
-    $$invalidate(13, exitedEarly = false);
+    $$invalidate(8, finished = false);
+    $$invalidate(14, exitedEarly = false);
     $$invalidate(0, plugin.sessionActive = true, plugin);
     landCurrent();
   }
@@ -16684,16 +16796,16 @@ function instance6($$self, $$props, $$invalidate) {
     try {
       s = await plugin.buildSession(themeName || null, false, extraNew);
     } catch (e) {
-      new import_obsidian10.Notice(`\u52A0\u8F7D\u65B0\u4E00\u8F6E\u5931\u8D25\uFF1A${e instanceof Error ? e.message : e}`);
+      new import_obsidian11.Notice(`\u52A0\u8F7D\u65B0\u4E00\u8F6E\u5931\u8D25\uFF1A${e instanceof Error ? e.message : e}`);
       return;
     }
     if (destroyed) return;
     if (!s.queue.length) {
-      $$invalidate(19, remaining = 0);
-      $$invalidate(25, doneFresh = freshLeftCount());
+      $$invalidate(20, remaining = 0);
+      $$invalidate(26, doneFresh = freshLeftCount());
       return;
     }
-    $$invalidate(15, dueTotal = s.dueTotal);
+    $$invalidate(16, dueTotal = s.dueTotal);
     sessionPool = themeName ? plugin.words.byTheme(themeName) : plugin.activeWords();
     $$invalidate(2, cards = [
       ...s.queue.slice(0, s.dueFirst).map((doc) => reviewCard(doc, sessionPool)),
@@ -16702,26 +16814,26 @@ function instance6($$self, $$props, $$invalidate) {
     $$invalidate(3, idx = 0);
     $$invalidate(5, revealed = false);
     $$invalidate(6, quizPicked = -1);
-    $$invalidate(78, quizGaveUp = false);
-    $$invalidate(35, spellInput = "");
-    $$invalidate(36, spellHinted = false);
-    $$invalidate(37, spellShowQ = false);
+    $$invalidate(7, quizGaveUp = false);
+    $$invalidate(36, spellInput = "");
+    $$invalidate(37, spellHinted = false);
+    $$invalidate(38, spellShowQ = false);
     studiedDocs = [];
     reinforcementBuilt = false;
     retested = /* @__PURE__ */ new Set();
-    $$invalidate(16, stats = {
+    $$invalidate(17, stats = {
       rev: 0,
       new: 0,
       easy: 0,
       quizOk: 0,
       quizBad: 0
     });
-    $$invalidate(17, masteredNow = []);
-    $$invalidate(18, weakNow = []);
+    $$invalidate(18, masteredNow = []);
+    $$invalidate(19, weakNow = []);
     startedAt = Date.now();
-    $$invalidate(19, remaining = -1);
-    $$invalidate(7, finished = false);
-    $$invalidate(22, done = false);
+    $$invalidate(20, remaining = -1);
+    $$invalidate(8, finished = false);
+    $$invalidate(23, done = false);
     $$invalidate(0, plugin.sessionActive = true, plugin);
     autoSpeak(cards[idx]);
   }
@@ -16733,7 +16845,7 @@ function instance6($$self, $$props, $$invalidate) {
     if (k === "?") {
       const tip = document.querySelector(".el-learn .el-helptip");
       if (tip) showTipBubble(tip, KEYS_TIP);
-      else new import_obsidian10.Notice(KEYS_TIP, 8e3);
+      else new import_obsidian11.Notice(KEYS_TIP, 8e3);
       return;
     }
     if (k === "Escape") {
@@ -16754,7 +16866,7 @@ function instance6($$self, $$props, $$invalidate) {
       return;
     }
     if (k.toLowerCase() === "b" && cur) {
-      new MemoModal(plugin.app, plugin, cur.doc, () => ($$invalidate(10, cur), $$invalidate(7, finished), $$invalidate(1, loading), $$invalidate(2, cards), $$invalidate(3, idx))).open();
+      new MemoModal(plugin.app, plugin, cur.doc, () => ($$invalidate(11, cur), $$invalidate(8, finished), $$invalidate(1, loading), $$invalidate(2, cards), $$invalidate(3, idx))).open();
       return;
     }
     if ((cur === null || cur === void 0 ? void 0 : cur.kind) === "quiz" || (cur === null || cur === void 0 ? void 0 : cur.kind) === "check") {
@@ -16816,16 +16928,16 @@ function instance6($$self, $$props, $$invalidate) {
       studiedDocs = studiedDocs.filter((d) => d.word !== w);
       quizPool = quizPool.filter((d) => d.word !== w);
       sessionPool = sessionPool.filter((d) => d.word !== w);
-      $$invalidate(17, masteredNow = masteredNow.filter((x) => x !== w));
+      $$invalidate(18, masteredNow = masteredNow.filter((x) => x !== w));
       cancelFlip();
       $$invalidate(5, revealed = false);
       $$invalidate(6, quizPicked = -1);
-      $$invalidate(78, quizGaveUp = false);
-      $$invalidate(35, spellInput = "");
-      $$invalidate(36, spellHinted = false);
-      $$invalidate(37, spellShowQ = false);
+      $$invalidate(7, quizGaveUp = false);
+      $$invalidate(36, spellInput = "");
+      $$invalidate(37, spellHinted = false);
+      $$invalidate(38, spellShowQ = false);
       if (!finished) settleTail();
-      plugin.deleteWord(w).then(() => new import_obsidian10.Notice(`\u5DF2\u5220\u9664\u300C${w}\u300D`)).catch((e) => new import_obsidian10.Notice(`\u5220\u9664\u5931\u8D25\uFF08\u300C${w}\u300D\u53EF\u80FD\u8FD8\u5728\u8BCD\u5E93\uFF09\uFF1A${e instanceof Error ? e.message : e}`));
+      plugin.deleteWord(w).then(() => new import_obsidian11.Notice(`\u5DF2\u5220\u9664\u300C${w}\u300D`)).catch((e) => new import_obsidian11.Notice(`\u5220\u9664\u5931\u8D25\uFF08\u300C${w}\u300D\u53EF\u80FD\u8FD8\u5728\u8BCD\u5E93\uFF09\uFF1A${e instanceof Error ? e.message : e}`));
     });
   }
   function back() {
@@ -16850,56 +16962,55 @@ function instance6($$self, $$props, $$invalidate) {
   const click_handler_10 = () => grade(2);
   const click_handler_11 = () => grade(3);
   const click_handler_12 = (word) => plugin.speakWord(word);
-  const click_handler_13 = () => $$invalidate(37, spellShowQ = true);
+  const click_handler_13 = () => $$invalidate(38, spellShowQ = true);
   function input_input_handler() {
     spellInput = this.value;
-    $$invalidate(35, spellInput);
+    $$invalidate(36, spellInput);
   }
   const click_handler_14 = (word) => plugin.speakWord(word);
-  const click_handler_15 = () => $$invalidate(36, spellHinted = true);
+  const click_handler_15 = () => $$invalidate(37, spellHinted = true);
   $$self.$$set = ($$props2) => {
     if ("plugin" in $$props2) $$invalidate(0, plugin = $$props2.plugin);
   };
   $$self.$$.update = () => {
-    if ($$self.$$.dirty[0] & /*quizPicked*/
-    64 | $$self.$$.dirty[2] & /*quizGaveUp*/
-    65536) {
-      $: $$invalidate(38, quizAnswered = quizPicked >= 0 || quizGaveUp);
+    if ($$self.$$.dirty[0] & /*quizPicked, quizGaveUp*/
+    192) {
+      $: $$invalidate(39, quizAnswered = quizPicked >= 0 || quizGaveUp);
     }
     if ($$self.$$.dirty[0] & /*audioMuted*/
-    512) {
-      $: $$invalidate(44, muteTip = audioMuted ? "\u5DF2\u9759\u97F3\uFF1A\u70B9\u51FB\u5F00\u542F\u5168\u5C40\u53D1\u97F3" : "\u53D1\u97F3\u5F00\u542F\u4E2D\uFF1A\u70B9\u51FB\u5168\u5C40\u9759\u97F3");
+    1024) {
+      $: $$invalidate(45, muteTip = audioMuted ? "\u5DF2\u9759\u97F3\uFF1A\u70B9\u51FB\u5F00\u542F\u5168\u5C40\u53D1\u97F3" : "\u53D1\u97F3\u5F00\u542F\u4E2D\uFF1A\u70B9\u51FB\u5168\u5C40\u9759\u97F3");
     }
     if ($$self.$$.dirty[0] & /*cards*/
     4) {
-      $: $$invalidate(11, total = cards.length);
+      $: $$invalidate(12, total = cards.length);
     }
     if ($$self.$$.dirty[0] & /*finished, loading, cards, idx*/
-    142) {
-      $: $$invalidate(10, cur = finished || loading ? void 0 : cards[idx]);
+    270) {
+      $: $$invalidate(11, cur = finished || loading ? void 0 : cards[idx]);
     }
     if ($$self.$$.dirty[0] & /*total, idx*/
-    2056) {
-      $: $$invalidate(43, pct = total ? idx / total * 100 : 0);
+    4104) {
+      $: $$invalidate(44, pct = total ? idx / total * 100 : 0);
     }
     if ($$self.$$.dirty[0] & /*browseFrom, cur*/
-    1040) {
-      $: $$invalidate(42, roundLabel = browseFrom >= 0 ? "\u56DE\u770B" : (cur === null || cur === void 0 ? void 0 : cur.kind) === "review" ? cur.reverse ? "\u590D\u4E60 \xB7 \u770B\u4E49\u56DE\u5FC6" : "\u590D\u4E60 \xB7 \u770B\u8BCD\u56DE\u5FC6" : (cur === null || cur === void 0 ? void 0 : cur.kind) === "quiz" ? "\u5DE9\u56FA\u6D4B\u8BD5" : (cur === null || cur === void 0 ? void 0 : cur.kind) === "check" ? "\u8BA4\u8BC6\u9A8C\u8BC1" : "\u65B0\u8BCD");
+    2064) {
+      $: $$invalidate(43, roundLabel = browseFrom >= 0 ? "\u56DE\u770B" : (cur === null || cur === void 0 ? void 0 : cur.kind) === "review" ? cur.reverse ? "\u590D\u4E60 \xB7 \u770B\u4E49\u56DE\u5FC6" : "\u590D\u4E60 \xB7 \u770B\u8BCD\u56DE\u5FC6" : (cur === null || cur === void 0 ? void 0 : cur.kind) === "quiz" ? "\u5DE9\u56FA\u6D4B\u8BD5" : (cur === null || cur === void 0 ? void 0 : cur.kind) === "check" ? "\u8BA4\u8BC6\u9A8C\u8BC1" : "\u65B0\u8BCD");
     }
     if ($$self.$$.dirty[0] & /*themeName, cur*/
-    1280) {
-      $: $$invalidate(41, themeLabel = themeName ? "" : (cur === null || cur === void 0 ? void 0 : cur.doc.themes.length) ? `${cur.doc.themes.join(" / ")} \xB7 ` : "");
+    2560) {
+      $: $$invalidate(42, themeLabel = themeName ? "" : (cur === null || cur === void 0 ? void 0 : cur.doc.themes.length) ? `${cur.doc.themes.join(" / ")} \xB7 ` : "");
     }
     if ($$self.$$.dirty[0] & /*cur*/
-    1024) {
-      $: $$invalidate(40, reverseHint = (cur === null || cur === void 0 ? void 0 : cur.kind) === "review" && cur.reverse ? pickClozeHint(cur.doc) : null);
+    2048) {
+      $: $$invalidate(41, reverseHint = (cur === null || cur === void 0 ? void 0 : cur.kind) === "review" && cur.reverse ? pickClozeHint(cur.doc) : null);
     }
     if ($$self.$$.dirty[0] & /*cur, revealed*/
-    1056) {
-      $: $$invalidate(39, showFull = (cur === null || cur === void 0 ? void 0 : cur.kind) !== "restudy" || revealed);
+    2080) {
+      $: $$invalidate(40, showFull = (cur === null || cur === void 0 ? void 0 : cur.kind) !== "restudy" || revealed);
     }
     if ($$self.$$.dirty[0] & /*cur, browseFrom*/
-    1040) {
+    2064) {
       $: loadRelWords(cur && (cur.kind !== "new" || browseFrom >= 0) ? cur.doc : void 0);
     }
     if ($$self.$$.dirty[0] & /*cards*/
@@ -16907,11 +17018,11 @@ function instance6($$self, $$props, $$invalidate) {
       $: if (cards.length) enrichAll();
     }
     if ($$self.$$.dirty[0] & /*cur*/
-    1024) {
+    2048) {
       $: if (cur) prefetchAudio();
     }
     if ($$self.$$.dirty[0] & /*cur*/
-    1024) {
+    2048) {
       $: void checkAudio(cur === null || cur === void 0 ? void 0 : cur.doc.word);
     }
   };
@@ -16923,6 +17034,7 @@ function instance6($$self, $$props, $$invalidate) {
     browseFrom,
     revealed,
     quizPicked,
+    quizGaveUp,
     finished,
     themeName,
     audioMuted,
@@ -16994,7 +17106,6 @@ function instance6($$self, $$props, $$invalidate) {
     onKey,
     deleteCurrent,
     back,
-    quizGaveUp,
     click_handler,
     click_handler_1,
     click_handler_2,
@@ -17023,7 +17134,7 @@ var LearnSession = class extends SvelteComponent {
 var LearnSession_default = LearnSession;
 
 // src/ui/learn-view.ts
-var LearnView = class extends import_obsidian11.ItemView {
+var LearnView = class extends import_obsidian12.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
@@ -17057,10 +17168,10 @@ var LearnView = class extends import_obsidian11.ItemView {
 };
 
 // src/ui/theme-view.ts
-var import_obsidian13 = require("obsidian");
+var import_obsidian14 = require("obsidian");
 
 // src/components/ThemePanel.svelte
-var import_obsidian12 = require("obsidian");
+var import_obsidian13 = require("obsidian");
 function get_each_context6(ctx, list, i) {
   const child_ctx = ctx.slice();
   child_ctx[53] = list[i];
@@ -19374,8 +19485,8 @@ function instance7($$self, $$props, $$invalidate) {
   let loading = true;
   let audioMuted = plugin.muted;
   function icon(node, name) {
-    (0, import_obsidian12.setIcon)(node, name);
-    return { update: (n) => (0, import_obsidian12.setIcon)(node, n) };
+    (0, import_obsidian13.setIcon)(node, name);
+    return { update: (n) => (0, import_obsidian13.setIcon)(node, n) };
   }
   function toggleMute() {
     plugin.toggleMute();
@@ -19558,7 +19669,7 @@ function instance7($$self, $$props, $$invalidate) {
     plugin.store.touch();
     void refresh(true);
     void plugin.refreshStatusBar();
-    new import_obsidian12.Notice(`\u5DF2\u505C\u7528\u300C${name}\u300D\uFF0C\u53EF\u5728\u300C\u65B0\u5EFA\u4E3B\u9898\u300D\u5F39\u7A97\u4E2D\u91CD\u65B0\u542F\u7528`, 6e3);
+    new import_obsidian13.Notice(`\u5DF2\u505C\u7528\u300C${name}\u300D\uFF0C\u53EF\u5728\u300C\u65B0\u5EFA\u4E3B\u9898\u300D\u5F39\u7A97\u4E2D\u91CD\u65B0\u542F\u7528`, 6e3);
   }
   function openCreate() {
     new CreateThemeModal(
@@ -19590,7 +19701,7 @@ function instance7($$self, $$props, $$invalidate) {
     new AddWordModal(plugin.app, plugin, void 0, () => void refresh()).open();
   }
   function openMore(ev) {
-    const menu = new import_obsidian12.Menu();
+    const menu = new import_obsidian13.Menu();
     if (totals.hard > 0) {
       menu.addItem((mi) => mi.setTitle(`\u96BE\u8BCD\u4E13\u9879 ${totals.hard}`).setIcon("target").onClick(() => start(null, true)));
     }
@@ -19611,8 +19722,8 @@ function instance7($$self, $$props, $$invalidate) {
   const click_handler_6 = (t) => start(t.name);
   const click_handler_7 = (t) => openExpand(t.name);
   const click_handler_8 = (t) => openEdit(t.name);
-  const click_handler_9 = (c) => new import_obsidian12.Notice(cellTip(c), 4e3);
-  const keydown_handler_3 = (c, e) => e.key === "Enter" && new import_obsidian12.Notice(cellTip(c), 4e3);
+  const click_handler_9 = (c) => new import_obsidian13.Notice(cellTip(c), 4e3);
+  const keydown_handler_3 = (c, e) => e.key === "Enter" && new import_obsidian13.Notice(cellTip(c), 4e3);
   $$self.$$set = ($$props2) => {
     if ("plugin" in $$props2) $$invalidate(0, plugin = $$props2.plugin);
   };
@@ -19688,7 +19799,7 @@ var ThemePanel = class extends SvelteComponent {
 var ThemePanel_default = ThemePanel;
 
 // src/ui/theme-view.ts
-var ThemeView = class extends import_obsidian13.ItemView {
+var ThemeView = class extends import_obsidian14.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
@@ -19719,8 +19830,8 @@ var ThemeView = class extends import_obsidian13.ItemView {
 };
 
 // src/word-card-modal.ts
-var import_obsidian14 = require("obsidian");
-var WordCardModal = class _WordCardModal extends import_obsidian14.Modal {
+var import_obsidian15 = require("obsidian");
+var WordCardModal = class _WordCardModal extends import_obsidian15.Modal {
   constructor(app, plugin, wdoc) {
     super(app);
     this.plugin = plugin;
@@ -19771,7 +19882,7 @@ var WordCardModal = class _WordCardModal extends import_obsidian14.Modal {
     this.contentEl.empty();
   }
 };
-var ThemePickModal = class extends import_obsidian14.Modal {
+var ThemePickModal = class extends import_obsidian15.Modal {
   constructor(app, plugin, wdoc, onDone) {
     super(app);
     this.plugin = plugin;
@@ -20156,7 +20267,7 @@ var DEFAULT_DATA = {
   dictExhausted: { ver: STARTER_VER, words: {} },
   enriched: { ver: 3, words: {} }
 };
-var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
+var EnglishLearnPlugin = class extends import_obsidian16.Plugin {
   constructor() {
     super(...arguments);
     this.db = structuredClone(DEFAULT_DATA);
@@ -20199,7 +20310,7 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
       chip.onClickEvent(() => {
         const doc = this.words.get(word);
         if (!doc) {
-          new import_obsidian15.Notice("\u8BCD\u5E93\u7D22\u5F15\u91CC\u6CA1\u6709\u8BE5\u8BCD\uFF0C\u91CD\u8F7D\u63D2\u4EF6\u6216\u91CD\u5F00\u7B14\u8BB0\u540E\u518D\u8BD5");
+          new import_obsidian16.Notice("\u8BCD\u5E93\u7D22\u5F15\u91CC\u6CA1\u6709\u8BE5\u8BCD\uFF0C\u91CD\u8F7D\u63D2\u4EF6\u6216\u91CD\u5F00\u7B14\u8BB0\u540E\u518D\u8BD5");
           return;
         }
         new ThemePickModal(this.app, this, doc, () => this.rerenderWordBar(bar, word, fm)).open();
@@ -20208,7 +20319,7 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
     bar.createEl("button", { text: "\u{1F5D1}", cls: "el-note-del", attr: { title: "\u5220\u9664\u8BCD\u6761" } }).onClickEvent(async () => {
       if (!await confirmDeleteWord(this.app, word)) return;
       await this.deleteWord(word);
-      new import_obsidian15.Notice(`\u5DF2\u5220\u9664\u300C${word}\u300D`);
+      new import_obsidian16.Notice(`\u5DF2\u5220\u9664\u300C${word}\u300D`);
     });
   }
   /** 顶栏原地重画：主题在弹窗里改过后立即反映（阅读态 post-processor 不因 frontmatter 变化自动重跑，
@@ -20225,9 +20336,9 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
     const root = `${this.db.settings.root}/words/`;
     if (this.editBar) {
       const view2 = this.editBar.leaf.view;
-      const file2 = view2 instanceof import_obsidian15.MarkdownView ? view2.file : null;
+      const file2 = view2 instanceof import_obsidian16.MarkdownView ? view2.file : null;
       const fmWord = file2 ? (_b = (_a = this.app.metadataCache.getFileCache(file2)) == null ? void 0 : _a.frontmatter) == null ? void 0 : _b.word : void 0;
-      const still = this.editBar.el.isConnected && view2 instanceof import_obsidian15.MarkdownView && (file2 == null ? void 0 : file2.path) === this.editBar.path && view2.getMode() === "source" && fmWord === this.editBar.word;
+      const still = this.editBar.el.isConnected && view2 instanceof import_obsidian16.MarkdownView && (file2 == null ? void 0 : file2.path) === this.editBar.path && view2.getMode() === "source" && fmWord === this.editBar.word;
       if (!still) {
         this.editBar.el.remove();
         this.editBar = null;
@@ -20240,7 +20351,7 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
       }
     }
     if (this.editBar) return;
-    const view = this.app.workspace.getActiveViewOfType(import_obsidian15.MarkdownView);
+    const view = this.app.workspace.getActiveViewOfType(import_obsidian16.MarkdownView);
     const file = this.app.workspace.getActiveFile();
     if (!view || !file || !file.path.startsWith(root) || view.getMode() !== "source") return;
     const fm = (_d = this.app.metadataCache.getFileCache(file)) == null ? void 0 : _d.frontmatter;
@@ -20435,7 +20546,7 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
           const pending = await this.refreshStatusBar();
           this.remindOnce(pending);
         } catch (e) {
-          new import_obsidian15.Notice(`English Learn \u521D\u59CB\u5316\u5931\u8D25\uFF1A${e instanceof Error ? e.message : e}`);
+          new import_obsidian16.Notice(`English Learn \u521D\u59CB\u5316\u5931\u8D25\uFF1A${e instanceof Error ? e.message : e}`);
         }
       })();
     });
@@ -20515,11 +20626,11 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
   async downloadDict() {
     const meta = await this.dict.installedMeta();
     if (meta && !starterNeedsUpgrade(meta)) {
-      new import_obsidian15.Notice(`\u57FA\u7840\u8BCD\u5178 v${meta.ver} \u5DF2\u5B89\u88C5\uFF08${meta.count} \u8BCD\u6761\uFF0C${fmtDate(meta.installed)}\uFF09\uFF0C\u65E0\u9700\u91CD\u590D\u4E0B\u8F7D`);
+      new import_obsidian16.Notice(`\u57FA\u7840\u8BCD\u5178 v${meta.ver} \u5DF2\u5B89\u88C5\uFF08${meta.count} \u8BCD\u6761\uFF0C${fmtDate(meta.installed)}\uFF09\uFF0C\u65E0\u9700\u91CD\u590D\u4E0B\u8F7D`);
       return;
     }
-    new import_obsidian15.Notice(meta ? `\u68C0\u6D4B\u5230\u57FA\u7840\u8BCD\u5178 v${meta.ver}\uFF0C\u5347\u7EA7\u5230 v${STARTER_VER}\u2026` : "\u5F00\u59CB\u4E0B\u8F7D\u57FA\u7840\u8BCD\u5178\u2026");
-    await this.dict.ensureStarter().catch(() => new import_obsidian15.Notice("\u4E0B\u8F7D\u5931\u8D25\uFF1A\u7A0D\u540E\u67E5\u8BCD\u65F6\u4F1A\u81EA\u52A8\u91CD\u8BD5"));
+    new import_obsidian16.Notice(meta ? `\u68C0\u6D4B\u5230\u57FA\u7840\u8BCD\u5178 v${meta.ver}\uFF0C\u5347\u7EA7\u5230 v${STARTER_VER}\u2026` : "\u5F00\u59CB\u4E0B\u8F7D\u57FA\u7840\u8BCD\u5178\u2026");
+    await this.dict.ensureStarter().catch(() => new import_obsidian16.Notice("\u4E0B\u8F7D\u5931\u8D25\uFF1A\u7A0D\u540E\u67E5\u8BCD\u65F6\u4F1A\u81EA\u52A8\u91CD\u8BD5"));
   }
   /** 全库口径：排除仅属于停用主题的词（enabled === false；全库会话/状态栏/面板合计共用，防口径漂移） */
   activeWords() {
@@ -20559,7 +20670,7 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
     if (day && day.new + day.rev > 0) return;
     this.db.lastRemind = today;
     this.store.touch();
-    new import_obsidian15.Notice(`\u{1F4D6} English Learn\uFF1A\u4ECA\u65E5\u5F85\u5B66 ${pending} \u4E2A\u8BCD\uFF0C\u70B9\u51FB\u72B6\u6001\u680F\u5F00\u59CB`, 8e3);
+    new import_obsidian16.Notice(`\u{1F4D6} English Learn\uFF1A\u4ECA\u65E5\u5F85\u5B66 ${pending} \u4E2A\u8BCD\uFF0C\u70B9\u51FB\u72B6\u6001\u680F\u5F00\u59CB`, 8e3);
   }
   // ———————— 学习会话 ————————
   /** 组装一次学习会话：到期复习（按时限）+ 新词（按每日配额；extraNew 为超配额的加学批，供"再来一批"用）；hard=true 为难词专项 */
@@ -20658,12 +20769,12 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
     );
     try {
       const existing = this.app.vault.getAbstractFileByPath(path);
-      if (existing instanceof import_obsidian15.TFile) await this.app.vault.modify(existing, body);
+      if (existing instanceof import_obsidian16.TFile) await this.app.vault.modify(existing, body);
       else await this.app.vault.create(path, body);
       const snaps = this.app.vault.getFiles().filter((f) => f.path.startsWith(`${this.db.settings.root}/backup/progress-`)).sort((a, b) => a.name < b.name ? 1 : -1);
       for (const f of snaps.slice(14)) await this.app.vault.trash(f, false);
     } catch (e) {
-      new import_obsidian15.Notice(`\u8FDB\u5EA6\u5907\u4EFD\u5931\u8D25: ${e}`);
+      new import_obsidian16.Notice(`\u8FDB\u5EA6\u5907\u4EFD\u5931\u8D25: ${e}`);
     }
   }
   /** 用户自评「太简单」：直接标记掌握并计入当日新词 */
@@ -20702,7 +20813,7 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
   get llmCfg() {
     var _a;
     const s = this.db.settings;
-    const p = (_a = import_obsidian15.Platform.isMobile ? s.llmMobileProvider : void 0) != null ? _a : s.llmProvider;
+    const p = (_a = import_obsidian16.Platform.isMobile ? s.llmMobileProvider : void 0) != null ? _a : s.llmProvider;
     return llmConf(s.llmSaved, p);
   }
   /** 主题语境串：主题名 + 关键词（AI 例句围绕该领域写，同主题词在语境中复现）。
@@ -20767,14 +20878,14 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
       (w) => w.synonyms === void 0 && w.antonyms === void 0 && !isPhrase(w.word) && (!only || only.has(w.word.toLowerCase()))
     );
     if (!missing.length) {
-      if (!quiet) new import_obsidian15.Notice("\u6240\u6709\u8BCD\u90FD\u6293\u53D6\u8FC7\u540C/\u53CD\u4E49\u8BCD\u4E86\uFF08\u65E0\u7ED3\u679C\u7684\u8BCD\u4E0D\u518D\u91CD\u590D\u8BF7\u6C42\uFF09");
+      if (!quiet) new import_obsidian16.Notice("\u6240\u6709\u8BCD\u90FD\u6293\u53D6\u8FC7\u540C/\u53CD\u4E49\u8BCD\u4E86\uFF08\u65E0\u7ED3\u679C\u7684\u8BCD\u4E0D\u518D\u91CD\u590D\u8BF7\u6C42\uFF09");
       return;
     }
     const batch = limit && limit > 0 ? missing.slice(0, limit) : missing;
     let done = 0;
     let processed = 0;
     let netFail = 0;
-    const prog = quiet ? null : new import_obsidian15.Notice(`\u6293\u53D6\u540C/\u53CD\u4E49\u8BCD 0/${batch.length}\u2026`, 0);
+    const prog = quiet ? null : new import_obsidian16.Notice(`\u6293\u53D6\u540C/\u53CD\u4E49\u8BCD 0/${batch.length}\u2026`, 0);
     await runPool(batch, 6, async (doc) => {
       const r = await this.relWords(doc);
       if (r.synonyms.length || r.antonyms.length) done++;
@@ -20785,7 +20896,7 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
     prog == null ? void 0 : prog.hide();
     this.store.touch();
     if (!quiet)
-      new import_obsidian15.Notice(
+      new import_obsidian16.Notice(
         `\u540C/\u53CD\u4E49\u8BCD\u8865\u5168\u5B8C\u6210\uFF1A${done}/${batch.length} \u8BCD\u8865\u5230` + (netFail ? `\uFF08${netFail} \u8BCD\u7F51\u7EDC\u5931\u8D25\u672A\u8BB0\u5F55\uFF0C\u53EF\u91CD\u8DD1\u518D\u8BD5\uFF09` : done < batch.length ? `\uFF08\u5176\u4F59\u5728\u8BCD\u5178\u4E0E Datamuse \u5747\u65E0\u6536\u5F55\uFF0C\u5DF2\u8BB0\u5F55\u4E0D\u518D\u91CD\u8BD5\uFF09` : "")
       );
   }
@@ -20882,12 +20993,12 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
       (w) => (!w.translation || !w.phonetic) && !isPhrase(w.word) && !this.exhaustedWords()[w.word] && (!only || only.has(w.word.toLowerCase()))
     );
     if (!missing.length) {
-      if (!quiet) new import_obsidian15.Notice("\u6CA1\u6709\u7F3A\u5931\u91CA\u4E49\u7684\u8BCD");
+      if (!quiet) new import_obsidian16.Notice("\u6CA1\u6709\u7F3A\u5931\u91CA\u4E49\u7684\u8BCD");
       return;
     }
     let done = 0;
     let processed = 0;
-    const prog = quiet ? null : new import_obsidian15.Notice(`\u8865\u5168\u4E2D 0/${missing.length}\u2026`, 0);
+    const prog = quiet ? null : new import_obsidian16.Notice(`\u8865\u5168\u4E2D 0/${missing.length}\u2026`, 0);
     await runPool(missing, 6, async (doc) => {
       var _a, _b;
       const entry = await this.dict.lookup(doc.word);
@@ -20913,7 +21024,7 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
     prog == null ? void 0 : prog.hide();
     this.store.touch();
     if (!quiet)
-      new import_obsidian15.Notice(
+      new import_obsidian16.Notice(
         `\u8865\u5168\u5B8C\u6210\uFF1A${done}/${missing.length} \u8BCD\u8865\u5230` + (done < missing.length ? `\uFF08\u5176\u4F59\u8BCD\u8BCD\u5178\u4E0E\u5728\u7EBF\u5747\u65E0\u6536\u5F55\u6216\u7F51\u7EDC\u5931\u8D25\uFF0C\u53EF\u91CD\u8DD1\u518D\u8BD5\uFF09` : "")
       );
     void this.refreshStatusBar();
@@ -20925,7 +21036,7 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
   async backfillExamples(wantOpt, limit, onProgress, shouldStop, only, quiet, ctx) {
     const cfg = this.llmCfg;
     if (!llmReady(cfg)) {
-      if (!quiet) new import_obsidian15.Notice("\u8BF7\u5148\u5728 \u8BBE\u7F6E \u2192 English Learn \u914D\u7F6E LLM API\uFF08\u672C\u5730 Ollama \u6216\u4E91\u7AEF\u5747\u53EF\uFF09");
+      if (!quiet) new import_obsidian16.Notice("\u8BF7\u5148\u5728 \u8BBE\u7F6E \u2192 English Learn \u914D\u7F6E LLM API\uFF08\u672C\u5730 Ollama \u6216\u4E91\u7AEF\u5747\u53EF\uFF09");
       return;
     }
     const want = Math.max(1, wantOpt != null ? wantOpt : this.db.settings.exampleCount || 3);
@@ -20933,12 +21044,12 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
     let missing = this.activeWords().filter((w) => w.examples.length < want);
     if (only) missing = missing.filter((w) => only.has(w.word.toLowerCase()));
     if (!missing.length) {
-      if (!quiet) new import_obsidian15.Notice(`\u6240\u6709\u8BCD\u90FD\u5DF2\u6709\u81F3\u5C11 ${want} \u6761\u4F8B\u53E5\u4E86`);
+      if (!quiet) new import_obsidian16.Notice(`\u6240\u6709\u8BCD\u90FD\u5DF2\u6709\u81F3\u5C11 ${want} \u6761\u4F8B\u53E5\u4E86`);
       return;
     }
     missing.sort((a, b) => a.examples.length - b.examples.length);
     if (limit && limit > 0 && limit < missing.length) missing = missing.slice(0, limit);
-    if (!quiet) new import_obsidian15.Notice(`\u6B63\u5728\u4E3A ${missing.length} \u4E2A\u8BCD\u8865\u4F8B\u53E5\uFF08\u6BCF\u8BCD\u8865\u5230 ${want} \u6761\uFF09\u2026\uFF08\u8017\u65F6\u53D6\u51B3\u4E8E\u6240\u914D\u6A21\u578B\u901F\u5EA6\uFF09`);
+    if (!quiet) new import_obsidian16.Notice(`\u6B63\u5728\u4E3A ${missing.length} \u4E2A\u8BCD\u8865\u4F8B\u53E5\uFF08\u6BCF\u8BCD\u8865\u5230 ${want} \u6761\uFF09\u2026\uFF08\u8017\u65F6\u53D6\u51B3\u4E8E\u6240\u914D\u6A21\u578B\u901F\u5EA6\uFF09`);
     let done = 0;
     const generated = /* @__PURE__ */ new Set();
     const report = (extra) => onProgress == null ? void 0 : onProgress(generated.size, missing.length, extra);
@@ -20974,7 +21085,7 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
     }
     this.store.touch();
     if (!quiet)
-      new import_obsidian15.Notice(
+      new import_obsidian16.Notice(
         (shouldStop == null ? void 0 : shouldStop()) ? `\u5DF2\u505C\u6B62\uFF1A${done}/${missing.length}\uFF08\u5DF2\u751F\u6210\u7684\u7ED3\u679C\u5DF2\u4FDD\u7559\uFF09` : done === missing.length ? `\u4F8B\u53E5\u751F\u6210\u5B8C\u6210\uFF1A${done}/${missing.length}` : `\u4F8B\u53E5\u751F\u6210\u5B8C\u6210\uFF1A${done}/${missing.length}\uFF08\u5176\u4F59\u751F\u6210\u5931\u8D25\u6216\u4E3A\u7A7A\uFF0C\u7A0D\u540E\u53EF\u518D\u8DD1\u4E00\u6B21\uFF09`
       );
   }
@@ -20985,7 +21096,7 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
   async backfillSenses(limit, only, quiet, ctx) {
     const cfg = this.llmCfg;
     if (!llmReady(cfg)) {
-      if (!quiet) new import_obsidian15.Notice("\u8BF7\u5148\u5728 \u8BBE\u7F6E \u2192 English Learn \u914D\u7F6E LLM API\uFF08\u672C\u5730 Ollama \u6216\u4E91\u7AEF\u5747\u53EF\uFF09");
+      if (!quiet) new import_obsidian16.Notice("\u8BF7\u5148\u5728 \u8BBE\u7F6E \u2192 English Learn \u914D\u7F6E LLM API\uFF08\u672C\u5730 Ollama \u6216\u4E91\u7AEF\u5747\u53EF\uFF09");
       return;
     }
     await this.words.scan();
@@ -20995,12 +21106,12 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
     });
     if (only) missing = missing.filter((w) => only.has(w.word.toLowerCase()));
     if (!missing.length) {
-      if (!quiet) new import_obsidian15.Notice("\u6240\u6709\u8BCD\u90FD\u5DF2\u6709 AI \u4E49\u9879\u4E86");
+      if (!quiet) new import_obsidian16.Notice("\u6240\u6709\u8BCD\u90FD\u5DF2\u6709 AI \u4E49\u9879\u4E86");
       return;
     }
     const batch = limit && limit > 0 ? missing.slice(0, limit) : missing;
     let done = 0;
-    const prog = quiet ? null : new import_obsidian15.Notice(`\u6B63\u5728\u4E3A ${batch.length} \u4E2A\u8BCD\u751F\u6210\u4E49\u9879\u2026\uFF08\u8017\u65F6\u53D6\u51B3\u4E8E\u6240\u914D\u6A21\u578B\u901F\u5EA6\uFF09`, 0);
+    const prog = quiet ? null : new import_obsidian16.Notice(`\u6B63\u5728\u4E3A ${batch.length} \u4E2A\u8BCD\u751F\u6210\u4E49\u9879\u2026\uFF08\u8017\u65F6\u53D6\u51B3\u4E8E\u6240\u914D\u6A21\u578B\u901F\u5EA6\uFF09`, 0);
     try {
       const byTheme = /* @__PURE__ */ new Map();
       for (const d of batch) {
@@ -21029,12 +21140,12 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
       }
       this.store.touch();
       if (!quiet)
-        new import_obsidian15.Notice(
+        new import_obsidian16.Notice(
           written === batch.length ? `\u4E49\u9879\u751F\u6210\u5B8C\u6210\uFF1A${written}/${batch.length}` : `\u4E49\u9879\u751F\u6210\u5B8C\u6210\uFF1A${written}/${batch.length}\uFF08\u5176\u4F59\u751F\u6210\u5931\u8D25\u6216\u4E3A\u7A7A\uFF0C\u7A0D\u540E\u53EF\u518D\u8DD1\u4E00\u6B21\uFF09`
         );
       void this.refreshStatusBar();
     } catch (e) {
-      if (!quiet) new import_obsidian15.Notice(`\u6279\u91CF\u8865\u4E49\u9879\u5931\u8D25\uFF1A${e instanceof Error ? e.message : e}`);
+      if (!quiet) new import_obsidian16.Notice(`\u6279\u91CF\u8865\u4E49\u9879\u5931\u8D25\uFF1A${e instanceof Error ? e.message : e}`);
     } finally {
       prog == null ? void 0 : prog.hide();
     }
@@ -21045,7 +21156,7 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
   async backfillExampleTranslations(limit, only, quiet) {
     const cfg = this.llmCfg;
     if (!llmReady(cfg)) {
-      if (!quiet) new import_obsidian15.Notice("\u8BF7\u5148\u5728 \u8BBE\u7F6E \u2192 English Learn \u914D\u7F6E LLM API\uFF08\u672C\u5730 Ollama \u6216\u4E91\u7AEF\u5747\u53EF\uFF09");
+      if (!quiet) new import_obsidian16.Notice("\u8BF7\u5148\u5728 \u8BBE\u7F6E \u2192 English Learn \u914D\u7F6E LLM API\uFF08\u672C\u5730 Ollama \u6216\u4E91\u7AEF\u5747\u53EF\uFF09");
       return;
     }
     await this.words.scan();
@@ -21059,14 +21170,14 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
     if (only) targets = targets.filter((x) => only.has(x.doc.word.toLowerCase()));
     const total = targets.reduce((s, x) => s + x.missing.length, 0);
     if (!total) {
-      if (!quiet) new import_obsidian15.Notice("\u6240\u6709\u4F8B\u53E5\u90FD\u5DF2\u6709\u4E2D\u6587\u7FFB\u8BD1");
+      if (!quiet) new import_obsidian16.Notice("\u6240\u6709\u4F8B\u53E5\u90FD\u5DF2\u6709\u4E2D\u6587\u7FFB\u8BD1");
       return;
     }
     const batch = limit && limit > 0 ? targets.slice(0, limit) : targets;
     const batchTotal = batch.reduce((s, x) => s + x.missing.length, 0);
     let done = 0;
     let processed = 0;
-    const prog = quiet ? null : new import_obsidian15.Notice(`\u6B63\u5728\u4E3A ${batchTotal} \u6761\u4F8B\u53E5\u8865\u7FFB\u8BD1\u2026\uFF08\u8017\u65F6\u53D6\u51B3\u4E8E\u6240\u914D\u6A21\u578B\u901F\u5EA6\uFF09`, 0);
+    const prog = quiet ? null : new import_obsidian16.Notice(`\u6B63\u5728\u4E3A ${batchTotal} \u6761\u4F8B\u53E5\u8865\u7FFB\u8BD1\u2026\uFF08\u8017\u65F6\u53D6\u51B3\u4E8E\u6240\u914D\u6A21\u578B\u901F\u5EA6\uFF09`, 0);
     try {
       await runPool(batch, 2, async ({ doc, missing }) => {
         const zh = await llmTranslateSentences(
@@ -21083,11 +21194,11 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
       });
       this.store.touch();
       if (!quiet)
-        new import_obsidian15.Notice(
+        new import_obsidian16.Notice(
           done === batchTotal ? `\u4F8B\u53E5\u7FFB\u8BD1\u8865\u5168\uFF1A${done}/${batchTotal}` : `\u4F8B\u53E5\u7FFB\u8BD1\u8865\u5168\uFF1A${done}/${batchTotal}\uFF08\u5176\u4F59\u751F\u6210\u5931\u8D25\u6216\u4E3A\u7A7A\uFF0C\u7A0D\u540E\u53EF\u518D\u8DD1\u4E00\u6B21\uFF09`
         );
     } catch (e) {
-      if (!quiet) new import_obsidian15.Notice(`\u8865\u4F8B\u53E5\u7FFB\u8BD1\u5931\u8D25\uFF1A${e instanceof Error ? e.message : e}`);
+      if (!quiet) new import_obsidian16.Notice(`\u8865\u4F8B\u53E5\u7FFB\u8BD1\u5931\u8D25\uFF1A${e instanceof Error ? e.message : e}`);
     } finally {
       prog == null ? void 0 : prog.hide();
     }
@@ -21174,14 +21285,14 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
       link.addEventListener("click", () => this.openSettings());
       frag.append(link);
       frag.append("\u540E\u4F8B\u53E5\u4E0E\u4E49\u9879\u5C06\u81EA\u52A8\u8865\u9F50");
-      new import_obsidian15.Notice(frag, 1e4);
+      new import_obsidian16.Notice(frag, 1e4);
     }
     const quiet = (opts == null ? void 0 : opts.quiet) === true;
     const step = async (run2) => {
       try {
         await run2();
       } catch (e) {
-        if (!quiet) new import_obsidian15.Notice(`\u540E\u53F0\u8865\u5168\u51FA\u9519\uFF1A${e instanceof Error ? e.message : e}`);
+        if (!quiet) new import_obsidian16.Notice(`\u540E\u53F0\u8865\u5168\u51FA\u9519\uFF1A${e instanceof Error ? e.message : e}`);
       }
     };
     await Promise.all([
@@ -21217,19 +21328,19 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
     var _a;
     const cfg = this.llmCfg;
     if (!llmReady(cfg)) {
-      new import_obsidian15.Notice("\u8BF7\u5148\u5728 \u8BBE\u7F6E \u2192 English Learn \u914D\u7F6E LLM API\uFF08\u672C\u5730 Ollama \u6216\u4E91\u7AEF\u5747\u53EF\uFF09");
+      new import_obsidian16.Notice("\u8BF7\u5148\u5728 \u8BBE\u7F6E \u2192 English Learn \u914D\u7F6E LLM API\uFF08\u672C\u5730 Ollama \u6216\u4E91\u7AEF\u5747\u53EF\uFF09");
       return 0;
     }
     try {
       const m = await llmExamples(cfg, [doc.word], this.groupTopics(this.genTheme(doc), [doc]), count);
       const added = await this.appendNewExamples(doc, (_a = m.get(doc.word.toLowerCase())) != null ? _a : []);
       this.store.touch();
-      new import_obsidian15.Notice(
+      new import_obsidian16.Notice(
         added ? `\u5DF2\u4E3A ${doc.word} \u8865 ${added} \u6761\u4F8B\u53E5` : "\u6CA1\u6709\u65B0\u589E\u4F8B\u53E5\uFF08\u53EF\u80FD\u4E0E\u73B0\u6709\u4F8B\u53E5\u91CD\u590D\uFF09\uFF0C\u53EF\u518D\u8BD5\u4E00\u6B21"
       );
       return added;
     } catch (e) {
-      new import_obsidian15.Notice(`AI \u8865\u4F8B\u53E5\u5931\u8D25\uFF1A${e instanceof Error ? e.message : e}\uFF08\u8BF7\u68C0\u67E5 LLM \u670D\u52A1\u662F\u5426\u53EF\u7528\uFF09`);
+      new import_obsidian16.Notice(`AI \u8865\u4F8B\u53E5\u5931\u8D25\uFF1A${e instanceof Error ? e.message : e}\uFF08\u8BF7\u68C0\u67E5 LLM \u670D\u52A1\u662F\u5426\u53EF\u7528\uFF09`);
       return 0;
     }
   }
@@ -21239,32 +21350,32 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
     var _a;
     const cfg = this.llmCfg;
     if (!llmReady(cfg)) {
-      new import_obsidian15.Notice("\u8BF7\u5148\u5728 \u8BBE\u7F6E \u2192 English Learn \u914D\u7F6E LLM API\uFF08\u672C\u5730 Ollama \u6216\u4E91\u7AEF\u5747\u53EF\uFF09");
+      new import_obsidian16.Notice("\u8BF7\u5148\u5728 \u8BBE\u7F6E \u2192 English Learn \u914D\u7F6E LLM API\uFF08\u672C\u5730 Ollama \u6216\u4E91\u7AEF\u5747\u53EF\uFF09");
       return 0;
     }
     try {
       const m = await llmSenses(cfg, [doc.word], this.groupTopics(this.genTheme(doc), [doc]));
       const senses = (_a = m.get(doc.word.toLowerCase())) != null ? _a : [];
       if (!senses.length) {
-        new import_obsidian15.Notice("\u6CA1\u6709\u751F\u6210\u51FA\u4E49\u9879\uFF08\u6A21\u578B\u8FD4\u56DE\u4E3A\u7A7A\u6216\u65E0\u6CD5\u89E3\u6790\uFF09\uFF0C\u53EF\u518D\u8BD5\u4E00\u6B21");
+        new import_obsidian16.Notice("\u6CA1\u6709\u751F\u6210\u51FA\u4E49\u9879\uFF08\u6A21\u578B\u8FD4\u56DE\u4E3A\u7A7A\u6216\u65E0\u6CD5\u89E3\u6790\uFF09\uFF0C\u53EF\u518D\u8BD5\u4E00\u6B21");
         return 0;
       }
       const before = sensesOf(doc).join("\uFF1B");
       await this.words.setSenses(doc, senses);
       this.store.touch();
-      new import_obsidian15.Notice(
+      new import_obsidian16.Notice(
         senses.join("\uFF1B") === before ? `${doc.word} \u7684\u4E49\u9879\u4E0E\u73B0\u6709\u5C55\u793A\u4E00\u81F4\uFF0C\u8BCD\u5361\u65E0\u53D8\u5316` : `\u5DF2\u4E3A ${doc.word} \u62C6\u51FA ${senses.length} \u4E2A\u4E49\u9879`
       );
       return senses.length;
     } catch (e) {
-      new import_obsidian15.Notice(`AI \u8865\u4E49\u9879\u5931\u8D25\uFF1A${e instanceof Error ? e.message : e}\uFF08\u8BF7\u68C0\u67E5 LLM \u670D\u52A1\u662F\u5426\u53EF\u7528\uFF09`);
+      new import_obsidian16.Notice(`AI \u8865\u4E49\u9879\u5931\u8D25\uFF1A${e instanceof Error ? e.message : e}\uFF08\u8BF7\u68C0\u67E5 LLM \u670D\u52A1\u662F\u5426\u53EF\u7528\uFF09`);
       return 0;
     }
   }
   /** 切换全局静音（命令/快捷键入口）：与主页 🔇 按钮同一开关；广播事件让已挂载组件同步按钮态 */
   toggleMute() {
     this.muted = !this.muted;
-    new import_obsidian15.Notice(this.muted ? "\u5DF2\u5168\u5C40\u9759\u97F3" : "\u53D1\u97F3\u5DF2\u5F00\u542F");
+    new import_obsidian16.Notice(this.muted ? "\u5DF2\u5168\u5C40\u9759\u97F3" : "\u53D1\u97F3\u5DF2\u5F00\u542F");
     window.dispatchEvent(new CustomEvent("el-mute-changed"));
   }
   /** 词级发音统一入口：全局静音直接短路；标准发音缓存优先，未命中先等预下载落地（通常
@@ -21288,7 +21399,7 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
     if (this.db.settings.muteHintShown) return;
     this.db.settings.muteHintShown = true;
     this.store.touch();
-    new import_obsidian15.Notice("\u5F53\u524D\u5904\u4E8E\u5168\u5C40\u9759\u97F3\uFF0C\u70B9\u4E3B\u9875 \u{1F507} \u6309\u94AE\u6216\u547D\u4EE4\u300C\u5207\u6362\u5168\u5C40\u9759\u97F3\u300D\u53EF\u5F00\u542F\u53D1\u97F3", 8e3);
+    new import_obsidian16.Notice("\u5F53\u524D\u5904\u4E8E\u5168\u5C40\u9759\u97F3\uFF0C\u70B9\u4E3B\u9875 \u{1F507} \u6309\u94AE\u6216\u547D\u4EE4\u300C\u5207\u6362\u5168\u5C40\u9759\u97F3\u300D\u53EF\u5F00\u542F\u53D1\u97F3", 8e3);
   }
   /** 例句朗读统一入口：与 speakWord 同一静音策略（静音短路 + 首次提示），默认走例句语速 */
   speakSentence(text2, rate) {
@@ -21366,7 +21477,7 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
           restoredDays ? `${restoredDays} \u5929\u5B66\u4E60\u8BB0\u5F55` : "",
           restoredIgnored ? `${restoredIgnored} \u4E2A\u5FFD\u7565\u8BCD` : ""
         ].filter(Boolean);
-        new import_obsidian15.Notice(
+        new import_obsidian16.Notice(
           parts.length ? `\u5DF2\u6062\u590D ${parts.join("\u3001")}\uFF08\u73B0\u6709\u6570\u636E\u672A\u6539\u52A8\uFF09` : "\u6CA1\u6709\u53EF\u6062\u590D\u7684\u5185\u5BB9\uFF1A\u5F53\u524D\u6570\u636E\u5DF2\u662F\u5FEB\u7167\u7684\u8D85\u96C6"
         );
         return;
@@ -21374,7 +21485,7 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
         continue;
       }
     }
-    new import_obsidian15.Notice("\u6CA1\u6709\u53EF\u7528\u7684\u5907\u4EFD\u5FEB\u7167\uFF08\u9700\u5148\u5F00\u542F\u81EA\u52A8\u5907\u4EFD\u5E76\u5B8C\u6210\u8FC7\u5B66\u4E60\uFF09");
+    new import_obsidian16.Notice("\u6CA1\u6709\u53EF\u7528\u7684\u5907\u4EFD\u5FEB\u7167\uFF08\u9700\u5148\u5F00\u542F\u81EA\u52A8\u5907\u4EFD\u5E76\u5B8C\u6210\u8FC7\u5B66\u4E60\uFF09");
   }
   /** 删除主题：词文件保留，仅解除 frontmatter 关联（含被忽略的词） */
   async deleteTheme(name) {
@@ -21417,7 +21528,7 @@ var EnglishLearnPlugin = class extends import_obsidian15.Plugin {
     return null;
   }
 };
-var EnglishLearnSettingTab = class extends import_obsidian15.PluginSettingTab {
+var EnglishLearnSettingTab = class extends import_obsidian16.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
@@ -21427,7 +21538,7 @@ var EnglishLearnSettingTab = class extends import_obsidian15.PluginSettingTab {
     containerEl.empty();
     const s = this.plugin.db.settings;
     containerEl.createEl("div", { text: `English Learn v${this.plugin.manifest.version}`, cls: "el-muted" });
-    new import_obsidian15.Setting(containerEl).setName("\u8BCD\u5E93\u6839\u76EE\u5F55").setDesc("\u8BCD\u7B14\u8BB0\u5B58\u653E\u7684 vault \u76EE\u5F55").addText(
+    new import_obsidian16.Setting(containerEl).setName("\u8BCD\u5E93\u6839\u76EE\u5F55").setDesc("\u8BCD\u7B14\u8BB0\u5B58\u653E\u7684 vault \u76EE\u5F55").addText(
       (t) => t.setValue(s.root).onChange(async (v) => {
         s.root = v.trim() || "EnglishLearn";
         this.plugin.store.touch();
@@ -21435,7 +21546,7 @@ var EnglishLearnSettingTab = class extends import_obsidian15.PluginSettingTab {
       })
     );
     addHelpTip(
-      new import_obsidian15.Setting(containerEl).setName("\u6BCF\u65E5\u65B0\u8BCD\u6570").addText((t) => {
+      new import_obsidian16.Setting(containerEl).setName("\u6BCF\u65E5\u65B0\u8BCD\u6570").addText((t) => {
         t.inputEl.type = "number";
         t.setValue(String(s.dailyNew)).onChange((v) => {
           s.dailyNew = Math.max(0, parseInt(v) || 0);
@@ -21445,7 +21556,7 @@ var EnglishLearnSettingTab = class extends import_obsidian15.PluginSettingTab {
       "\u6BCF\u5929\u9996\u6B21\u5B66\u4E60\u65F6\u6536\u5F55\u961F\u5217\u9876\u90E8\u7684\u65B0\u8BCD\u4E0A\u9650\uFF08\u5B8C\u6210\u9875\u300C\u518D\u6765\u4E00\u6279\u300D\u53EF\u8D85\u914D\u989D\u52A0\u5B66\uFF09"
     );
     addHelpTip(
-      new import_obsidian15.Setting(containerEl).setName("\u6BCF\u65E5\u590D\u4E60\u4E0A\u9650").addText((t) => {
+      new import_obsidian16.Setting(containerEl).setName("\u6BCF\u65E5\u590D\u4E60\u4E0A\u9650").addText((t) => {
         t.inputEl.type = "number";
         t.setValue(String(s.dailyReviewMax)).onChange((v) => {
           s.dailyReviewMax = Math.max(0, parseInt(v) || 0);
@@ -21455,7 +21566,7 @@ var EnglishLearnSettingTab = class extends import_obsidian15.PluginSettingTab {
       "\u6BCF\u5929\u5230\u671F\u7684\u590D\u4E60\u8BCD\u6700\u591A\u6536\u8FDB\u4F1A\u8BDD\u591A\u5C11\u4E2A\uFF1B\u79EF\u538B\u591A\u65F6\u9632\u6B62\u4E00\u6B21\u5B66\u4E0D\u5B8C"
     );
     addHelpTip(
-      new import_obsidian15.Setting(containerEl).setName("\u53CC\u5411\u590D\u4E60").addToggle(
+      new import_obsidian16.Setting(containerEl).setName("\u53CC\u5411\u590D\u4E60").addToggle(
         (t) => t.setValue(s.reviewReverse !== false).onChange((v) => {
           s.reviewReverse = v;
           this.plugin.store.touch();
@@ -21464,7 +21575,7 @@ var EnglishLearnSettingTab = class extends import_obsidian15.PluginSettingTab {
       "\u590D\u4E60\u5361\u4E00\u534A\u6982\u7387\u770B\u91CA\u4E49\u56DE\u5FC6\u5355\u8BCD\uFF08\u4EA7\u51FA\u5F0F\u56DE\u5FC6\uFF0C\u8BB0\u5F97\u66F4\u7262\uFF09\uFF1B\u5173\u95ED\u540E\u53EA\u770B\u8BCD\u56DE\u5FC6\u91CA\u4E49"
     );
     addHelpTip(
-      new import_obsidian15.Setting(containerEl).setName("\u8BA4\u8BC6\u9A8C\u8BC1").addToggle(
+      new import_obsidian16.Setting(containerEl).setName("\u8BA4\u8BC6\u9A8C\u8BC1").addToggle(
         (t) => t.setValue(s.knowCheck !== false).onChange((v) => {
           s.knowCheck = v;
           this.plugin.store.touch();
@@ -21473,7 +21584,7 @@ var EnglishLearnSettingTab = class extends import_obsidian15.PluginSettingTab {
       "\u65B0\u8BCD\u70B9\u300C\u8BA4\u8BC6\u300D\u4E0E\u590D\u4E60\u5361\uFF08\u770B\u8BCD\u9009\u4E49/\u770B\u4E49\u9009\u8BCD\uFF09\u5148\u51FA\u56DB\u9009\u4E00\u5FEB\u6D4B\u9A8C\u8BC1\uFF0C\u7B54\u5BF9\u624D\u7B97\u8BA4\u8BC6\uFF08\u9632\u81EA\u8BC4\u504F\u9AD8\uFF09\uFF1B\u5173\u95ED\u540E\u56DE\u5230\u76F4\u63A5\u63ED\u6653\u81EA\u8BC4"
     );
     addHelpTip(
-      new import_obsidian15.Setting(containerEl).setName("\u300C\u6A21\u7CCA\u300D\u95F4\u9694\u51CF\u534A").addToggle(
+      new import_obsidian16.Setting(containerEl).setName("\u300C\u6A21\u7CCA\u300D\u95F4\u9694\u51CF\u534A").addToggle(
         (t) => t.setValue(s.fuzzyHalve !== false).onChange((v) => {
           s.fuzzyHalve = v;
           this.plugin.store.touch();
@@ -21482,7 +21593,7 @@ var EnglishLearnSettingTab = class extends import_obsidian15.PluginSettingTab {
       "\u8BC4\u300C\u6A21\u7CCA\u300D\u65F6\u672C\u7EA7\u91CD\u590D\u5E76\u5728\u534A\u7A0B\u91CD\u89C1\uFF1B\u5173\u95ED\u540E\u6309\u5B8C\u6574\u95F4\u9694\u91CD\u89C1"
     );
     addHelpTip(
-      new import_obsidian15.Setting(containerEl).setName("\u62FC\u5199\u9898\u6982\u7387").addSlider(
+      new import_obsidian16.Setting(containerEl).setName("\u62FC\u5199\u9898\u6982\u7387").addSlider(
         (sl) => {
           var _a;
           return sl.setLimits(0, 1, 0.05).setValue((_a = s.spellChance) != null ? _a : 0.3).setDynamicTooltip().onChange((v) => {
@@ -21494,7 +21605,7 @@ var EnglishLearnSettingTab = class extends import_obsidian15.PluginSettingTab {
       "\u5DE9\u56FA\u6D4B\u8BD5\u51FA\u300C\u770B\u4E49\u62FC\u8BCD\u300D\u9898\u7684\u6982\u7387\uFF1B\u62FC\u8BCD\u662F\u4EA7\u51FA\u5F0F\u56DE\u5FC6\uFF0C\u8BB0\u5F97\u6700\u7262\u30020 = \u5173\u95ED\u62FC\u5199\u9898"
     );
     addHelpTip(
-      new import_obsidian15.Setting(containerEl).setName("\u542C\u5199\u5360\u6BD4").addSlider(
+      new import_obsidian16.Setting(containerEl).setName("\u542C\u5199\u5360\u6BD4").addSlider(
         (sl) => {
           var _a;
           return sl.setLimits(0, 1, 0.05).setValue((_a = s.audioChance) != null ? _a : 0.4).setDynamicTooltip().onChange((v) => {
@@ -21505,14 +21616,14 @@ var EnglishLearnSettingTab = class extends import_obsidian15.PluginSettingTab {
       ),
       "\u62FC\u5199\u9898\u91CC\u53EA\u64AD\u53D1\u97F3\u4E0D\u663E\u91CA\u4E49\u7684\u542C\u5199\u53D8\u4F53\u5360\u6BD4\uFF1B\u542C\u529B+\u62FC\u5199\u53CC\u91CD\u4EA7\u51FA\u30020 = \u5168\u90E8\u770B\u4E49\u62FC\u5199"
     );
-    new import_obsidian15.Setting(containerEl).setName("TTS \u8BED\u901F").addSlider(
+    new import_obsidian16.Setting(containerEl).setName("TTS \u8BED\u901F").addSlider(
       (sl) => sl.setLimits(0.5, 1.5, 0.05).setValue(s.ttsRate).setDynamicTooltip().onChange((v) => {
         s.ttsRate = v;
         this.plugin.store.touch();
       })
     );
     addHelpTip(
-      new import_obsidian15.Setting(containerEl).setName("\u4F8B\u53E5\u8BED\u901F").addSlider(
+      new import_obsidian16.Setting(containerEl).setName("\u4F8B\u53E5\u8BED\u901F").addSlider(
         (sl) => {
           var _a;
           return sl.setLimits(0.5, 1.5, 0.05).setValue((_a = s.ttsSentenceRate) != null ? _a : s.ttsRate).setDynamicTooltip().onChange((v) => {
@@ -21524,7 +21635,7 @@ var EnglishLearnSettingTab = class extends import_obsidian15.PluginSettingTab {
       "\u8BFB\u4F8B\u53E5\u65F6\u7528\u5355\u72EC\u7684\u8BED\u901F\uFF0C\u6BD4\u5355\u8BCD\u6162\u4E00\u70B9\u66F4\u6613\u542C\u6E05"
     );
     const ttsVoices = "speechSynthesis" in window ? window.speechSynthesis.getVoices().filter((v) => /^en/i.test(v.lang)) : [];
-    const ttsVoiceSetting = new import_obsidian15.Setting(containerEl).setName("TTS \u58F0\u97F3").addDropdown((d) => {
+    const ttsVoiceSetting = new import_obsidian16.Setting(containerEl).setName("TTS \u58F0\u97F3").addDropdown((d) => {
       var _a;
       d.addOption("", "\u81EA\u52A8\uFF08\u63A8\u8350\uFF09");
       for (const v of ttsVoices) d.addOption(v.name, `${v.name}\uFF08${v.lang}\uFF09`);
@@ -21548,7 +21659,7 @@ var EnglishLearnSettingTab = class extends import_obsidian15.PluginSettingTab {
     else ttsVoiceSetting.setDesc("\u58F0\u97F3\u5217\u8868\u5C1A\u672A\u52A0\u8F7D\u5B8C\u6210\uFF0C\u91CD\u65B0\u6253\u5F00\u8BBE\u7F6E\u9875\u5373\u53EF\u9009\u62E9");
     let upgradeBtn;
     addHelpTip(
-      new import_obsidian15.Setting(containerEl).setName("\u57FA\u7840\u8BCD\u5178").addButton((b) => {
+      new import_obsidian16.Setting(containerEl).setName("\u57FA\u7840\u8BCD\u5178").addButton((b) => {
         b.setButtonText("\u7ACB\u5373\u4E0B\u8F7D\u8BCD\u5178\u5206\u7247").onClick(async () => {
           await this.plugin.downloadDict();
           if (dictStatusEl.isConnected) void this.renderDictStatus(dictStatusEl, b);
@@ -21561,7 +21672,7 @@ var EnglishLearnSettingTab = class extends import_obsidian15.PluginSettingTab {
     const dictStatusEl = containerEl.createDiv({ cls: "el-muted el-dict-status" });
     void this.renderDictStatus(dictStatusEl, upgradeBtn);
     addHelpTip(
-      new import_obsidian15.Setting(containerEl).setName("\u81EA\u52A8\u5907\u4EFD\u5B66\u4E60\u6570\u636E").addToggle(
+      new import_obsidian16.Setting(containerEl).setName("\u81EA\u52A8\u5907\u4EFD\u5B66\u4E60\u6570\u636E").addToggle(
         (t) => t.setValue(s.autoBackup).onChange((v) => {
           s.autoBackup = v;
           this.plugin.store.touch();
@@ -21570,7 +21681,7 @@ var EnglishLearnSettingTab = class extends import_obsidian15.PluginSettingTab {
       "\u6BCF\u6B21\u5B66\u4E60\u7ED3\u675F\u628A\u8FDB\u5EA6/\u4E3B\u9898/\u6253\u5361\u8BB0\u5F55\u5FEB\u7167\u5199\u5165 \u8BCD\u5E93\u6839\u76EE\u5F55/backup/\uFF08\u6700\u8FD1 14 \u4EFD\uFF1B\u6570\u636E\u4E22\u5931\u53EF\u7528\u547D\u4EE4\u6062\u590D\uFF09"
     );
     addHelpTip(
-      new import_obsidian15.Setting(containerEl).setName("\u5B66\u4E60\u65F6\u6309\u9700\u8865\u5168").addToggle(
+      new import_obsidian16.Setting(containerEl).setName("\u5B66\u4E60\u65F6\u6309\u9700\u8865\u5168").addToggle(
         (t) => t.setValue(s.enrichOnLearn !== false).onChange((v) => {
           s.enrichOnLearn = v;
           this.plugin.store.touch();
@@ -21579,7 +21690,7 @@ var EnglishLearnSettingTab = class extends import_obsidian15.PluginSettingTab {
       "\u5B66\u5F53\u524D\u8BCD\u65F6\u540E\u53F0\u5408\u6279\u8865\u5168\u5B83\u548C\u540E\u9762\u51E0\u4E2A\u8BCD\uFF08\u514D\u8D39\u6E90\u8865\u5728\u7EBF\u97F3\u6807/\u540C\u53CD\u4E49\u8BCD\uFF0C\u914D\u7F6E AI \u540E\u4F8B\u53E5/\u4E49\u9879\u4E5F\u4E00\u5E76\u8865\uFF0C\u7FFB\u8FC7\u53BB\u65F6\u6570\u636E\u5DF2\u5C31\u7EEA\uFF09\uFF0C\u5E76\u9884\u4E0B\u8F7D\u540E\u7EED\u8BCD\u7684\u771F\u4EBA\u8BFB\u97F3\uFF1B\u5173\u95ED\u540E\u8BCD\u5178\u79BB\u7EBF\u6570\u636E\u7167\u5E38\u663E\u793A\uFF0C\u5728\u7EBF\u4E0E AI \u5747\u4E0D\u81EA\u52A8\u8BF7\u6C42\uFF0C\u300C\u8865\u5168\u300D\u547D\u4EE4\u4E0D\u53D7\u5F71\u54CD"
     );
     addHelpTip(
-      new import_obsidian15.Setting(containerEl).setName("\u65B0\u8BCD\u6309\u8BCD\u9891\u4F18\u5148").addToggle(
+      new import_obsidian16.Setting(containerEl).setName("\u65B0\u8BCD\u6309\u8BCD\u9891\u4F18\u5148").addToggle(
         (t) => t.setValue(s.freshByFreq !== false).onChange((v) => {
           s.freshByFreq = v;
           this.plugin.store.touch();
@@ -21587,9 +21698,9 @@ var EnglishLearnSettingTab = class extends import_obsidian15.PluginSettingTab {
       ),
       "\u65B0\u8BCD\u6309 BNC \u8BED\u6599\u8BCD\u9891\u5347\u5E8F\u5B66\u4E60\uFF08\u9AD8\u9891\u5E38\u7528\u8BCD\u5148\u5B66\uFF0C\u5355\u4F4D\u5B66\u4E60\u91CF\u7684\u5B9E\u9645\u6536\u76CA\u6700\u5927\uFF09\uFF1B\u5173\u95ED = \u6309\u6536\u5F55\u65F6\u95F4\u964D\u5E8F\uFF08\u6700\u8FD1\u6536\u7684\u5148\u5B66\uFF09\u3002\u8BCD\u9891\u6765\u81EA\u57FA\u7840\u8BCD\u5178\uFF0C\u672A\u5B89\u88C5/\u8BCD\u5178\u65E0\u6570\u636E\u7684\u8BCD\u6392\u5728\u5176\u540E"
     );
-    new import_obsidian15.Setting(containerEl).setName("AI \u6269\u8BCD\uFF08LLM\uFF09").setHeading();
+    new import_obsidian16.Setting(containerEl).setName("AI \u6269\u8BCD\uFF08LLM\uFF09").setHeading();
     addHelpTip(
-      new import_obsidian15.Setting(containerEl).setName("\u6BCF\u8BCD\u4F8B\u53E5\u6570").addSlider(
+      new import_obsidian16.Setting(containerEl).setName("\u6BCF\u8BCD\u4F8B\u53E5\u6570").addSlider(
         (sl) => sl.setLimits(1, 5, 1).setValue(s.exampleCount).setDynamicTooltip().onChange((v) => {
           s.exampleCount = v;
           this.plugin.store.touch();
@@ -21597,7 +21708,7 @@ var EnglishLearnSettingTab = class extends import_obsidian15.PluginSettingTab {
       ),
       "AI \u751F\u6210\u4F8B\u53E5\u65F6\u6BCF\u4E2A\u5355\u8BCD\u5199\u7684\u53E5\u5B50\u6570\uFF08\u8BED\u5883\u5404\u5F02\uFF1B\u8BCD\u5361\u9ED8\u8BA4\u5C55\u793A 3 \u6761\u3001\u53EF\u5C55\u5F00\u5168\u90E8\uFF0C\u590D\u4E60\u6316\u7A7A\u9898\u968F\u673A\u9009\u7528\uFF09"
     );
-    const mobile = import_obsidian15.Platform.isMobile;
+    const mobile = import_obsidian16.Platform.isMobile;
     const activeProvider = () => {
       var _a;
       const s2 = this.plugin.db.settings;
@@ -21633,7 +21744,7 @@ var EnglishLearnSettingTab = class extends import_obsidian15.PluginSettingTab {
       syncKeyGuide();
     };
     addHelpTip(
-      new import_obsidian15.Setting(containerEl).setName("AI \u6E90").addDropdown(
+      new import_obsidian16.Setting(containerEl).setName("AI \u6E90").addDropdown(
         (d) => d.addOptions({
           ollama: "Ollama\uFF08\u672C\u5730\uFF09",
           deepseek: "DeepSeek",
@@ -21646,7 +21757,7 @@ var EnglishLearnSettingTab = class extends import_obsidian15.PluginSettingTab {
       ),
       mobile ? "\u624B\u673A\u542F\u7528\u54EA\u4E2A AI \u6E90\uFF08\u672A\u6539\u8FC7\u5219\u8DDF\u968F\u684C\u9762\u7AEF\uFF1B\u914D\u7F6E\u6C60\u4E24\u7AEF\u5171\u7528\uFF0C\u540C\u4E00\u6E90\u6539\u4E00\u5904\u4E24\u7AEF\u751F\u6548\uFF09\u3002\u672C\u5730 Ollama \u624B\u673A\u8FDE\u4E0D\u4E0A\uFF0C\u5EFA\u8BAE\u9009\u7845\u57FA\u6D41\u52A8\u7B49\u4E91\u7AEF API\uFF08\u514D\u8D39\u989D\u5EA6\uFF0C\u65C1\u6709 \u{1F511} \u5F15\u5BFC\u6CE8\u518C\uFF09" : "\u684C\u9762\u7AEF\u542F\u7528\u54EA\u4E2A AI \u6E90\uFF08\u624B\u673A\u9ED8\u8BA4\u8DDF\u968F\u6B64\u5904\uFF0C\u53EF\u5728\u624B\u673A\u4E0A\u53E6\u9009\uFF1B\u914D\u7F6E\u6C60\u4E24\u7AEF\u5171\u7528\uFF0C\u540C\u4E00\u6E90\u6539\u4E00\u5904\u4E24\u7AEF\u751F\u6548\uFF09\u3002Ollama \u4E3A\u672C\u5730\u6A21\u578B\uFF08\u9700\u5148 ollama pull qwen2.5:3b\uFF09\uFF1B\u7845\u57FA\u6D41\u52A8/DeepSeek \u9009\u540E\u70B9 Key \u680F \u{1F511} \u53EF\u5F15\u5BFC\u514D\u8D39\u6CE8\u518C"
     );
-    new import_obsidian15.Setting(containerEl).setName("API \u5730\u5740").addText((t) => {
+    new import_obsidian16.Setting(containerEl).setName("API \u5730\u5740").addText((t) => {
       urlText = t;
       t.setValue(conf().baseUrl).onChange((v) => {
         writeConf({ baseUrl: v.trim() });
@@ -21654,7 +21765,7 @@ var EnglishLearnSettingTab = class extends import_obsidian15.PluginSettingTab {
       t.inputEl.setAttribute("title", "\u9884\u8BBE\u6E90\u5B98\u65B9\u5730\u5740\u56FA\u5B9A\uFF0C\u65E0\u9700\u4FEE\u6539");
       syncUrlLock();
     });
-    new import_obsidian15.Setting(containerEl).setName("API Key\uFF08\u672C\u5730\u6A21\u578B\u7559\u7A7A\u5373\u53EF\uFF09").addText((t) => {
+    new import_obsidian16.Setting(containerEl).setName("API Key\uFF08\u672C\u5730\u6A21\u578B\u7559\u7A7A\u5373\u53EF\uFF09").addText((t) => {
       keyText = t;
       t.inputEl.type = "password";
       t.setValue(conf().apiKey).onChange((v) => {
@@ -21669,7 +21780,7 @@ var EnglishLearnSettingTab = class extends import_obsidian15.PluginSettingTab {
           new KeyGuideModal(this.app, p, (key) => {
             writeConf({ apiKey: key });
             keyText == null ? void 0 : keyText.setValue(key);
-            new import_obsidian15.Notice("API Key \u5DF2\u4FDD\u5B58\uFF0C\u53EF\u70B9\u4E0B\u65B9\u300C\u6D4B\u8BD5\u8FDE\u63A5\u300D\u9A8C\u8BC1");
+            new import_obsidian16.Notice("API Key \u5DF2\u4FDD\u5B58\uFF0C\u53EF\u70B9\u4E0B\u65B9\u300C\u6D4B\u8BD5\u8FDE\u63A5\u300D\u9A8C\u8BC1");
           }).open();
         });
       } catch (e) {
@@ -21677,26 +21788,26 @@ var EnglishLearnSettingTab = class extends import_obsidian15.PluginSettingTab {
       }
       syncKeyGuide();
     });
-    new import_obsidian15.Setting(containerEl).setName("\u6A21\u578B").addText((t) => {
+    new import_obsidian16.Setting(containerEl).setName("\u6A21\u578B").addText((t) => {
       modelText = t;
       t.setValue(conf().model).onChange((v) => {
         writeConf({ model: v.trim() });
       });
     });
-    new import_obsidian15.Setting(containerEl).setName("\u6D4B\u8BD5\u8FDE\u63A5").setDesc("\u5411\u5F53\u524D\u914D\u7F6E\u53D1\u9001\u4E00\u6761\u6D4B\u8BD5\u6D88\u606F").addButton(
+    new import_obsidian16.Setting(containerEl).setName("\u6D4B\u8BD5\u8FDE\u63A5").setDesc("\u5411\u5F53\u524D\u914D\u7F6E\u53D1\u9001\u4E00\u6761\u6D4B\u8BD5\u6D88\u606F").addButton(
       (b) => b.setButtonText("\u6D4B\u8BD5").setCta().onClick(async () => {
         if (!llmReady(this.plugin.llmCfg)) {
-          new import_obsidian15.Notice("\u8BF7\u5148\u586B\u5199 API \u5730\u5740\u548C\u6A21\u578B\uFF08\u4E91\u7AEF API \u53E6\u9700 Key\uFF0C\u672C\u5730 Ollama \u4E0D\u7528\uFF09");
+          new import_obsidian16.Notice("\u8BF7\u5148\u586B\u5199 API \u5730\u5740\u548C\u6A21\u578B\uFF08\u4E91\u7AEF API \u53E6\u9700 Key\uFF0C\u672C\u5730 Ollama \u4E0D\u7528\uFF09");
           return;
         }
         b.setDisabled(true).setButtonText("\u6D4B\u8BD5\u4E2D\u2026");
         try {
           await llmTest(this.plugin.llmCfg);
-          new import_obsidian15.Notice("\u8FDE\u63A5\u6210\u529F \u2713");
+          new import_obsidian16.Notice("\u8FDE\u63A5\u6210\u529F \u2713");
           this.plugin.db.settings.aiGuideDone = true;
           this.plugin.store.touch();
         } catch (e) {
-          new import_obsidian15.Notice(`\u8FDE\u63A5\u5931\u8D25\uFF1A${e instanceof Error ? e.message : String(e)}`);
+          new import_obsidian16.Notice(`\u8FDE\u63A5\u5931\u8D25\uFF1A${e instanceof Error ? e.message : String(e)}`);
         } finally {
           b.setDisabled(false).setButtonText("\u6D4B\u8BD5");
         }
