@@ -121,8 +121,6 @@ function masteredProgress(prev, now2) {
 }
 
 // src/utils.ts
-var DATA_DIR = ".english-learn";
-var DEFAULT_ROOT = "EnglishLearn";
 function fmtDate(ms) {
   const d = typeof ms === "number" ? new Date(ms) : ms;
   const p = (n) => String(n).padStart(2, "0");
@@ -153,6 +151,7 @@ function isPhrase(word) {
   return /\s/.test(word);
 }
 var isZh = (s) => /[一-鿿]/.test(s);
+var DATA_ROOT = ".english-learn";
 var HTTP_UA = "obsidian-english-learn/0.1 (personal study plugin)";
 function parseKeywords(text2) {
   return text2.split(/[,，、；;]+/).map((s) => s.trim()).filter(Boolean);
@@ -331,9 +330,32 @@ function convertStarterEntries(entries) {
   }
   return shards;
 }
-async function installStarterDict(app, dir, onUpgraded) {
+async function migrateLegacyShards(app, legacyDir, dir) {
+  const ad = app.vault.adapter;
+  try {
+    if (!await ad.exists(`${legacyDir}/meta.json`)) return false;
+    if (await ad.exists(`${dir}/meta.json`)) return false;
+    await mkdirp(app, dir);
+    let moved = 0;
+    for (const s of [..."abcdefghijklmnopqrstuvwxyz", "0", "meta"]) {
+      const from = `${legacyDir}/${s}.json`;
+      if (await ad.exists(from)) {
+        await ad.rename(from, `${dir}/${s}.json`);
+        moved++;
+      }
+    }
+    return moved > 0;
+  } catch (e) {
+    console.error("\u65E7\u8BCD\u5178\u5206\u7247\u8FC1\u79FB\u5931\u8D25\uFF08\u5C06\u91CD\u65B0\u4E0B\u8F7D\uFF09:", e);
+    return false;
+  }
+}
+async function installStarterDict(app, dir, legacyDir, onUpgraded) {
   const metaFile = `${dir}/meta.json`;
   try {
+    if (legacyDir && !await app.vault.adapter.exists(metaFile) && await migrateLegacyShards(app, legacyDir, dir)) {
+      new import_obsidian.Notice("English Learn\uFF1A\u5DF2\u628A\u57FA\u7840\u8BCD\u5178\u7F13\u5B58\u8FC1\u79FB\u5230\u5E93\u6839 .english-learn/\uFF08\u53CC\u7AEF\u5171\u7528\u4E00\u4EFD\uFF09");
+    }
     if (await app.vault.adapter.exists(metaFile)) {
       let meta = null;
       try {
@@ -536,9 +558,10 @@ async function lookupOnline(word) {
   return out.phonetic || out.definition || out.zh || out.audioUrl || out.suggest ? out : null;
 }
 var EcdictDict = class {
-  constructor(app, dataDir) {
+  constructor(app, dataRoot, legacyPluginDir = "") {
     this.app = app;
-    this.dataDir = dataDir;
+    this.dataRoot = dataRoot;
+    this.legacyPluginDir = legacyPluginDir;
     this.shards = /* @__PURE__ */ new Map();
     this.loading = /* @__PURE__ */ new Map();
     /** 分片代次：starter 升级重写文件时 +1——重写前出发的在途读取完成后不得回填缓存 */
@@ -547,9 +570,8 @@ var EcdictDict = class {
     this.starterFailedAt = 0;
     this.warned = false;
   }
-  /** 词典分片缓存目录（.english-learn/dict，经 iCloud 两端共享，省手机端重复下载） */
   get dir() {
-    return this.dataDir ? `${this.dataDir}/dict` : "dict";
+    return this.dataRoot ? `${this.dataRoot}/dict` : "dict";
   }
   async lookup(word) {
     var _a;
@@ -580,7 +602,7 @@ var EcdictDict = class {
   ensureStarter() {
     var _a;
     if (Date.now() - this.starterFailedAt < 6e4) return Promise.resolve(false);
-    (_a = this.starterPromise) != null ? _a : this.starterPromise = installStarterDict(this.app, this.dir, () => {
+    (_a = this.starterPromise) != null ? _a : this.starterPromise = installStarterDict(this.app, this.dir, this.legacyPluginDir ? `${this.legacyPluginDir}/dict` : void 0, () => {
       this.shardGen++;
       this.shards.clear();
     }).catch((e) => {
@@ -814,8 +836,9 @@ function vocabTapTranslate(plugin) {
 // src/dict/audio.ts
 var import_obsidian4 = require("obsidian");
 var AudioCache = class {
-  constructor(app, dataDir) {
+  constructor(app, dataRoot, legacyPluginDir = "") {
     this.app = app;
+    this.legacyPluginDir = legacyPluginDir;
     /** 当前在播的音频：新播放前停掉旧的（TTS 路径会 cancel 上一条，Audio 路径此前会叠音） */
     this.current = null;
     /** 确认无音频的词（有道 5xx）：不再重复撞请求，持久化到 failed.json 跨会话生效 */
@@ -830,23 +853,37 @@ var AudioCache = class {
     this.inflight = /* @__PURE__ */ new Map();
     /** 标准音缓存下载成功的订阅者（UI 据此把发音按钮换成 👤） */
     this.listeners = /* @__PURE__ */ new Set();
-    this.dir = dataDir ? `${dataDir}/audio` : "audio";
+    this.dir = dataRoot ? `${dataRoot}/audio` : "audio";
   }
   file(word) {
     return `${this.dir}/${word.toLowerCase()}.mp3`;
   }
-  /** 首次使用前从磁盘载入无音频词名单（文件缺失/损坏视为空，最多多撞几次请求） */
+  /** 首次使用前从磁盘载入无音频词名单（文件缺失/损坏视为空，最多多撞几次请求）。
+   *  新位置没有但旧插件目录有：搬一份过来（单文件精确路径），之后不再看旧位置 */
   async ensureFailedLoaded() {
     if (this.failedLoaded) return;
     this.failedLoaded = true;
-    try {
-      const f = `${this.dir}/failed.json`;
-      if (await this.app.vault.adapter.exists(f)) {
-        const list = JSON.parse(await this.app.vault.adapter.read(f));
-        if (Array.isArray(list)) for (const w of list) this.failed.add(w);
+    const readList = async (f) => {
+      try {
+        if (!await this.app.vault.adapter.exists(f)) return null;
+        const list2 = JSON.parse(await this.app.vault.adapter.read(f));
+        return Array.isArray(list2) ? list2.map(String) : null;
+      } catch (e) {
+        return null;
       }
-    } catch (e) {
+    };
+    let list = await readList(`${this.dir}/failed.json`);
+    if (!list && this.legacyPluginDir) {
+      list = await readList(`${this.legacyPluginDir}/audio/failed.json`);
+      if (list) {
+        try {
+          await mkdirp(this.app, this.dir);
+          await this.app.vault.adapter.write(`${this.dir}/failed.json`, JSON.stringify(list));
+        } catch (e) {
+        }
+      }
     }
+    if (list) for (const w of list) this.failed.add(w);
   }
   /** 无音频词名单防抖落盘（3s），写失败静默（下批失败词会再带上） */
   scheduleFailedSave() {
@@ -866,8 +903,9 @@ var AudioCache = class {
       })();
     }, 3e3);
   }
-  /** 播放缓存的标准发音；未命中或播放失败返回 false（调用方回落 TTS） */
-  async play(word) {
+  /** 播放缓存的标准发音；未命中或播放失败返回 false（调用方回落 TTS）。
+   *  onEnded：播完自然结束回调（pause 打断不触发 ended，被新播放取代时不会误触接读链） */
+  async play(word, onEnded) {
     var _a;
     try {
       const f = this.file(word);
@@ -881,6 +919,7 @@ var AudioCache = class {
       audio.onended = () => {
         if (this.current === audio) this.current = null;
         URL.revokeObjectURL(url);
+        onEnded == null ? void 0 : onEnded();
       };
       await audio.play();
       return true;
@@ -888,6 +927,12 @@ var AudioCache = class {
       console.error("\u6807\u51C6\u53D1\u97F3\u64AD\u653E\u5931\u8D25:", word, e);
       return false;
     }
+  }
+  /** 掐断在播的音频（切走词卡/关闭弹窗时停词音）。pause 不触发 ended，不会误触接读链 */
+  stop() {
+    var _a;
+    (_a = this.current) == null ? void 0 : _a.pause();
+    this.current = null;
   }
   /** 词条删除时清理其发音缓存；失败静默（不影响删除主流程） */
   async forget(word) {
@@ -977,16 +1022,15 @@ function syncStateOf(db) {
   return rest;
 }
 function parseSync(text2) {
-  var _a, _b, _c, _d, _e, _f, _g;
+  var _a, _b, _c, _d, _e, _f;
   if (!text2) return null;
   try {
     const raw = JSON.parse(text2);
     if (!raw || typeof raw !== "object") return null;
     return {
-      root: (_a = raw.root) != null ? _a : "",
-      themes: (_b = raw.themes) != null ? _b : {},
-      progress: (_c = raw.progress) != null ? _c : {},
-      stats: { streak: (_e = (_d = raw.stats) == null ? void 0 : _d.streak) != null ? _e : 0, days: (_g = (_f = raw.stats) == null ? void 0 : _f.days) != null ? _g : {} },
+      themes: (_a = raw.themes) != null ? _a : {},
+      progress: (_b = raw.progress) != null ? _b : {},
+      stats: { streak: (_d = (_c = raw.stats) == null ? void 0 : _c.streak) != null ? _d : 0, days: (_f = (_e = raw.stats) == null ? void 0 : _e.days) != null ? _f : {} },
       lastRemind: raw.lastRemind,
       ignored: raw.ignored,
       dictExhausted: raw.dictExhausted,
@@ -1067,14 +1111,32 @@ var DataStore = class {
     /** 本端删过、盘上可能还有的键（theme:<名> / progress:<词>）：吸收时不复活。
      *  会话级即可——删除随下一次 flush 落盘，此后盘上已无此键 */
     this.tombstones = /* @__PURE__ */ new Set();
-    /** settings 上次落盘内容快照：与内存一致就不重写（见类注释） */
-    this.settingsJson = "";
   }
+  /** 跨端同步文件：库根共享目录（与词典分片/发音缓存同目录收口，双端共用一份） */
   get syncPath() {
-    return `${DATA_DIR}/db.json`;
+    return `${DATA_ROOT}/db.json`;
   }
-  get settingsPath() {
-    return `${DATA_DIR}/settings.json`;
+  /** 读跨端同步文件内容：新位置优先；缺失回退旧位置 <root>/db.json 并就地搬迁（位置迁移的
+   *  一次性收尾，rename 失败下次再试，不影响本次吸收）。返回 null = 两处都没有 */
+  async readSyncRaw() {
+    const { app, db } = this.plugin;
+    const path = this.syncPath;
+    const legacy = `${db.settings.root}/db.json`;
+    try {
+      if (await app.vault.adapter.exists(path)) return await app.vault.adapter.read(path);
+      if (await app.vault.adapter.exists(legacy)) {
+        const raw = await app.vault.adapter.read(legacy);
+        try {
+          await mkdirp(app, DATA_ROOT);
+          await app.vault.adapter.rename(legacy, path);
+        } catch (e) {
+        }
+        return raw;
+      }
+    } catch (e) {
+      console.error("\u8DE8\u7AEF\u540C\u6B65\u6587\u4EF6\u8BFB\u53D6\u5931\u8D25:", path, e);
+    }
+    return null;
   }
   /** 记删除墓碑：deleteWord / 主题删除与改名处调用，防吸收时被盘上旧数据复活 */
   forget(kind, key) {
@@ -1096,95 +1158,40 @@ var DataStore = class {
     }
     await this.flush();
   }
-  /** 启动加载，返回拼装内存 db 的原料：
-   *  - settings：新位置 settings.json；没有则 null（调用方用 legacy 兜底）
-   *  - legacy：旧插件 data.json 整包（含 settings 与旧版可能还整包存的跨端字段）；已迁移/新装为 null
-   *  - root：初值（新位置 db.json 的同步字段 → 旧 settings.root → 默认），顺带把旧 <root>/db.json 搬到固定位置 */
-  async loadRaw() {
-    var _a, _b, _c, _d, _e;
-    const { app } = this.plugin;
-    await mkdirp(app, DATA_DIR);
-    let settings = null;
-    if (await app.vault.adapter.exists(this.settingsPath)) {
-      try {
-        settings = JSON.parse(await app.vault.adapter.read(this.settingsPath));
-      } catch (e) {
-        settings = null;
-      }
-    }
-    const legacy = settings ? null : await this.plugin.loadData();
-    const legacyRoot = (_b = (_a = legacy == null ? void 0 : legacy.settings) == null ? void 0 : _a.root) != null ? _b : "";
-    let root = "";
-    if (await app.vault.adapter.exists(this.syncPath)) {
-      root = (_d = (_c = parseSync(await app.vault.adapter.read(this.syncPath))) == null ? void 0 : _c.root) != null ? _d : "";
-    } else if (legacyRoot) {
-      const old = `${legacyRoot}/db.json`;
-      if (await app.vault.adapter.exists(old)) {
-        const text2 = await app.vault.adapter.read(old);
-        await app.vault.adapter.write(this.syncPath, text2);
-        await app.vault.adapter.remove(old);
-        root = ((_e = parseSync(text2)) == null ? void 0 : _e.root) || legacyRoot;
-      }
-    }
-    return { settings, legacy, root: root || DEFAULT_ROOT };
-  }
-  /** 采纳另一端改过的词库根目录（盘上 root 为另一端写的现行值）：本端所有路径经 db.root 动态取值，
-   *  改完即生效；新根目录补建防另一端目录还没同步到位时读写落空 */
-  adoptRoot(diskRoot) {
-    const { db } = this.plugin;
-    if (!diskRoot || diskRoot === db.root) return false;
-    db.root = diskRoot;
-    void this.plugin.ensureFolders();
-    return true;
-  }
   async flush() {
     const { app, db } = this.plugin;
-    await mkdirp(app, DATA_DIR);
-    const sj = JSON.stringify(db.settings);
-    if (sj !== this.settingsJson) {
-      await app.vault.adapter.write(this.settingsPath, sj);
-      this.settingsJson = sj;
+    try {
+      await mkdirp(app, DATA_ROOT);
+      await app.vault.adapter.write(`${DATA_ROOT}/settings.json`, JSON.stringify({ settings: db.settings }));
+    } catch (e) {
+      console.error("\u5171\u4EAB\u8BBE\u7F6E\u5199\u5165\u5931\u8D25:", e);
     }
     const path = this.syncPath;
     try {
-      let raw = null;
-      if (await app.vault.adapter.exists(path)) {
-        raw = await app.vault.adapter.read(path);
-      }
+      const raw = await this.readSyncRaw();
       const disk = parseSync(raw);
       if (!disk && raw) {
         void app.vault.adapter.write(`${path}.bad-${Date.now()}`, raw).catch(() => {
         });
       }
-      if (disk) {
-        this.adoptRoot(disk.root);
-        absorbSync(syncStateOf(db), disk, this.tombstones);
-      }
+      if (disk) absorbSync(syncStateOf(db), disk, this.tombstones);
+      await mkdirp(app, DATA_ROOT);
       await app.vault.adapter.write(path, JSON.stringify(syncStateOf(db)));
     } catch (e) {
       console.error("\u8DE8\u7AEF\u540C\u6B65\u6587\u4EF6\u5199\u5165\u5931\u8D25:", path, e);
       throw e;
     }
   }
-  /** 从盘上吸收另一端变更（启动/开始会话/状态栏刷新时调）。streak 随吸收结果重算，
-   *  返回是否有变更（含 root 采纳）；不主动落盘——吸收结果随下一次 flush 自然写回 */
+  /** 从 vault 吸收另一端变更（启动/开始会话/状态栏刷新时调）。streak 随吸收结果重算，
+   *  返回是否有变更；不主动落盘——吸收结果随下一次 flush 自然写回 */
   async syncNow() {
-    const { app, db } = this.plugin;
-    const path = this.syncPath;
-    try {
-      if (!await app.vault.adapter.exists(path)) return false;
-      const disk = parseSync(await app.vault.adapter.read(path));
-      if (!disk) return false;
-      const adopted = this.adoptRoot(disk.root);
-      if (absorbSync(syncStateOf(db), disk, this.tombstones) || adopted) {
-        this.plugin.recomputeStreak();
-        return true;
-      }
-      return false;
-    } catch (e) {
-      console.error("\u8DE8\u7AEF\u540C\u6B65\u6587\u4EF6\u8BFB\u53D6\u5931\u8D25:", path, e);
-      return false;
+    const disk = parseSync(await this.readSyncRaw());
+    if (!disk) return false;
+    if (absorbSync(syncStateOf(this.plugin.db), disk, this.tombstones)) {
+      this.plugin.recomputeStreak();
+      return true;
     }
+    return false;
   }
 };
 
@@ -1195,6 +1202,11 @@ var asArr = (v) => Array.isArray(v) ? v.map(String) : v == null ? [] : [String(v
 var EMPTY_WORDS = /* @__PURE__ */ new Set();
 function hasTranslation(t) {
   return !!t && t.trim() !== "" && !t.includes("\u5F85\u8865\u5145");
+}
+function firstExample(doc) {
+  let best;
+  for (const e of doc.examples) if (!best || e.text.length < best.text.length) best = e;
+  return best == null ? void 0 : best.text;
 }
 function parseBody(content) {
   const translation = extractSection(content, "\u91CA\u4E49");
@@ -1442,7 +1454,7 @@ var WordStore = class {
   }
   async doScan() {
     const { app } = this.plugin;
-    const dir = `${this.plugin.db.root}/words`;
+    const dir = `${this.plugin.db.settings.root}/words`;
     if (!await app.vault.adapter.exists(dir)) return;
     const files = app.vault.getMarkdownFiles().filter((f) => f.path.startsWith(dir + "/"));
     const live = new Set(files.map((f) => f.path));
@@ -1530,7 +1542,7 @@ var WordStore = class {
       await this.addTheme(existingDoc, ...opts.themes);
       return existingDoc;
     }
-    const path = `${this.plugin.db.root}/words/${sanitizeFilename(key)}.md`;
+    const path = `${this.plugin.db.settings.root}/words/${sanitizeFilename(key)}.md`;
     const file = app.vault.getFileByPath(path);
     if (file) {
       const doc2 = await this.loadFile(file);
@@ -3629,7 +3641,7 @@ function create_else_block_1(ctx) {
       button.disabled = /*busy*/
       ctx[6];
       attr(div0, "class", "el-expand-actions");
-      set_style(div0, "margin-top", "var(--el-space-2)");
+      set_style(div0, "margin-top", "6px");
       attr(div1, "class", "el-article-box");
     },
     m(target, anchor) {
@@ -3724,7 +3736,7 @@ function create_if_block_13(ctx) {
       button0.disabled = /*busy*/
       ctx[6];
       attr(div0, "class", "el-expand-actions");
-      set_style(div0, "margin-bottom", "var(--el-space-2)");
+      set_style(div0, "margin-bottom", "6px");
       attr(textarea, "class", "el-article-input");
       attr(textarea, "rows", "6");
       attr(textarea, "placeholder", "\u7C98\u8D34\u6B63\u5728\u8BFB\u7684\u82F1\u6587\u6587\u7AE0\u6216\u6BB5\u843D\uFF1A\u63D0\u53D6\u4F60\u8FD8\u6CA1\u6536\u5F55\u7684\u751F\u8BCD\uFF0C\u4F8B\u53E5\u81EA\u52A8\u53D6\u81EA\u539F\u6587");
@@ -3732,7 +3744,7 @@ function create_if_block_13(ctx) {
       button1.disabled = /*busy*/
       ctx[6];
       attr(div1, "class", "el-expand-actions");
-      set_style(div1, "margin-top", "var(--el-space-2)");
+      set_style(div1, "margin-top", "6px");
       attr(div2, "class", "el-article-box");
     },
     m(target, anchor) {
@@ -4215,7 +4227,7 @@ function create_if_block_8(ctx) {
       );
       t2 = text("\u300D");
       attr(button, "class", "mod-cta");
-      set_style(button, "margin-left", "var(--el-space-4)");
+      set_style(button, "margin-left", "10px");
     },
     m(target, anchor) {
       insert(target, button, anchor);
@@ -6934,7 +6946,7 @@ var WordListModal = class extends import_obsidian10.Modal {
       try {
         const text2 = exportWordList(words);
         await navigator.clipboard.writeText(text2);
-        const dir = `${this.plugin.db.root}/export`;
+        const dir = `${this.plugin.db.settings.root}/export`;
         await mkdirp(this.plugin.app, dir);
         const path = `${dir}/${sanitizeFilename(this.theme)}-${fmtDate(Date.now())}.txt`;
         const existing = this.plugin.app.vault.getAbstractFileByPath(path);
@@ -8118,9 +8130,9 @@ function create_if_block_17(ctx) {
       for (let i = 0; i < each_blocks.length; i += 1) {
         each_blocks[i].c();
       }
-      set_style(div, "margin-top", "var(--el-space-3)");
+      set_style(div, "margin-top", "8px");
       set_style(div, "display", "flex");
-      set_style(div, "gap", "var(--el-space-2)");
+      set_style(div, "gap", "6px");
       set_style(div, "flex-wrap", "wrap");
       set_style(div, "justify-content", "center");
     },
@@ -10995,17 +11007,17 @@ function get_if_ctx(ctx) {
     /*cur*/
     child_ctx[11].doc.word
   );
-  child_ctx[134] = constants_0;
+  child_ctx[135] = constants_0;
   return child_ctx;
 }
 function get_each_context5(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[129] = list[i];
+  child_ctx[130] = list[i];
   return child_ctx;
 }
 function get_each_context_13(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[129] = list[i];
+  child_ctx[130] = list[i];
   return child_ctx;
 }
 function create_if_block_212(ctx) {
@@ -11544,7 +11556,11 @@ function create_if_block_93(ctx) {
       button = element("button");
       button.textContent = "\u8FD4\u56DE\u4E3B\u9898\u5E93";
       attr(div0, "class", "el-end-stats");
-      attr(div1, "class", "el-card-actions");
+      set_style(div1, "margin-top", "14px");
+      set_style(div1, "display", "flex");
+      set_style(div1, "flex-wrap", "wrap");
+      set_style(div1, "gap", "8px");
+      set_style(div1, "justify-content", "center");
       attr(div2, "class", "el-card el-end");
     },
     m(target, anchor) {
@@ -11845,7 +11861,11 @@ function create_if_block_43(ctx) {
       button = element("button");
       button.textContent = "\u8FD4\u56DE\u4E3B\u9898\u5E93";
       attr(div0, "class", "el-end-emoji");
-      attr(div1, "class", "el-card-actions");
+      set_style(div1, "margin-top", "14px");
+      set_style(div1, "display", "flex");
+      set_style(div1, "flex-wrap", "wrap");
+      set_style(div1, "gap", "8px");
+      set_style(div1, "justify-content", "center");
       attr(div2, "class", "el-card el-end");
     },
     m(target, anchor) {
@@ -11950,7 +11970,7 @@ function create_if_block_33(ctx) {
       attr(div0, "class", "el-end-emoji");
       attr(div1, "class", "el-muted");
       attr(button, "class", "mod-cta");
-      attr(div2, "class", "el-card-actions");
+      set_style(div2, "margin-top", "14px");
       attr(div3, "class", "el-card el-end");
     },
     m(target, anchor) {
@@ -12030,7 +12050,7 @@ function create_if_block_28(ctx) {
       attr(div0, "class", "el-end-emoji");
       attr(div1, "class", "el-muted");
       attr(button, "class", "mod-cta");
-      attr(div2, "class", "el-card-actions");
+      set_style(div2, "margin-top", "14px");
       attr(div3, "class", "el-card el-end");
     },
     m(target, anchor) {
@@ -12109,7 +12129,11 @@ function create_if_block_111(ctx) {
       attr(div0, "class", "el-end-emoji");
       attr(div1, "class", "el-muted");
       attr(button0, "class", "mod-cta");
-      attr(div2, "class", "el-card-actions");
+      set_style(div2, "margin-top", "14px");
+      set_style(div2, "display", "flex");
+      set_style(div2, "flex-wrap", "wrap");
+      set_style(div2, "gap", "8px");
+      set_style(div2, "justify-content", "center");
       attr(div3, "class", "el-card el-end");
     },
     m(target, anchor) {
@@ -12520,7 +12544,7 @@ function create_if_block_40(ctx) {
       if_block3_anchor = empty();
       attr(div0, "class", "el-hint");
       attr(div1, "class", "el-word");
-      set_style(div1, "font-size", "var(--el-font-display-sm)");
+      set_style(div1, "font-size", "30px");
       attr(div2, "class", "el-card");
     },
     m(target, anchor) {
@@ -13227,7 +13251,7 @@ function create_if_block_622(ctx) {
       if_block1_anchor = empty();
       attr(div0, "class", "el-hint");
       attr(div1, "class", "el-word");
-      set_style(div1, "font-size", "var(--el-font-display-sm)");
+      set_style(div1, "font-size", "30px");
     },
     m(target, anchor) {
       insert(target, div0, anchor);
@@ -13547,7 +13571,7 @@ function create_if_block_58(ctx) {
       /*click_handler_12*/
       ctx[91](
         /*word*/
-        ctx[134]
+        ctx[135]
       )
     );
   }
@@ -14041,7 +14065,7 @@ function create_if_block_522(ctx) {
       /*click_handler_14*/
       ctx[94](
         /*word*/
-        ctx[134]
+        ctx[135]
       )
     );
   }
@@ -14166,7 +14190,7 @@ function create_if_block_49(ctx) {
       div1.textContent = "\u8FD9\u4E2A\u8BCD\u7A0D\u540E\u4F1A\u518D\u6D4B\u4E00\u6B21";
       attr(div0, "class", "el-quiz-reveal");
       attr(div1, "class", "el-muted");
-      set_style(div1, "margin-top", "var(--el-space-3)");
+      set_style(div1, "margin-top", "8px");
     },
     m(target, anchor) {
       insert(target, div0, anchor);
@@ -14348,7 +14372,7 @@ function create_if_block_432(ctx) {
       div1.textContent = "\u8FDB\u5165\u5B66\u4E60\u8BE6\u60C5\uFF0C\u5B66\u5B8C\u8FD9\u8BCD\u518D\u7EE7\u7EED";
       attr(div0, "class", "el-quiz-reveal");
       attr(div1, "class", "el-muted");
-      set_style(div1, "margin-top", "var(--el-space-3)");
+      set_style(div1, "margin-top", "8px");
     },
     m(target, anchor) {
       insert(target, div0, anchor);
@@ -14564,6 +14588,7 @@ function create_if_block_37(ctx) {
       if_block_anchor = empty();
       attr(div0, "class", "el-hint");
       attr(div1, "class", "el-translation");
+      set_style(div1, "margin-top", "10px");
     },
     m(target, anchor) {
       insert(target, div0, anchor);
@@ -14670,6 +14695,7 @@ function create_if_block_39(ctx) {
       div = element("div");
       t = text(t_value);
       attr(div, "class", "el-quiz-reveal");
+      set_style(div, "margin-top", "10px");
     },
     m(target, anchor) {
       insert(target, div, anchor);
@@ -14703,7 +14729,7 @@ function create_if_block_38(ctx) {
         ctx[41]
       );
       attr(div, "class", "el-example");
-      set_style(div, "margin-top", "var(--el-space-4)");
+      set_style(div, "margin-top", "10px");
     },
     m(target, anchor) {
       insert(target, div, anchor);
@@ -14751,6 +14777,7 @@ function create_else_block_42(ctx) {
       if_block_anchor = empty();
       attr(div0, "class", "el-hint");
       attr(div1, "class", "el-translation");
+      set_style(div1, "margin-top", "10px");
     },
     m(target, anchor) {
       insert(target, div0, anchor);
@@ -14829,7 +14856,7 @@ function create_if_block_332(ctx) {
       if_block1_anchor = empty();
       attr(div0, "class", "el-hint");
       attr(div1, "class", "el-word");
-      set_style(div1, "font-size", "var(--el-font-display-sm)");
+      set_style(div1, "font-size", "30px");
     },
     m(target, anchor) {
       insert(target, div0, anchor);
@@ -14915,7 +14942,7 @@ function create_if_block_36(ctx) {
         ctx[41]
       );
       attr(div, "class", "el-example");
-      set_style(div, "margin-top", "var(--el-space-4)");
+      set_style(div, "margin-top", "10px");
     },
     m(target, anchor) {
       insert(target, div, anchor);
@@ -15266,7 +15293,7 @@ function create_if_block_282(ctx) {
       button = element("button");
       button.textContent = "\u663E\u793A\u7B54\u6848\uFF08\u7A7A\u683C\uFF09";
       attr(button, "class", "el-reveal el-reveal-ok");
-      attr(div, "class", "el-card-actions");
+      set_style(div, "margin-top", "14px");
     },
     m(target, anchor) {
       insert(target, div, anchor);
@@ -15694,7 +15721,7 @@ function create_each_block_13(ctx) {
   let button;
   let t_value = (
     /*w*/
-    ctx[129] + ""
+    ctx[130] + ""
   );
   let t;
   let mounted;
@@ -15704,7 +15731,7 @@ function create_each_block_13(ctx) {
       /*click_handler_3*/
       ctx[82](
         /*w*/
-        ctx[129]
+        ctx[130]
       )
     );
   }
@@ -15727,7 +15754,7 @@ function create_each_block_13(ctx) {
       ctx = new_ctx;
       if (dirty[0] & /*masteredNow*/
       262144 && t_value !== (t_value = /*w*/
-      ctx[129] + "")) set_data(t, t_value);
+      ctx[130] + "")) set_data(t, t_value);
     },
     d(detaching) {
       if (detaching) {
@@ -15803,7 +15830,7 @@ function create_each_block5(ctx) {
   let button;
   let t_value = (
     /*w*/
-    ctx[129] + ""
+    ctx[130] + ""
   );
   let t;
   let mounted;
@@ -15813,7 +15840,7 @@ function create_each_block5(ctx) {
       /*click_handler_4*/
       ctx[83](
         /*w*/
-        ctx[129]
+        ctx[130]
       )
     );
   }
@@ -15836,7 +15863,7 @@ function create_each_block5(ctx) {
       ctx = new_ctx;
       if (dirty[0] & /*weakNow*/
       524288 && t_value !== (t_value = /*w*/
-      ctx[129] + "")) set_data(t, t_value);
+      ctx[130] + "")) set_data(t, t_value);
     },
     d(detaching) {
       if (detaching) {
@@ -16743,6 +16770,7 @@ function instance6($$self, $$props, $$invalidate) {
   let destroyed = false;
   onDestroy(() => {
     destroyed = true;
+    plugin.stopSpeaking();
     plugin.app.metadataCache.offref(offNoteChange);
     $$invalidate(0, plugin.sessionActive = false, plugin);
   });
@@ -16765,7 +16793,23 @@ function instance6($$self, $$props, $$invalidate) {
     }
     if (card.kind === "check" && !answered) return;
     if (card.kind === "review" && card.reverse && !revealed) return;
-    plugin.speakWord(card.doc.word);
+    plugin.speakWord(card.doc.word, void 0, fullCardBody(card, answered) ? firstExample(card.doc) : void 0);
+  }
+  function fullCardBody(card, answered) {
+    switch (card.kind) {
+      case "new":
+        return false;
+      case "study":
+      case "confirm":
+        return true;
+      case "restudy":
+      case "review":
+        return revealed;
+      case "quiz":
+        return answered;
+      case "check":
+        return false;
+    }
   }
   function settleTail() {
     if (idx < cards.length) {
@@ -16816,7 +16860,7 @@ function instance6($$self, $$props, $$invalidate) {
     cancelFlip();
     if (browseFrom < 0) $$invalidate(4, browseFrom = idx);
     $$invalidate(3, idx--, idx);
-    plugin.speakWord(cards[idx].doc.word);
+    plugin.speakWord(cards[idx].doc.word, void 0, firstExample(cards[idx].doc));
   }
   function landCurrent() {
     if (flipPending()) armFlip();
@@ -16922,13 +16966,13 @@ function instance6($$self, $$props, $$invalidate) {
     $$invalidate(6, quizPicked = i);
     $$invalidate(13, quizCorrect = i === cur.check.answer);
     $$invalidate(5, revealed = true);
-    plugin.speakWord(cur.doc.word);
+    autoSpeak();
   }
   function reviewUnknown() {
     if ((cur === null || cur === void 0 ? void 0 : cur.kind) !== "review" || !cur.check || quizAnswered) return;
     $$invalidate(7, quizGaveUp = true);
     $$invalidate(5, revealed = true);
-    plugin.speakWord(cur.doc.word);
+    autoSpeak();
   }
   function grade(g) {
     if ((cur === null || cur === void 0 ? void 0 : cur.kind) !== "review") return;
@@ -17071,6 +17115,7 @@ function instance6($$self, $$props, $$invalidate) {
     var _a;
     if (finished) return;
     cancelFlip();
+    plugin.stopSpeaking();
     $$invalidate(8, finished = true);
     $$invalidate(14, exitedEarly = early);
     $$invalidate(4, browseFrom = -1);
@@ -17497,35 +17542,35 @@ var import_obsidian15 = require("obsidian");
 var import_obsidian14 = require("obsidian");
 function get_each_context6(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[54] = list[i];
+  child_ctx[53] = list[i];
   return child_ctx;
 }
 function get_each_context_14(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[57] = list[i];
-  child_ctx[59] = i;
+  child_ctx[56] = list[i];
+  child_ctx[58] = i;
   return child_ctx;
 }
 function get_each_context_22(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[60] = list[i];
+  child_ctx[59] = list[i];
   return child_ctx;
 }
 function get_each_context_32(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[63] = list[i];
+  child_ctx[62] = list[i];
   return child_ctx;
 }
 function get_each_context_42(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[59] = list[i];
-  child_ctx[67] = i;
+  child_ctx[58] = list[i];
+  child_ctx[66] = i;
   return child_ctx;
 }
 function get_each_context_52(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[59] = list[i];
-  child_ctx[67] = i;
+  child_ctx[58] = list[i];
+  child_ctx[66] = i;
   return child_ctx;
 }
 function create_if_block_154(ctx) {
@@ -17555,7 +17600,7 @@ function create_if_block_154(ctx) {
           button,
           "click",
           /*click_handler*/
-          ctx[32]
+          ctx[31]
         );
         mounted = true;
       }
@@ -17614,13 +17659,13 @@ function create_if_block_144(ctx) {
             button0,
             "click",
             /*openGuide*/
-            ctx[21]
+            ctx[20]
           ),
           listen(
             button1,
             "click",
             /*dismissGuide*/
-            ctx[22]
+            ctx[21]
           )
         ];
         mounted = true;
@@ -17708,10 +17753,10 @@ function create_if_block_84(ctx) {
   }
   let if_block = (
     /*tipDay*/
-    ctx[9] >= 0 && /*days*/
+    ctx[8] >= 0 && /*days*/
     ctx[2][
       /*tipDay*/
-      ctx[9]
+      ctx[8]
     ] && create_if_block_94(ctx)
   );
   return {
@@ -17728,7 +17773,7 @@ function create_if_block_84(ctx) {
       t4 = text("\u8FD1 14 \u5929\u5171 ");
       t5 = text(
         /*chartSum*/
-        ctx[13]
+        ctx[12]
       );
       t6 = text(" \u6B21");
       t7 = space();
@@ -17782,20 +17827,20 @@ function create_if_block_84(ctx) {
           div3,
           "mouseleave",
           /*mouseleave_handler*/
-          ctx[36]
+          ctx[35]
         );
         mounted = true;
       }
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*chartSum*/
-      8192) set_data(
+      4096) set_data(
         t5,
         /*chartSum*/
-        ctx2[13]
+        ctx2[12]
       );
       if (dirty[0] & /*days, tipDay, barH*/
-      131588) {
+      65796) {
         each_value_5 = ensure_array_like(
           /*days*/
           ctx2[2]
@@ -17840,10 +17885,10 @@ function create_if_block_84(ctx) {
       }
       if (
         /*tipDay*/
-        ctx2[9] >= 0 && /*days*/
+        ctx2[8] >= 0 && /*days*/
         ctx2[2][
           /*tipDay*/
-          ctx2[9]
+          ctx2[8]
         ]
       ) {
         if (if_block) {
@@ -17893,11 +17938,11 @@ function create_if_block_104(ctx) {
   let if_block1_anchor;
   let if_block0 = (
     /*d*/
-    ctx[59].new > 0 && create_if_block_124(ctx)
+    ctx[58].new > 0 && create_if_block_124(ctx)
   );
   let if_block1 = (
     /*d*/
-    ctx[59].rev > 0 && create_if_block_114(ctx)
+    ctx[58].rev > 0 && create_if_block_114(ctx)
   );
   return {
     c() {
@@ -17915,7 +17960,7 @@ function create_if_block_104(ctx) {
     p(ctx2, dirty) {
       if (
         /*d*/
-        ctx2[59].new > 0
+        ctx2[58].new > 0
       ) {
         if (if_block0) {
           if_block0.p(ctx2, dirty);
@@ -17930,7 +17975,7 @@ function create_if_block_104(ctx) {
       }
       if (
         /*d*/
-        ctx2[59].rev > 0
+        ctx2[58].rev > 0
       ) {
         if (if_block1) {
           if_block1.p(ctx2, dirty);
@@ -17964,16 +18009,16 @@ function create_if_block_124(ctx) {
         div,
         "height",
         /*barH*/
-        ctx[17](
+        ctx[16](
           /*d*/
-          ctx[59].new
+          ctx[58].new
         ) + "px"
       );
       toggle_class(
         div,
         "seg-top",
         /*d*/
-        ctx[59].rev === 0
+        ctx[58].rev === 0
       );
     },
     m(target, anchor) {
@@ -17986,9 +18031,9 @@ function create_if_block_124(ctx) {
           div,
           "height",
           /*barH*/
-          ctx2[17](
+          ctx2[16](
             /*d*/
-            ctx2[59].new
+            ctx2[58].new
           ) + "px"
         );
       }
@@ -17998,7 +18043,7 @@ function create_if_block_124(ctx) {
           div,
           "seg-top",
           /*d*/
-          ctx2[59].rev === 0
+          ctx2[58].rev === 0
         );
       }
     },
@@ -18019,9 +18064,9 @@ function create_if_block_114(ctx) {
         div,
         "height",
         /*barH*/
-        ctx[17](
+        ctx[16](
           /*d*/
-          ctx[59].rev
+          ctx[58].rev
         ) + "px"
       );
     },
@@ -18035,9 +18080,9 @@ function create_if_block_114(ctx) {
           div,
           "height",
           /*barH*/
-          ctx2[17](
+          ctx2[16](
             /*d*/
-            ctx2[59].rev
+            ctx2[58].rev
           ) + "px"
         );
       }
@@ -18059,8 +18104,8 @@ function create_each_block_52(ctx) {
   function select_block_type(ctx2, dirty) {
     if (
       /*d*/
-      ctx2[59].rev + /*d*/
-      ctx2[59].new > 0
+      ctx2[58].rev + /*d*/
+      ctx2[58].new > 0
     ) return create_if_block_104;
     return create_else_block_23;
   }
@@ -18069,27 +18114,27 @@ function create_each_block_52(ctx) {
   function mouseenter_handler() {
     return (
       /*mouseenter_handler*/
-      ctx[33](
+      ctx[32](
         /*i*/
-        ctx[67]
+        ctx[66]
       )
     );
   }
   function click_handler_1() {
     return (
       /*click_handler_1*/
-      ctx[34](
+      ctx[33](
         /*i*/
-        ctx[67]
+        ctx[66]
       )
     );
   }
   function keydown_handler(...args) {
     return (
       /*keydown_handler*/
-      ctx[35](
+      ctx[34](
         /*i*/
-        ctx[67],
+        ctx[66],
         ...args
       )
     );
@@ -18102,13 +18147,13 @@ function create_each_block_52(ctx) {
       attr(div, "class", "el-chart-col");
       attr(div, "role", "img");
       attr(div, "aria-label", div_aria_label_value = /*d*/
-      ctx[59].date + "\uFF1A\u65B0\u5B66 " + /*d*/
-      ctx[59].new + "\uFF0C\u590D\u4E60 " + /*d*/
-      ctx[59].rev);
+      ctx[58].date + "\uFF1A\u65B0\u5B66 " + /*d*/
+      ctx[58].new + "\uFF0C\u590D\u4E60 " + /*d*/
+      ctx[58].rev);
       attr(div, "title", div_title_value = /*d*/
-      ctx[59].date + "\uFF1A\u65B0\u5B66 " + /*d*/
-      ctx[59].new + " \xB7 \u590D\u4E60 " + /*d*/
-      ctx[59].rev);
+      ctx[58].date + "\uFF1A\u65B0\u5B66 " + /*d*/
+      ctx[58].new + " \xB7 \u590D\u4E60 " + /*d*/
+      ctx[58].rev);
       attr(div, "tabindex", "-1");
     },
     m(target, anchor) {
@@ -18138,16 +18183,16 @@ function create_each_block_52(ctx) {
       }
       if (dirty[0] & /*days*/
       4 && div_aria_label_value !== (div_aria_label_value = /*d*/
-      ctx[59].date + "\uFF1A\u65B0\u5B66 " + /*d*/
-      ctx[59].new + "\uFF0C\u590D\u4E60 " + /*d*/
-      ctx[59].rev)) {
+      ctx[58].date + "\uFF1A\u65B0\u5B66 " + /*d*/
+      ctx[58].new + "\uFF0C\u590D\u4E60 " + /*d*/
+      ctx[58].rev)) {
         attr(div, "aria-label", div_aria_label_value);
       }
       if (dirty[0] & /*days*/
       4 && div_title_value !== (div_title_value = /*d*/
-      ctx[59].date + "\uFF1A\u65B0\u5B66 " + /*d*/
-      ctx[59].new + " \xB7 \u590D\u4E60 " + /*d*/
-      ctx[59].rev)) {
+      ctx[58].date + "\uFF1A\u65B0\u5B66 " + /*d*/
+      ctx[58].new + " \xB7 \u590D\u4E60 " + /*d*/
+      ctx[58].rev)) {
         attr(div, "title", div_title_value);
       }
     },
@@ -18165,11 +18210,11 @@ function create_each_block_42(ctx) {
   let span;
   let t_1_value = (
     /*i*/
-    (ctx[67] === 0 || /*i*/
-    ctx[67] === 7 || /*i*/
-    ctx[67] === 13 ? (
+    (ctx[66] === 0 || /*i*/
+    ctx[66] === 7 || /*i*/
+    ctx[66] === 13 ? (
       /*d*/
-      ctx[59].label
+      ctx[58].label
     ) : "") + ""
   );
   let t_1;
@@ -18186,11 +18231,11 @@ function create_each_block_42(ctx) {
     p(ctx2, dirty) {
       if (dirty[0] & /*days*/
       4 && t_1_value !== (t_1_value = /*i*/
-      (ctx2[67] === 0 || /*i*/
-      ctx2[67] === 7 || /*i*/
-      ctx2[67] === 13 ? (
+      (ctx2[66] === 0 || /*i*/
+      ctx2[66] === 7 || /*i*/
+      ctx2[66] === 13 ? (
         /*d*/
-        ctx2[59].label
+        ctx2[58].label
       ) : "") + "")) set_data(t_1, t_1_value);
     },
     d(detaching) {
@@ -18206,7 +18251,7 @@ function create_if_block_94(ctx) {
     /*days*/
     ctx[2][
       /*tipDay*/
-      ctx[9]
+      ctx[8]
     ].date + ""
   );
   let t0;
@@ -18215,7 +18260,7 @@ function create_if_block_94(ctx) {
     /*days*/
     ctx[2][
       /*tipDay*/
-      ctx[9]
+      ctx[8]
     ].new + ""
   );
   let t2;
@@ -18224,7 +18269,7 @@ function create_if_block_94(ctx) {
     /*days*/
     ctx[2][
       /*tipDay*/
-      ctx[9]
+      ctx[8]
     ].rev + ""
   );
   let t4;
@@ -18238,7 +18283,7 @@ function create_if_block_94(ctx) {
       t4 = text(t4_value);
       attr(div, "class", "el-chart-tip");
       set_style(div, "left", "min(max(" + /*tipDay*/
-      (ctx[9] + 0.5) * (100 / 14) + "%, 42px), calc(100% - 42px))");
+      (ctx[8] + 0.5) * (100 / 14) + "%, 42px), calc(100% - 42px))");
     },
     m(target, anchor) {
       insert(target, div, anchor);
@@ -18250,27 +18295,27 @@ function create_if_block_94(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*days, tipDay*/
-      516 && t0_value !== (t0_value = /*days*/
+      260 && t0_value !== (t0_value = /*days*/
       ctx2[2][
         /*tipDay*/
-        ctx2[9]
+        ctx2[8]
       ].date + "")) set_data(t0, t0_value);
       if (dirty[0] & /*days, tipDay*/
-      516 && t2_value !== (t2_value = /*days*/
+      260 && t2_value !== (t2_value = /*days*/
       ctx2[2][
         /*tipDay*/
-        ctx2[9]
+        ctx2[8]
       ].new + "")) set_data(t2, t2_value);
       if (dirty[0] & /*days, tipDay*/
-      516 && t4_value !== (t4_value = /*days*/
+      260 && t4_value !== (t4_value = /*days*/
       ctx2[2][
         /*tipDay*/
-        ctx2[9]
+        ctx2[8]
       ].rev + "")) set_data(t4, t4_value);
       if (dirty[0] & /*tipDay*/
-      512) {
+      256) {
         set_style(div, "left", "min(max(" + /*tipDay*/
-        (ctx2[9] + 0.5) * (100 / 14) + "%, 42px), calc(100% - 42px))");
+        (ctx2[8] + 0.5) * (100 / 14) + "%, 42px), calc(100% - 42px))");
       }
     },
     d(detaching) {
@@ -18290,7 +18335,7 @@ function create_else_block_14(ctx) {
   );
   const get_key = (ctx2) => (
     /*t*/
-    ctx2[60].name
+    ctx2[59].name
   );
   for (let i = 0; i < each_value_2.length; i += 1) {
     let child_ctx = get_each_context_22(ctx, each_value_2, i);
@@ -18315,7 +18360,7 @@ function create_else_block_14(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*openEdit, rows, openExpand, start, openWords, togglePin, disableTheme*/
-      495976456) {
+      247988232) {
         each_value_2 = ensure_array_like(
           /*rows*/
           ctx2[3]
@@ -18384,20 +18429,20 @@ function create_if_block_74(ctx) {
   let t2;
   let t3_value = (
     /*t*/
-    ctx[60].count - /*t*/
-    ctx[60].fresh + ""
+    ctx[59].count - /*t*/
+    ctx[59].fresh + ""
   );
   let t3;
   let t4;
   let t5_value = (
     /*t*/
-    ctx[60].count + ""
+    ctx[59].count + ""
   );
   let t5;
   let t6;
   let t7_value = (
     /*t*/
-    ctx[60].mastered + ""
+    ctx[59].mastered + ""
   );
   let t7;
   return {
@@ -18420,27 +18465,27 @@ function create_if_block_74(ctx) {
         span0,
         "width",
         /*t*/
-        ctx[60].mastered / /*t*/
-        ctx[60].count * 100 + "%"
+        ctx[59].mastered / /*t*/
+        ctx[59].count * 100 + "%"
       );
       attr(span1, "class", "el-theme-bar-seg is-learning");
       set_style(
         span1,
         "width",
         /*t*/
-        (ctx[60].count - /*t*/
-        ctx[60].fresh - /*t*/
-        ctx[60].mastered) / /*t*/
-        ctx[60].count * 100 + "%"
+        (ctx[59].count - /*t*/
+        ctx[59].fresh - /*t*/
+        ctx[59].mastered) / /*t*/
+        ctx[59].count * 100 + "%"
       );
       attr(div0, "class", "el-theme-bar");
       attr(div0, "role", "img");
       attr(div0, "aria-label", div0_aria_label_value = "\u5DF2\u5B66 " + /*t*/
-      (ctx[60].count - /*t*/
-      ctx[60].fresh) + "/" + /*t*/
-      ctx[60].count + "\uFF0C\u5DF2\u638C\u63E1 " + /*t*/
-      ctx[60].mastered + "\uFF0C\u672A\u5B66 " + /*t*/
-      ctx[60].fresh);
+      (ctx[59].count - /*t*/
+      ctx[59].fresh) + "/" + /*t*/
+      ctx[59].count + "\uFF0C\u5DF2\u638C\u63E1 " + /*t*/
+      ctx[59].mastered + "\uFF0C\u672A\u5B66 " + /*t*/
+      ctx[59].fresh);
       attr(span2, "class", "el-theme-bar-label");
       attr(div1, "class", "el-theme-bar-row");
     },
@@ -18466,8 +18511,8 @@ function create_if_block_74(ctx) {
           span0,
           "width",
           /*t*/
-          ctx2[60].mastered / /*t*/
-          ctx2[60].count * 100 + "%"
+          ctx2[59].mastered / /*t*/
+          ctx2[59].count * 100 + "%"
         );
       }
       if (dirty[0] & /*rows*/
@@ -18476,31 +18521,31 @@ function create_if_block_74(ctx) {
           span1,
           "width",
           /*t*/
-          (ctx2[60].count - /*t*/
-          ctx2[60].fresh - /*t*/
-          ctx2[60].mastered) / /*t*/
-          ctx2[60].count * 100 + "%"
+          (ctx2[59].count - /*t*/
+          ctx2[59].fresh - /*t*/
+          ctx2[59].mastered) / /*t*/
+          ctx2[59].count * 100 + "%"
         );
       }
       if (dirty[0] & /*rows*/
       8 && div0_aria_label_value !== (div0_aria_label_value = "\u5DF2\u5B66 " + /*t*/
-      (ctx2[60].count - /*t*/
-      ctx2[60].fresh) + "/" + /*t*/
-      ctx2[60].count + "\uFF0C\u5DF2\u638C\u63E1 " + /*t*/
-      ctx2[60].mastered + "\uFF0C\u672A\u5B66 " + /*t*/
-      ctx2[60].fresh)) {
+      (ctx2[59].count - /*t*/
+      ctx2[59].fresh) + "/" + /*t*/
+      ctx2[59].count + "\uFF0C\u5DF2\u638C\u63E1 " + /*t*/
+      ctx2[59].mastered + "\uFF0C\u672A\u5B66 " + /*t*/
+      ctx2[59].fresh)) {
         attr(div0, "aria-label", div0_aria_label_value);
       }
       if (dirty[0] & /*rows*/
       8 && t3_value !== (t3_value = /*t*/
-      ctx2[60].count - /*t*/
-      ctx2[60].fresh + "")) set_data(t3, t3_value);
+      ctx2[59].count - /*t*/
+      ctx2[59].fresh + "")) set_data(t3, t3_value);
       if (dirty[0] & /*rows*/
       8 && t5_value !== (t5_value = /*t*/
-      ctx2[60].count + "")) set_data(t5, t5_value);
+      ctx2[59].count + "")) set_data(t5, t5_value);
       if (dirty[0] & /*rows*/
       8 && t7_value !== (t7_value = /*t*/
-      ctx2[60].mastered + "")) set_data(t7, t7_value);
+      ctx2[59].mastered + "")) set_data(t7, t7_value);
     },
     d(detaching) {
       if (detaching) {
@@ -18513,7 +18558,7 @@ function create_if_block_68(ctx) {
   let t0;
   let t1_value = (
     /*t*/
-    ctx[60].learn + ""
+    ctx[59].learn + ""
   );
   let t1;
   return {
@@ -18528,7 +18573,7 @@ function create_if_block_68(ctx) {
     p(ctx2, dirty) {
       if (dirty[0] & /*rows*/
       8 && t1_value !== (t1_value = /*t*/
-      ctx2[60].learn + "")) set_data(t1, t1_value);
+      ctx2[59].learn + "")) set_data(t1, t1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -18543,7 +18588,7 @@ function create_if_block_511(ctx) {
   let t0;
   let t1_value = (
     /*t*/
-    ctx[60].hard + ""
+    ctx[59].hard + ""
   );
   let t1;
   let span_title_value;
@@ -18552,18 +18597,18 @@ function create_if_block_511(ctx) {
   function click_handler_4() {
     return (
       /*click_handler_4*/
-      ctx[39](
+      ctx[38](
         /*t*/
-        ctx[60]
+        ctx[59]
       )
     );
   }
   function keydown_handler_1(...args) {
     return (
       /*keydown_handler_1*/
-      ctx[40](
+      ctx[39](
         /*t*/
-        ctx[60],
+        ctx[59],
         ...args
       )
     );
@@ -18576,7 +18621,7 @@ function create_if_block_511(ctx) {
       set_style(span, "color", "var(--text-error)");
       set_style(span, "cursor", "pointer");
       attr(span, "title", span_title_value = "\u70B9\u51FB\u5F00\u59CB\u300C" + /*t*/
-      ctx[60].name + "\u300D\u96BE\u8BCD\u4E13\u9879");
+      ctx[59].name + "\u300D\u96BE\u8BCD\u4E13\u9879");
       attr(span, "role", "button");
       attr(span, "tabindex", "-1");
     },
@@ -18596,10 +18641,10 @@ function create_if_block_511(ctx) {
       ctx = new_ctx;
       if (dirty[0] & /*rows*/
       8 && t1_value !== (t1_value = /*t*/
-      ctx[60].hard + "")) set_data(t1, t1_value);
+      ctx[59].hard + "")) set_data(t1, t1_value);
       if (dirty[0] & /*rows*/
       8 && span_title_value !== (span_title_value = "\u70B9\u51FB\u5F00\u59CB\u300C" + /*t*/
-      ctx[60].name + "\u300D\u96BE\u8BCD\u4E13\u9879")) {
+      ctx[59].name + "\u300D\u96BE\u8BCD\u4E13\u9879")) {
         attr(span, "title", span_title_value);
       }
     },
@@ -18618,11 +18663,11 @@ function create_if_block_410(ctx) {
   let each_1_lookup = /* @__PURE__ */ new Map();
   let each_value_3 = ensure_array_like(
     /*t*/
-    ctx[60].keywords
+    ctx[59].keywords
   );
   const get_key = (ctx2) => (
     /*k*/
-    ctx2[63]
+    ctx2[62]
   );
   for (let i = 0; i < each_value_3.length; i += 1) {
     let child_ctx = get_each_context_32(ctx, each_value_3, i);
@@ -18650,7 +18695,7 @@ function create_if_block_410(ctx) {
       8) {
         each_value_3 = ensure_array_like(
           /*t*/
-          ctx2[60].keywords
+          ctx2[59].keywords
         );
         each_blocks = update_keyed_each(each_blocks, dirty, get_key, 1, ctx2, each_value_3, each_1_lookup, div, destroy_block, create_each_block_32, null, get_each_context_32);
       }
@@ -18669,7 +18714,7 @@ function create_each_block_32(key_1, ctx) {
   let span;
   let t_1_value = (
     /*k*/
-    ctx[63] + ""
+    ctx[62] + ""
   );
   let t_1;
   return {
@@ -18689,7 +18734,7 @@ function create_each_block_32(key_1, ctx) {
       ctx = new_ctx;
       if (dirty[0] & /*rows*/
       8 && t_1_value !== (t_1_value = /*k*/
-      ctx[63] + "")) set_data(t_1, t_1_value);
+      ctx[62] + "")) set_data(t_1, t_1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -18711,7 +18756,7 @@ function create_each_block_22(key_1, ctx) {
   let div1;
   let t4_value = (
     /*t*/
-    ctx[60].name + ""
+    ctx[59].name + ""
   );
   let t4;
   let t5;
@@ -18720,20 +18765,20 @@ function create_each_block_22(key_1, ctx) {
   let t7;
   let t8_value = (
     /*t*/
-    ctx[60].todayNew + ""
+    ctx[59].todayNew + ""
   );
   let t8;
   let t9;
   let t10_value = (
     /*t*/
-    ctx[60].due + ""
+    ctx[59].due + ""
   );
   let t10;
   let t11;
   let t12;
   let t13_value = (
     /*t*/
-    ctx[60].fresh + ""
+    ctx[59].fresh + ""
   );
   let t13;
   let t14;
@@ -18751,52 +18796,52 @@ function create_each_block_22(key_1, ctx) {
   function click_handler_2() {
     return (
       /*click_handler_2*/
-      ctx[37](
+      ctx[36](
         /*t*/
-        ctx[60]
+        ctx[59]
       )
     );
   }
   function click_handler_3() {
     return (
       /*click_handler_3*/
-      ctx[38](
+      ctx[37](
         /*t*/
-        ctx[60]
+        ctx[59]
       )
     );
   }
   let if_block0 = (
     /*t*/
-    ctx[60].count > 0 && create_if_block_74(ctx)
+    ctx[59].count > 0 && create_if_block_74(ctx)
   );
   let if_block1 = (
     /*t*/
-    ctx[60].learn > 0 && create_if_block_68(ctx)
+    ctx[59].learn > 0 && create_if_block_68(ctx)
   );
   let if_block2 = (
     /*t*/
-    ctx[60].hard > 0 && create_if_block_511(ctx)
+    ctx[59].hard > 0 && create_if_block_511(ctx)
   );
   let if_block3 = (
     /*t*/
-    ctx[60].keywords.length && create_if_block_410(ctx)
+    ctx[59].keywords.length && create_if_block_410(ctx)
   );
   function click_handler_5() {
     return (
       /*click_handler_5*/
-      ctx[41](
+      ctx[40](
         /*t*/
-        ctx[60]
+        ctx[59]
       )
     );
   }
   function keydown_handler_2(...args) {
     return (
       /*keydown_handler_2*/
-      ctx[42](
+      ctx[41](
         /*t*/
-        ctx[60],
+        ctx[59],
         ...args
       )
     );
@@ -18804,27 +18849,27 @@ function create_each_block_22(key_1, ctx) {
   function click_handler_6() {
     return (
       /*click_handler_6*/
-      ctx[43](
+      ctx[42](
         /*t*/
-        ctx[60]
+        ctx[59]
       )
     );
   }
   function click_handler_7() {
     return (
       /*click_handler_7*/
-      ctx[44](
+      ctx[43](
         /*t*/
-        ctx[60]
+        ctx[59]
       )
     );
   }
   function click_handler_8() {
     return (
       /*click_handler_8*/
-      ctx[45](
+      ctx[44](
         /*t*/
-        ctx[60]
+        ctx[59]
       )
     );
   }
@@ -18876,12 +18921,12 @@ function create_each_block_22(key_1, ctx) {
       attr(button1, "type", "button");
       attr(button1, "class", "el-theme-pin");
       attr(button1, "title", button1_title_value = /*t*/
-      ctx[60].pinned ? "\u53D6\u6D88\u7F6E\u9876" : "\u7F6E\u9876\uFF08\u6392\u5728\u5217\u8868\u6700\u524D\uFF09");
+      ctx[59].pinned ? "\u53D6\u6D88\u7F6E\u9876" : "\u7F6E\u9876\uFF08\u6392\u5728\u5217\u8868\u6700\u524D\uFF09");
       toggle_class(
         button1,
         "is-pinned",
         /*t*/
-        ctx[60].pinned
+        ctx[59].pinned
       );
       attr(div0, "class", "el-theme-corner");
       attr(div1, "class", "el-theme-name");
@@ -18947,7 +18992,7 @@ function create_each_block_22(key_1, ctx) {
       ctx = new_ctx;
       if (dirty[0] & /*rows*/
       8 && button1_title_value !== (button1_title_value = /*t*/
-      ctx[60].pinned ? "\u53D6\u6D88\u7F6E\u9876" : "\u7F6E\u9876\uFF08\u6392\u5728\u5217\u8868\u6700\u524D\uFF09")) {
+      ctx[59].pinned ? "\u53D6\u6D88\u7F6E\u9876" : "\u7F6E\u9876\uFF08\u6392\u5728\u5217\u8868\u6700\u524D\uFF09")) {
         attr(button1, "title", button1_title_value);
       }
       if (dirty[0] & /*rows*/
@@ -18956,15 +19001,15 @@ function create_each_block_22(key_1, ctx) {
           button1,
           "is-pinned",
           /*t*/
-          ctx[60].pinned
+          ctx[59].pinned
         );
       }
       if (dirty[0] & /*rows*/
       8 && t4_value !== (t4_value = /*t*/
-      ctx[60].name + "")) set_data(t4, t4_value);
+      ctx[59].name + "")) set_data(t4, t4_value);
       if (
         /*t*/
-        ctx[60].count > 0
+        ctx[59].count > 0
       ) {
         if (if_block0) {
           if_block0.p(ctx, dirty);
@@ -18979,13 +19024,13 @@ function create_each_block_22(key_1, ctx) {
       }
       if (dirty[0] & /*rows*/
       8 && t8_value !== (t8_value = /*t*/
-      ctx[60].todayNew + "")) set_data(t8, t8_value);
+      ctx[59].todayNew + "")) set_data(t8, t8_value);
       if (dirty[0] & /*rows*/
       8 && t10_value !== (t10_value = /*t*/
-      ctx[60].due + "")) set_data(t10, t10_value);
+      ctx[59].due + "")) set_data(t10, t10_value);
       if (
         /*t*/
-        ctx[60].learn > 0
+        ctx[59].learn > 0
       ) {
         if (if_block1) {
           if_block1.p(ctx, dirty);
@@ -19000,10 +19045,10 @@ function create_each_block_22(key_1, ctx) {
       }
       if (dirty[0] & /*rows*/
       8 && t13_value !== (t13_value = /*t*/
-      ctx[60].fresh + "")) set_data(t13, t13_value);
+      ctx[59].fresh + "")) set_data(t13, t13_value);
       if (
         /*t*/
-        ctx[60].hard > 0
+        ctx[59].hard > 0
       ) {
         if (if_block2) {
           if_block2.p(ctx, dirty);
@@ -19018,7 +19063,7 @@ function create_each_block_22(key_1, ctx) {
       }
       if (
         /*t*/
-        ctx[60].keywords.length
+        ctx[59].keywords.length
       ) {
         if (if_block3) {
           if_block3.p(ctx, dirty);
@@ -19061,13 +19106,13 @@ function create_if_block6(ctx) {
   let div2_aria_label_value;
   let each_value = ensure_array_like(
     /*heat*/
-    ctx[10]
+    ctx[9]
   );
   const get_key = (ctx2) => {
     var _a;
     return (
       /*w*/
-      (_a = ctx2[54].cells[0]) == null ? void 0 : _a.date
+      (_a = ctx2[53].cells[0]) == null ? void 0 : _a.date
     );
   };
   for (let i = 0; i < each_value.length; i += 1) {
@@ -19083,7 +19128,7 @@ function create_if_block6(ctx) {
       t0 = text("\u8FD1 12 \u5468\u5171 ");
       t1 = text(
         /*heatSum*/
-        ctx[11]
+        ctx[10]
       );
       t2 = text(" \u6B21");
       t3 = space();
@@ -19101,7 +19146,7 @@ function create_if_block6(ctx) {
       attr(div2, "class", "el-heat");
       attr(div2, "role", "img");
       attr(div2, "aria-label", div2_aria_label_value = "\u8FD1 12 \u5468\u6253\u5361\u65E5\u5386\uFF0C\u5171 " + /*heatSum*/
-      ctx[11] + " \u6B21\u5B66\u4E60\u6D3B\u52A8");
+      ctx[10] + " \u6B21\u5B66\u4E60\u6D3B\u52A8");
     },
     m(target, anchor) {
       insert(target, div2, anchor);
@@ -19122,22 +19167,22 @@ function create_if_block6(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*heatSum*/
-      2048) set_data(
+      1024) set_data(
         t1,
         /*heatSum*/
-        ctx2[11]
+        ctx2[10]
       );
       if (dirty[0] & /*heat, heatLevel, cellTip*/
-      787456) {
+      393728) {
         each_value = ensure_array_like(
           /*heat*/
-          ctx2[10]
+          ctx2[9]
         );
         each_blocks = update_keyed_each(each_blocks, dirty, get_key, 1, ctx2, each_value, each_1_lookup, div1, destroy_block, create_each_block6, null, get_each_context6);
       }
       if (dirty[0] & /*heatSum*/
-      2048 && div2_aria_label_value !== (div2_aria_label_value = "\u8FD1 12 \u5468\u6253\u5361\u65E5\u5386\uFF0C\u5171 " + /*heatSum*/
-      ctx2[11] + " \u6B21\u5B66\u4E60\u6D3B\u52A8")) {
+      1024 && div2_aria_label_value !== (div2_aria_label_value = "\u8FD1 12 \u5468\u6253\u5361\u65E5\u5386\uFF0C\u5171 " + /*heatSum*/
+      ctx2[10] + " \u6B21\u5B66\u4E60\u6D3B\u52A8")) {
         attr(div2, "aria-label", div2_aria_label_value);
       }
     },
@@ -19179,18 +19224,18 @@ function create_if_block_115(ctx) {
   function click_handler_9() {
     return (
       /*click_handler_9*/
-      ctx[46](
+      ctx[45](
         /*c*/
-        ctx[57]
+        ctx[56]
       )
     );
   }
   function keydown_handler_3(...args) {
     return (
       /*keydown_handler_3*/
-      ctx[47](
+      ctx[46](
         /*c*/
-        ctx[57],
+        ctx[56],
         ...args
       )
     );
@@ -19199,19 +19244,19 @@ function create_if_block_115(ctx) {
     c() {
       i = element("i");
       attr(i, "class", i_class_value = "el-heat-cell h" + /*heatLevel*/
-      ctx[18](
+      ctx[17](
         /*c*/
-        ctx[57].n
+        ctx[56].n
       ));
       attr(i, "title", i_title_value = /*cellTip*/
-      ctx[19](
+      ctx[18](
         /*c*/
-        ctx[57]
+        ctx[56]
       ));
       attr(i, "aria-label", i_aria_label_value = /*cellTip*/
-      ctx[19](
+      ctx[18](
         /*c*/
-        ctx[57]
+        ctx[56]
       ));
       attr(i, "role", "button");
       attr(i, "tabindex", "-1");
@@ -19219,7 +19264,7 @@ function create_if_block_115(ctx) {
         i,
         "is-today",
         /*c*/
-        ctx[57].isNew
+        ctx[56].isNew
       );
     },
     m(target, anchor) {
@@ -19235,36 +19280,36 @@ function create_if_block_115(ctx) {
     p(new_ctx, dirty) {
       ctx = new_ctx;
       if (dirty[0] & /*heat*/
-      1024 && i_class_value !== (i_class_value = "el-heat-cell h" + /*heatLevel*/
-      ctx[18](
+      512 && i_class_value !== (i_class_value = "el-heat-cell h" + /*heatLevel*/
+      ctx[17](
         /*c*/
-        ctx[57].n
+        ctx[56].n
       ))) {
         attr(i, "class", i_class_value);
       }
       if (dirty[0] & /*heat*/
-      1024 && i_title_value !== (i_title_value = /*cellTip*/
-      ctx[19](
+      512 && i_title_value !== (i_title_value = /*cellTip*/
+      ctx[18](
         /*c*/
-        ctx[57]
+        ctx[56]
       ))) {
         attr(i, "title", i_title_value);
       }
       if (dirty[0] & /*heat*/
-      1024 && i_aria_label_value !== (i_aria_label_value = /*cellTip*/
-      ctx[19](
+      512 && i_aria_label_value !== (i_aria_label_value = /*cellTip*/
+      ctx[18](
         /*c*/
-        ctx[57]
+        ctx[56]
       ))) {
         attr(i, "aria-label", i_aria_label_value);
       }
       if (dirty[0] & /*heat, heat*/
-      1024) {
+      512) {
         toggle_class(
           i,
           "is-today",
           /*c*/
-          ctx[57].isNew
+          ctx[56].isNew
         );
       }
     },
@@ -19283,7 +19328,7 @@ function create_each_block_14(key_1, ctx) {
   function select_block_type_2(ctx2, dirty) {
     if (
       /*c*/
-      ctx2[57]
+      ctx2[56]
     ) return create_if_block_115;
     return create_else_block5;
   }
@@ -19330,7 +19375,7 @@ function create_each_block6(key_1, ctx) {
   let div0;
   let t0_value = (
     /*w*/
-    ctx[54].month + ""
+    ctx[53].month + ""
   );
   let t0;
   let t1;
@@ -19339,11 +19384,11 @@ function create_each_block6(key_1, ctx) {
   let t2;
   let each_value_1 = ensure_array_like(
     /*w*/
-    ctx[54].cells
+    ctx[53].cells
   );
   const get_key = (ctx2) => (
     /*d*/
-    ctx2[59]
+    ctx2[58]
   );
   for (let i = 0; i < each_value_1.length; i += 1) {
     let child_ctx = get_each_context_14(ctx, each_value_1, i);
@@ -19381,13 +19426,13 @@ function create_each_block6(key_1, ctx) {
     p(new_ctx, dirty) {
       ctx = new_ctx;
       if (dirty[0] & /*heat*/
-      1024 && t0_value !== (t0_value = /*w*/
-      ctx[54].month + "")) set_data(t0, t0_value);
+      512 && t0_value !== (t0_value = /*w*/
+      ctx[53].month + "")) set_data(t0, t0_value);
       if (dirty[0] & /*heatLevel, heat, cellTip*/
-      787456) {
+      393728) {
         each_value_1 = ensure_array_like(
           /*w*/
-          ctx[54].cells
+          ctx[53].cells
         );
         each_blocks = update_keyed_each(each_blocks, dirty, get_key, 1, ctx, each_value_1, each_1_lookup, div1, destroy_block, create_each_block_14, t2, get_each_context_14);
       }
@@ -19424,44 +19469,40 @@ function create_fragment7(ctx) {
   let t10;
   let t11;
   let t12;
+  let t13_value = (
+    /*totals*/
+    ctx[4].due + ""
+  );
   let t13;
   let t14;
+  let t15_value = (
+    /*totals*/
+    ctx[4].learn + ""
+  );
   let t15;
   let t16;
   let t17_value = (
     /*totals*/
-    ctx[4].due + ""
+    ctx[4].mastered + ""
   );
   let t17;
   let t18;
   let t19_value = (
     /*totals*/
-    ctx[4].learn + ""
+    ctx[4].words + ""
   );
   let t19;
   let t20;
-  let t21_value = (
-    /*totals*/
-    ctx[4].mastered + ""
-  );
   let t21;
-  let t22;
-  let t23_value = (
-    /*totals*/
-    ctx[4].words + ""
-  );
-  let t23;
-  let t24;
-  let t25;
-  let t26_value = (
+  let t22_value = (
     /*plugin*/
     ctx[0].db.stats.streak + ""
   );
+  let t22;
+  let t23;
+  let t24;
+  let t25;
   let t26;
-  let t27;
-  let t28;
-  let t29;
-  let t30;
   let mounted;
   let dispose;
   let if_block0 = (
@@ -19470,19 +19511,19 @@ function create_fragment7(ctx) {
   );
   let if_block1 = (
     /*guideVisible*/
-    ctx[12] && create_if_block_144(ctx)
+    ctx[11] && create_if_block_144(ctx)
   );
   let if_block2 = (
     /*totals*/
     ctx[4].hard > 0 && create_if_block_134(ctx)
   );
   let if_block3 = !/*loading*/
-  ctx[8] && /*chartSum*/
-  ctx[13] > 0 && create_if_block_84(ctx);
+  ctx[7] && /*chartSum*/
+  ctx[12] > 0 && create_if_block_84(ctx);
   function select_block_type_1(ctx2, dirty) {
     if (
       /*loading*/
-      ctx2[8]
+      ctx2[7]
     ) return create_if_block_210;
     if (
       /*rows*/
@@ -19493,8 +19534,8 @@ function create_fragment7(ctx) {
   let current_block_type = select_block_type_1(ctx, [-1, -1, -1]);
   let if_block4 = current_block_type(ctx);
   let if_block5 = !/*loading*/
-  ctx[8] && /*heatSum*/
-  ctx[11] > 0 && create_if_block6(ctx);
+  ctx[7] && /*heatSum*/
+  ctx[10] > 0 && create_if_block6(ctx);
   return {
     c() {
       div3 = element("div");
@@ -19518,52 +19559,42 @@ function create_fragment7(ctx) {
       if (if_block1) if_block1.c();
       t9 = space();
       div2 = element("div");
-      t10 = text("\u4ECA\u65E5 \u65B0\u5B66 ");
+      t10 = text("\u4ECA\u65E5 +");
       t11 = text(
         /*todayCount*/
         ctx[6]
       );
-      t12 = text(" \xB7 \u590D\u4E60 ");
-      t13 = text(
-        /*todayRev*/
-        ctx[7]
-      );
-      t14 = text(" \xB7 \u5F85\u5B66 ");
-      t15 = text(
-        /*todayPending*/
-        ctx[5]
-      );
-      t16 = text(" \xB7 \u5F85\u590D\u4E60 ");
+      t12 = text(" \xB7 \u5F85\u590D\u4E60 ");
+      t13 = text(t13_value);
+      t14 = text(" \xB7 \u5B66\u4E60\u4E2D ");
+      t15 = text(t15_value);
+      t16 = text(" \xB7 \u638C\u63E1 ");
       t17 = text(t17_value);
-      t18 = text(" \xB7 \u5B66\u4E60\u4E2D ");
+      t18 = text("/");
       t19 = text(t19_value);
-      t20 = text(" \xB7 \u638C\u63E1\n    ");
-      t21 = text(t21_value);
-      t22 = text("/");
-      t23 = text(t23_value);
-      t24 = space();
+      t20 = space();
       if (if_block2) if_block2.c();
-      t25 = text("\n    \xB7 \u8FDE\u7EED\u6253\u5361 ");
-      t26 = text(t26_value);
-      t27 = text(" \u5929");
-      t28 = space();
+      t21 = text("\n    \xB7 \u8FDE\u7EED\u6253\u5361 ");
+      t22 = text(t22_value);
+      t23 = text(" \u5929");
+      t24 = space();
       if (if_block3) if_block3.c();
-      t29 = space();
+      t25 = space();
       if_block4.c();
-      t30 = space();
+      t26 = space();
       if (if_block5) if_block5.c();
       attr(button0, "class", "el-mute clickable-icon");
       attr(
         button0,
         "title",
         /*muteTip*/
-        ctx[14]
+        ctx[13]
       );
       attr(
         button0,
         "aria-label",
         /*muteTip*/
-        ctx[14]
+        ctx[13]
       );
       attr(button3, "class", "el-more clickable-icon");
       attr(button3, "title", "\u66F4\u591A\u64CD\u4F5C\uFF1A\u96BE\u8BCD\u4E13\u9879 / \u6570\u636E\u8865\u5168");
@@ -19603,24 +19634,20 @@ function create_fragment7(ctx) {
       append(div2, t18);
       append(div2, t19);
       append(div2, t20);
+      if (if_block2) if_block2.m(div2, null);
       append(div2, t21);
       append(div2, t22);
       append(div2, t23);
-      append(div2, t24);
-      if (if_block2) if_block2.m(div2, null);
-      append(div2, t25);
-      append(div2, t26);
-      append(div2, t27);
-      append(div3, t28);
+      append(div3, t24);
       if (if_block3) if_block3.m(div3, null);
-      append(div3, t29);
+      append(div3, t25);
       if_block4.m(div3, null);
-      append(div3, t30);
+      append(div3, t26);
       if (if_block5) if_block5.m(div3, null);
       if (!mounted) {
         dispose = [
           action_destroyer(icon_action = /*icon*/
-          ctx[15].call(
+          ctx[14].call(
             null,
             button0,
             /*audioMuted*/
@@ -19630,27 +19657,27 @@ function create_fragment7(ctx) {
             button0,
             "click",
             /*toggleMute*/
-            ctx[16]
+            ctx[15]
           ),
           listen(
             button1,
             "click",
             /*openLookup*/
-            ctx[29]
+            ctx[28]
           ),
           listen(
             button2,
             "click",
             /*openCreate*/
-            ctx[25]
+            ctx[24]
           ),
           action_destroyer(icon_action_1 = /*icon*/
-          ctx[15].call(null, button3, "ellipsis")),
+          ctx[14].call(null, button3, "ellipsis")),
           listen(
             button3,
             "click",
             /*openMore*/
-            ctx[30]
+            ctx[29]
           )
         ];
         mounted = true;
@@ -19658,21 +19685,21 @@ function create_fragment7(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*muteTip*/
-      16384) {
+      8192) {
         attr(
           button0,
           "title",
           /*muteTip*/
-          ctx2[14]
+          ctx2[13]
         );
       }
       if (dirty[0] & /*muteTip*/
-      16384) {
+      8192) {
         attr(
           button0,
           "aria-label",
           /*muteTip*/
-          ctx2[14]
+          ctx2[13]
         );
       }
       if (icon_action && is_function(icon_action.update) && dirty[0] & /*audioMuted*/
@@ -19698,7 +19725,7 @@ function create_fragment7(ctx) {
       }
       if (
         /*guideVisible*/
-        ctx2[12]
+        ctx2[11]
       ) {
         if (if_block1) {
           if_block1.p(ctx2, dirty);
@@ -19717,30 +19744,18 @@ function create_fragment7(ctx) {
         /*todayCount*/
         ctx2[6]
       );
-      if (dirty[0] & /*todayRev*/
-      128) set_data(
-        t13,
-        /*todayRev*/
-        ctx2[7]
-      );
-      if (dirty[0] & /*todayPending*/
-      32) set_data(
-        t15,
-        /*todayPending*/
-        ctx2[5]
-      );
+      if (dirty[0] & /*totals*/
+      16 && t13_value !== (t13_value = /*totals*/
+      ctx2[4].due + "")) set_data(t13, t13_value);
+      if (dirty[0] & /*totals*/
+      16 && t15_value !== (t15_value = /*totals*/
+      ctx2[4].learn + "")) set_data(t15, t15_value);
       if (dirty[0] & /*totals*/
       16 && t17_value !== (t17_value = /*totals*/
-      ctx2[4].due + "")) set_data(t17, t17_value);
+      ctx2[4].mastered + "")) set_data(t17, t17_value);
       if (dirty[0] & /*totals*/
       16 && t19_value !== (t19_value = /*totals*/
-      ctx2[4].learn + "")) set_data(t19, t19_value);
-      if (dirty[0] & /*totals*/
-      16 && t21_value !== (t21_value = /*totals*/
-      ctx2[4].mastered + "")) set_data(t21, t21_value);
-      if (dirty[0] & /*totals*/
-      16 && t23_value !== (t23_value = /*totals*/
-      ctx2[4].words + "")) set_data(t23, t23_value);
+      ctx2[4].words + "")) set_data(t19, t19_value);
       if (
         /*totals*/
         ctx2[4].hard > 0
@@ -19750,24 +19765,24 @@ function create_fragment7(ctx) {
         } else {
           if_block2 = create_if_block_134(ctx2);
           if_block2.c();
-          if_block2.m(div2, t25);
+          if_block2.m(div2, t21);
         }
       } else if (if_block2) {
         if_block2.d(1);
         if_block2 = null;
       }
       if (dirty[0] & /*plugin*/
-      1 && t26_value !== (t26_value = /*plugin*/
-      ctx2[0].db.stats.streak + "")) set_data(t26, t26_value);
+      1 && t22_value !== (t22_value = /*plugin*/
+      ctx2[0].db.stats.streak + "")) set_data(t22, t22_value);
       if (!/*loading*/
-      ctx2[8] && /*chartSum*/
-      ctx2[13] > 0) {
+      ctx2[7] && /*chartSum*/
+      ctx2[12] > 0) {
         if (if_block3) {
           if_block3.p(ctx2, dirty);
         } else {
           if_block3 = create_if_block_84(ctx2);
           if_block3.c();
-          if_block3.m(div3, t29);
+          if_block3.m(div3, t25);
         }
       } else if (if_block3) {
         if_block3.d(1);
@@ -19780,12 +19795,12 @@ function create_fragment7(ctx) {
         if_block4 = current_block_type(ctx2);
         if (if_block4) {
           if_block4.c();
-          if_block4.m(div3, t30);
+          if_block4.m(div3, t26);
         }
       }
       if (!/*loading*/
-      ctx2[8] && /*heatSum*/
-      ctx2[11] > 0) {
+      ctx2[7] && /*heatSum*/
+      ctx2[10] > 0) {
         if (if_block5) {
           if_block5.p(ctx2, dirty);
         } else {
@@ -19835,7 +19850,6 @@ function instance7($$self, $$props, $$invalidate) {
   };
   let todayPending = 0;
   let todayCount = 0;
-  let todayRev = 0;
   let loading = true;
   let audioMuted = plugin.muted;
   function icon(node, name) {
@@ -19915,8 +19929,8 @@ function instance7($$self, $$props, $$invalidate) {
       }
       weeks.push({ cells, month });
     }
-    $$invalidate(10, heat = weeks);
-    $$invalidate(11, heatSum = sum);
+    $$invalidate(9, heat = weeks);
+    $$invalidate(10, heatSum = sum);
   }
   function openWords(name) {
     new WordListModal(plugin.app, plugin, name).open();
@@ -19926,12 +19940,12 @@ function instance7($$self, $$props, $$invalidate) {
   }
   let guideVisible = aiGuideNeeded();
   function openGuide() {
-    new AiSetupModal(plugin.app, plugin, () => $$invalidate(12, guideVisible = false)).open();
+    new AiSetupModal(plugin.app, plugin, () => $$invalidate(11, guideVisible = false)).open();
   }
   function dismissGuide() {
     $$invalidate(0, plugin.db.settings.aiGuideDone = true, plugin);
     plugin.store.touch();
-    $$invalidate(12, guideVisible = false);
+    $$invalidate(11, guideVisible = false);
   }
   onMount(() => void refresh());
   function buildRows() {
@@ -19976,8 +19990,8 @@ function instance7($$self, $$props, $$invalidate) {
     });
   }
   async function refresh(silent = false) {
-    var _a;
-    if (!silent) $$invalidate(8, loading = true);
+    var _a, _b;
+    if (!silent) $$invalidate(7, loading = true);
     await plugin.words.scan();
     const now2 = Date.now();
     const progress = plugin.db.progress;
@@ -20000,15 +20014,13 @@ function instance7($$self, $$props, $$invalidate) {
       }
     }
     $$invalidate(4, totals = { words, due, fresh, mastered, hard, learn });
-    const day = (_a = plugin.db.stats.days[fmtDate(now2)]) !== null && _a !== void 0 ? _a : { new: 0, rev: 0 };
-    $$invalidate(6, todayCount = day.new);
-    $$invalidate(7, todayRev = day.rev);
+    $$invalidate(6, todayCount = (_b = (_a = plugin.db.stats.days[fmtDate(now2)]) === null || _a === void 0 ? void 0 : _a.new) !== null && _b !== void 0 ? _b : 0);
     const quota = Math.max(0, plugin.db.settings.dailyNew - todayCount);
     $$invalidate(5, todayPending = totals.due + Math.min(quota, totals.fresh));
     buildDays();
     buildHeat();
-    $$invalidate(12, guideVisible = aiGuideNeeded());
-    if (!silent) $$invalidate(8, loading = false);
+    $$invalidate(11, guideVisible = aiGuideNeeded());
+    if (!silent) $$invalidate(7, loading = false);
   }
   function togglePin(name) {
     const t = plugin.db.themes[name];
@@ -20065,10 +20077,10 @@ function instance7($$self, $$props, $$invalidate) {
     menu.showAtMouseEvent(ev);
   }
   const click_handler = () => start(null);
-  const mouseenter_handler = (i) => $$invalidate(9, tipDay = i);
-  const click_handler_1 = (i) => $$invalidate(9, tipDay = i);
-  const keydown_handler = (i, e) => e.key === "Enter" && $$invalidate(9, tipDay = i);
-  const mouseleave_handler = () => $$invalidate(9, tipDay = -1);
+  const mouseenter_handler = (i) => $$invalidate(8, tipDay = i);
+  const click_handler_1 = (i) => $$invalidate(8, tipDay = i);
+  const keydown_handler = (i, e) => e.key === "Enter" && $$invalidate(8, tipDay = i);
+  const mouseleave_handler = () => $$invalidate(8, tipDay = -1);
   const click_handler_2 = (t) => disableTheme(t.name);
   const click_handler_3 = (t) => togglePin(t.name);
   const click_handler_4 = (t) => start(t.name, true);
@@ -20086,11 +20098,11 @@ function instance7($$self, $$props, $$invalidate) {
   $$self.$$.update = () => {
     if ($$self.$$.dirty[0] & /*audioMuted*/
     2) {
-      $: $$invalidate(14, muteTip = audioMuted ? "\u5DF2\u9759\u97F3\uFF1A\u70B9\u51FB\u5F00\u542F\u5168\u5C40\u53D1\u97F3" : "\u53D1\u97F3\u5F00\u542F\u4E2D\uFF1A\u70B9\u51FB\u5168\u5C40\u9759\u97F3");
+      $: $$invalidate(13, muteTip = audioMuted ? "\u5DF2\u9759\u97F3\uFF1A\u70B9\u51FB\u5F00\u542F\u5168\u5C40\u53D1\u97F3" : "\u53D1\u97F3\u5F00\u542F\u4E2D\uFF1A\u70B9\u51FB\u5168\u5C40\u9759\u97F3");
     }
     if ($$self.$$.dirty[0] & /*days*/
     4) {
-      $: $$invalidate(13, chartSum = days.reduce((s, d) => s + d.new + d.rev, 0));
+      $: $$invalidate(12, chartSum = days.reduce((s, d) => s + d.new + d.rev, 0));
     }
   };
   return [
@@ -20101,7 +20113,6 @@ function instance7($$self, $$props, $$invalidate) {
     totals,
     todayPending,
     todayCount,
-    todayRev,
     loading,
     tipDay,
     heat,
@@ -20147,10 +20158,10 @@ function instance7($$self, $$props, $$invalidate) {
 var ThemePanel = class extends SvelteComponent {
   constructor(options) {
     super();
-    init(this, options, instance7, create_fragment7, safe_not_equal, { plugin: 0, refresh: 31 }, null, [-1, -1, -1]);
+    init(this, options, instance7, create_fragment7, safe_not_equal, { plugin: 0, refresh: 30 }, null, [-1, -1, -1]);
   }
   get refresh() {
-    return this.$$.ctx[31];
+    return this.$$.ctx[30];
   }
 };
 var ThemePanel_default = ThemePanel;
@@ -20200,7 +20211,7 @@ var WordCardModal = class _WordCardModal extends import_obsidian16.Modal {
     (_a = _WordCardModal.current) == null ? void 0 : _a.close();
     _WordCardModal.current = this;
     this.modalEl.addClass("el-wordcard-modal");
-    this.plugin.speakWord(this.wdoc.word);
+    this.plugin.speakWord(this.wdoc.word, void 0, firstExample(this.wdoc));
     this.comp = new WordFullCard_default({
       target: this.contentEl,
       props: {
@@ -20237,6 +20248,7 @@ var WordCardModal = class _WordCardModal extends import_obsidian16.Modal {
   onClose() {
     var _a;
     if (_WordCardModal.current === this) _WordCardModal.current = void 0;
+    this.plugin.stopSpeaking();
     (_a = this.comp) == null ? void 0 : _a.$destroy();
     this.contentEl.empty();
   }
@@ -20555,16 +20567,21 @@ if (typeof window !== "undefined" && "speechSynthesis" in window) {
   else synth.onvoiceschanged = refresh;
 }
 var speakSeq = 0;
-function speak(text2, rate = 1) {
+function speak(text2, rate = 1, onEnd) {
   if (!("speechSynthesis" in window)) return;
   try {
     if (!voicePicked || !voice) pickVoice();
-    play(text2, rate, 0);
+    play(text2, rate, 0, onEnd);
   } catch (e) {
     console.error("TTS \u5931\u8D25:", e);
   }
 }
-function play(text2, rate, attempt) {
+function stopSpeak() {
+  if (!("speechSynthesis" in window)) return;
+  speakSeq++;
+  window.speechSynthesis.cancel();
+}
+function play(text2, rate, attempt, onEnd) {
   var _a;
   const synth = window.speechSynthesis;
   const gen = ++speakSeq;
@@ -20576,6 +20593,9 @@ function play(text2, rate, attempt) {
   let started = false;
   u.onstart = () => {
     started = true;
+  };
+  u.onend = () => {
+    if (gen === speakSeq) onEnd == null ? void 0 : onEnd();
   };
   u.onerror = (e) => {
     const err = e.error;
@@ -20590,7 +20610,7 @@ function play(text2, rate, attempt) {
         "TTS \u672A\u542F\u52A8\uFF0C\u91CD\u8BD5\u7B2C " + (attempt + 2) + " \u6B21" + (attempt === 2 ? "\uFF08\u6539\u7528\u7CFB\u7EDF\u9ED8\u8BA4\u58F0\u97F3\uFF09" : "")
       );
       setTimeout(() => {
-        if (gen === speakSeq) play(text2, rate, attempt + 1);
+        if (gen === speakSeq) play(text2, rate, attempt + 1, onEnd);
       }, 100);
     } else {
       console.error("TTS \u8FDE\u7CFB\u7EDF\u9ED8\u8BA4\u58F0\u97F3\u90FD\u672A\u542F\u52A8\uFF0CspeechSynthesis \u53EF\u80FD\u5DF2\u5047\u6B7B\uFF0C\u8BF7\u91CD\u542F Obsidian");
@@ -20600,8 +20620,8 @@ function play(text2, rate, attempt) {
 
 // src/main.ts
 var DEFAULT_DATA = {
-  root: DEFAULT_ROOT,
   settings: {
+    root: "EnglishLearn",
     dailyNew: 10,
     dailyReviewMax: 100,
     reviewReverse: true,
@@ -20646,6 +20666,8 @@ var EnglishLearnPlugin = class extends import_obsidian17.Plugin {
     /** 后台补全串行队列：连续几批入库不并发打同一批词，前一批跑完自动接下一批 */
     this.enrichQueue = Promise.resolve();
     this.enrichTurnScheduled = false;
+    /** 接读链代际：每次发音/手动例句朗读/停止都自增，旧链的接读回调对不上号即作废（切走即停） */
+    this.speakChain = 0;
   }
   /** 词笔记顶栏内容（阅读态 post-processor 与编辑态注入共用）：发音/音标/进度/主题（芯片可点改）/删除 */
   renderWordBar(bar, word, fm) {
@@ -20694,7 +20716,7 @@ var EnglishLearnPlugin = class extends import_obsidian17.Plugin {
   /** 编辑态（live preview / source）词笔记顶部注入同一条顶栏；阅读态交还给 post-processor */
   refreshEditNoteBar() {
     var _a, _b, _c, _d, _e;
-    const root = `${this.db.root}/words/`;
+    const root = `${this.db.settings.root}/words/`;
     if (this.editBar) {
       const view2 = this.editBar.leaf.view;
       const file2 = view2 instanceof import_obsidian17.MarkdownView ? view2.file : null;
@@ -20729,17 +20751,24 @@ var EnglishLearnPlugin = class extends import_obsidian17.Plugin {
     };
   }
   async onload() {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n;
-    this.store = new DataStore(this);
-    const { settings: loadedSettings, legacy: loaded, root } = await this.store.loadRaw();
-    const firstInstall = loaded === null && loadedSettings === null;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p;
+    const loaded = await (async () => {
+      try {
+        const f = `${DATA_ROOT}/settings.json`;
+        if (await this.app.vault.adapter.exists(f)) {
+          return JSON.parse(await this.app.vault.adapter.read(f));
+        }
+      } catch (e) {
+        console.error("\u8BFB\u53D6\u5171\u4EAB\u8BBE\u7F6E\u5931\u8D25\uFF0C\u56DE\u9000\u63D2\u4EF6 data.json:", e);
+      }
+      return await this.loadData();
+    })();
+    const firstInstall = loaded === null;
     const legacySync = !!((loaded == null ? void 0 : loaded.progress) || (loaded == null ? void 0 : loaded.themes) || (loaded == null ? void 0 : loaded.stats) || (loaded == null ? void 0 : loaded.ignored));
-    const { root: _oldRoot, ...settingsNoRoot } = loadedSettings != null ? loadedSettings : {};
     this.db = {
       ...structuredClone(DEFAULT_DATA),
       ...loaded,
-      root,
-      settings: { ...DEFAULT_DATA.settings, ...settingsNoRoot },
+      settings: { ...DEFAULT_DATA.settings, ...loaded == null ? void 0 : loaded.settings },
       stats: { ...DEFAULT_DATA.stats, ...loaded == null ? void 0 : loaded.stats },
       themes: (_a = loaded == null ? void 0 : loaded.themes) != null ? _a : {},
       progress: (_b = loaded == null ? void 0 : loaded.progress) != null ? _b : {},
@@ -20768,10 +20797,11 @@ var EnglishLearnPlugin = class extends import_obsidian17.Plugin {
       }
     }
     if (loaded) (_m = (_l = this.db.settings).aiGuideDone) != null ? _m : _l.aiGuideDone = true;
+    this.store = new DataStore(this);
     this.words = new WordStore(this);
-    this.dict = new EcdictDict(this.app, DATA_DIR);
-    this.audio = new AudioCache(this.app, DATA_DIR);
-    setPreferredVoice((_n = this.db.settings.ttsVoice) != null ? _n : null);
+    this.dict = new EcdictDict(this.app, DATA_ROOT, (_n = this.manifest.dir) != null ? _n : "");
+    this.audio = new AudioCache(this.app, DATA_ROOT, (_o = this.manifest.dir) != null ? _o : "");
+    setPreferredVoice((_p = this.db.settings.ttsVoice) != null ? _p : null);
     this.registerView(THEME_VIEW_TYPE, (leaf) => new ThemeView(leaf, this));
     this.registerView(LEARN_VIEW_TYPE, (leaf) => new LearnView(leaf, this));
     this.registerEditorExtension([vocabHighlight(this), vocabHover(this), ...vocabTapTranslate(this)]);
@@ -20857,7 +20887,7 @@ var EnglishLearnPlugin = class extends import_obsidian17.Plugin {
       var _a2;
       const word = (_a2 = ctx.frontmatter) == null ? void 0 : _a2.word;
       if (typeof word !== "string" || !word) return;
-      if (!ctx.sourcePath.startsWith(`${this.db.root}/words/`)) return;
+      if (!ctx.sourcePath.startsWith(`${this.db.settings.root}/words/`)) return;
       const container = el.closest(".markdown-preview-view");
       if (!container || container.querySelector(".el-note-bar")) return;
       const bar = el.createEl("div", { cls: "el-note-bar" });
@@ -20924,12 +20954,8 @@ var EnglishLearnPlugin = class extends import_obsidian17.Plugin {
     this.app.workspace.onLayoutReady(() => {
       void (async () => {
         try {
-          const rootBefore = this.db.root;
-          const synced = await this.store.syncNow();
-          if (this.db.root !== rootBefore)
-            new import_obsidian17.Notice(`\u8BCD\u5E93\u6839\u76EE\u5F55\u5DF2\u8DDF\u968F\u53E6\u4E00\u7AEF\u6539\u4E3A\u300C${this.db.root}\u300D`);
           await this.ensureFolders();
-          if (synced || legacySync) await this.store.touchNow();
+          if (await this.store.syncNow() || legacySync) await this.store.touchNow();
           if (firstInstall) await this.seedDefaultThemes();
           this.refreshEditNoteBar();
           this.statusEl = this.addStatusBarItem();
@@ -20974,50 +21000,10 @@ kb-h ${kb}`
     );
   }
   async ensureFolders() {
-    const root = this.db.root;
+    const root = this.db.settings.root;
     await Promise.all(
       [root, `${root}/words`, `${root}/backup`].map((dir) => mkdirp(this.app, dir))
     );
-  }
-  /** 改词库根目录 = 整库迁移（words/backup/export 搬到新位置）。root 是同步字段，
-   *  落盘后另一端下次启动读到 db.json 自动跟随；中途失败（目标冲突等）中止并提示，已搬的不回滚 */
-  async migrateRoot(newRoot) {
-    const old = this.db.root;
-    if (newRoot === old) return;
-    const { adapter } = this.app.vault;
-    for (const sub of ["words", "backup", "export"]) {
-      if (await adapter.exists(`${newRoot}/${sub}`)) {
-        new import_obsidian17.Notice(`\u76EE\u6807\u5DF2\u5B58\u5728\u300C${newRoot}/${sub}\u300D\uFF0C\u8FC1\u79FB\u5DF2\u53D6\u6D88`);
-        return;
-      }
-    }
-    try {
-      await mkdirp(this.app, newRoot);
-      for (const sub of ["words", "backup", "export"]) {
-        const from = `${old}/${sub}`;
-        if (!await adapter.exists(from)) continue;
-        const folder = this.app.vault.getFolderByPath(from);
-        if (folder) {
-          await this.app.vault.rename(folder, `${newRoot}/${sub}`);
-        } else {
-          const { files } = await adapter.list(from);
-          for (const f of files) {
-            const name = f.split("/").pop();
-            if (!name) continue;
-            await adapter.write(`${newRoot}/${sub}/${name}`, await adapter.read(f));
-            await adapter.remove(f);
-          }
-          await adapter.rmdir(from, true).catch(() => {
-          });
-        }
-      }
-      this.db.root = newRoot;
-      await this.ensureFolders();
-      await this.store.touchNow();
-      new import_obsidian17.Notice(`\u8BCD\u5E93\u6839\u76EE\u5F55\u5DF2\u8FC1\u79FB\u5230\u300C${newRoot}\u300D\uFF0C\u53E6\u4E00\u7AEF\u4E0B\u6B21\u542F\u52A8\u81EA\u52A8\u8DDF\u968F`);
-    } catch (e) {
-      new import_obsidian17.Notice(`\u8BCD\u5E93\u6839\u76EE\u5F55\u8FC1\u79FB\u5931\u8D25: ${e}`);
-    }
   }
   /** 首次安装：内置 3 个默认主题（关键词 + 自带释义词包，离线即可直接学） */
   async seedDefaultThemes() {
@@ -21214,12 +21200,12 @@ kb-h ${kb}`
     await this.store.touchNow();
     void this.refreshStatusBar();
     if (!this.db.settings.autoBackup) return;
-    const path = `${this.db.root}/backup/progress-${fmtDate(Date.now())}.json`;
+    const path = `${this.db.settings.root}/backup/progress-${fmtDate(Date.now())}.json`;
     const body = JSON.stringify(
       {
         exported: (/* @__PURE__ */ new Date()).toISOString(),
         progress: this.db.progress,
-        // 主题结构与学习量：db.json 丢失时不止进度，主题/关键词/打卡史也能恢复（R53）
+        // 主题结构与学习量：data.json 丢失时不止进度，主题/关键词/打卡史也能恢复（R53）
         themes: this.db.themes,
         stats: this.db.stats,
         // 忽略表不恢复会回到学习队列（噪音词重现）
@@ -21232,7 +21218,7 @@ kb-h ${kb}`
       const existing = this.app.vault.getAbstractFileByPath(path);
       if (existing instanceof import_obsidian17.TFile) await this.app.vault.modify(existing, body);
       else await this.app.vault.create(path, body);
-      const snaps = this.app.vault.getFiles().filter((f) => f.path.startsWith(`${this.db.root}/backup/progress-`)).sort((a, b) => a.name < b.name ? 1 : -1);
+      const snaps = this.app.vault.getFiles().filter((f) => f.path.startsWith(`${this.db.settings.root}/backup/progress-`)).sort((a, b) => a.name < b.name ? 1 : -1);
       for (const f of snaps.slice(14)) await this.app.vault.trash(f, false);
     } catch (e) {
       new import_obsidian17.Notice(`\u8FDB\u5EA6\u5907\u4EFD\u5931\u8D25: ${e}`);
@@ -21836,19 +21822,35 @@ kb-h ${kb}`
     window.dispatchEvent(new CustomEvent("el-mute-changed"));
   }
   /** 词级发音统一入口：全局静音直接短路；标准发音缓存优先，未命中先等预下载落地（通常
-   *  ~0.4s，超时 1.5s）拿到真人音，真拿不到才 TTS 兜底（下载继续在后台，下次起该词标准音） */
-  speakWord(word, rate) {
+   *  ~0.4s，超时 1.5s）拿到真人音，真拿不到才 TTS 兜底（下载继续在后台，下次起该词标准音）。
+   *  then 传例句文本：词音播完无缝接读（进词卡绑定语境）；任何新发音/停止都会作废接读链 */
+  speakWord(word, rate, then) {
     if (this.muted) {
       this.hintMutedOnce();
       return;
     }
+    const gen = ++this.speakChain;
     const w = word.trim().toLowerCase();
     void (async () => {
-      if (await this.audio.play(w)) return;
-      if (await this.audio.prefetchWhenReady(w, 1500) && await this.audio.play(w))
+      if (gen !== this.speakChain) return;
+      if (await this.audio.play(w, () => this.speakThen(gen, then))) return;
+      if (gen !== this.speakChain) return;
+      if (await this.audio.prefetchWhenReady(w, 1500) && await this.audio.play(w, () => this.speakThen(gen, then)))
         return;
-      speak(w, rate != null ? rate : this.db.settings.ttsRate);
+      if (gen !== this.speakChain) return;
+      speak(w, rate != null ? rate : this.db.settings.ttsRate, () => this.speakThen(gen, then));
     })();
+  }
+  /** 词音播完接读例句：代际不符（已被新发音/停止作废）不再接 */
+  speakThen(gen, then) {
+    if (!then || gen !== this.speakChain) return;
+    this.speakSentence(then);
+  }
+  /** 停掉当前全部朗读（词音/例句/在途接读链）：切走词卡、关闭词卡弹窗、退出会话时调 */
+  stopSpeaking() {
+    this.speakChain++;
+    this.audio.stop();
+    stopSpeak();
   }
   /** 全局静音下点发音：首次提示点不响的原因（静音是每次启动的默认态，新用户第一次点发音
    *  听不到声音易以为坏了），提示过即永久置位不再打扰（settings 落盘） */
@@ -21858,13 +21860,15 @@ kb-h ${kb}`
     this.store.touch();
     new import_obsidian17.Notice("\u5F53\u524D\u5904\u4E8E\u5168\u5C40\u9759\u97F3\uFF0C\u70B9\u4E3B\u9875 \u{1F507} \u6309\u94AE\u6216\u547D\u4EE4\u300C\u5207\u6362\u5168\u5C40\u9759\u97F3\u300D\u53EF\u5F00\u542F\u53D1\u97F3", 8e3);
   }
-  /** 例句朗读统一入口：与 speakWord 同一静音策略（静音短路 + 首次提示），默认走例句语速 */
+  /** 例句朗读统一入口：与 speakWord 同一静音策略（静音短路 + 首次提示），默认走例句语速。
+   *  手动点读即接管播放：作废在途接读链，别让刚读完的词又抢读首条例句 */
   speakSentence(text2, rate) {
     var _a;
     if (this.muted) {
       this.hintMutedOnce();
       return;
     }
+    this.speakChain++;
     speak(text2, (_a = rate != null ? rate : this.db.settings.ttsSentenceRate) != null ? _a : this.db.settings.ttsRate);
   }
   /** 词卡弹窗统一入口：例句点已收录词时弹出对应词卡（弹窗类独立文件，避免与词卡组件循环 import） */
@@ -21893,7 +21897,7 @@ kb-h ${kb}`
   /** 从最新备份快照恢复进度：只补当前缺失的词（现有进度一律不动，安全无破坏） */
   async restoreProgress() {
     var _a, _b, _c, _d, _e, _f, _g, _h;
-    const dir = `${this.db.root}/backup`;
+    const dir = `${this.db.settings.root}/backup`;
     const snaps = this.app.vault.getFiles().filter((f) => f.path.startsWith(`${dir}/progress-`)).sort((a, b) => a.name < b.name ? 1 : -1);
     for (const f of snaps) {
       try {
@@ -21998,18 +22002,13 @@ var EnglishLearnSettingTab = class extends import_obsidian17.PluginSettingTab {
     containerEl.empty();
     const s = this.plugin.db.settings;
     containerEl.createEl("div", { text: `English Learn v${this.plugin.manifest.version}`, cls: "el-muted" });
-    new import_obsidian17.Setting(containerEl).setName("\u8BCD\u5E93\u6839\u76EE\u5F55").setDesc("\u8BCD\u7B14\u8BB0\u5B58\u653E\u7684 vault \u76EE\u5F55\uFF1B\u4FEE\u6539\u540E\u6574\u5E93\u642C\u8FC1\uFF08words/backup/export\uFF09\uFF0C\u53E6\u4E00\u7AEF\u4E0B\u6B21\u542F\u52A8\u81EA\u52A8\u8DDF\u968F").addText((t) => {
-      t.setValue(this.plugin.db.root);
-      const apply = () => {
-        const v = t.inputEl.value.trim() || DEFAULT_ROOT;
-        if (v === this.plugin.db.root) return;
-        void this.plugin.migrateRoot(v).then(() => t.setValue(this.plugin.db.root));
-      };
-      t.inputEl.addEventListener("blur", apply);
-      t.inputEl.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") t.inputEl.blur();
-      });
-    });
+    new import_obsidian17.Setting(containerEl).setName("\u8BCD\u5E93\u6839\u76EE\u5F55").setDesc("\u8BCD\u7B14\u8BB0\u5B58\u653E\u7684 vault \u76EE\u5F55").addText(
+      (t) => t.setValue(s.root).onChange(async (v) => {
+        s.root = v.trim() || "EnglishLearn";
+        this.plugin.store.touch();
+        await this.plugin.ensureFolders();
+      })
+    );
     addHelpTip(
       new import_obsidian17.Setting(containerEl).setName("\u6BCF\u65E5\u65B0\u8BCD\u6570").addText((t) => {
         t.inputEl.type = "number";

@@ -24,7 +24,7 @@
   --el-space-6: 20px;
   --el-space-7: 28px;
 
-  /* 字号：xs 微标签/图表轴 · sm 辅助说明 · md 次要正文 · base 正文 · lg 释义/强调 · xl 统计数字 · display 词卡主词 · display-sm 测验题词头 */
+  /* 字号：xs 微标签/图表轴 · sm 辅助说明 · md 次要正文 · base 正文 · lg 释义/强调 · xl 统计数字 · display 词卡主词 */
   --el-font-xs: 11px;
   --el-font-sm: 12.5px;
   --el-font-md: 13.5px;
@@ -32,7 +32,6 @@
   --el-font-lg: 16px;
   --el-font-xl: 20px;
   --el-font-display: 38px;
-  --el-font-display-sm: 30px;
 
   /* 按钮内边距四档（配字号：lg/md=base · sm=sm · xs=xs）；无边框图标按钮不在此列 */
   --el-btn-lg: 12px 20px;  /* 主操作：显示答案 / 移动端评分 */
@@ -610,7 +609,7 @@ body:not(.is-mobile) .el-prev:hover {
   align-items: center;
   gap: var(--el-space-4);
   /* 顶部收紧给主卡让空间；桌面底部留白收最小让按钮贴底（移动端由下方覆写为导航高度） */
-  padding: var(--el-space-4) 5px var(--el-space-3);
+  padding: var(--el-space-4) var(--el-space-6) var(--el-space-3);
   height: 100%;
   /* fitViewport（LearnSession）移动端把内联 height 钉在实测「键盘顶 − 页顶」；此兜底保证
      内联高度永远不超容器——宿主若比 vv 多缩（如算进键盘工具条），以容器为准被夹住 */
@@ -673,7 +672,7 @@ body.is-mobile .el-learn {
   min-width: 0; /* flex item 防内容把卡撑破出界 */
   overflow-x: hidden; /* 任何内容都不产生横向滚动（词头已自适应缩字，此处只兜底） */
   text-align: center;
-  padding: var(--el-space-5) var(--el-space-4) var(--el-space-6);
+  padding: var(--el-space-5) 24px var(--el-space-6);
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--el-radius-xl);
   background: var(--background-primary);
@@ -686,15 +685,6 @@ body.is-mobile .el-learn {
 .el-card.el-end {
   flex: 0 0 auto;
   overflow-y: visible;
-}
-
-/* 卡内操作按钮行：完成页/测验揭晓区的按钮组与单按钮包裹统一走这里（居中 + 换行） */
-.el-card-actions {
-  margin-top: var(--el-space-4);
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--el-space-3);
-  justify-content: center;
 }
 
 .el-word {
@@ -805,8 +795,7 @@ body:not(.is-mobile) .el-word-link:hover {
   cursor: pointer;
   border-radius: var(--el-radius-xs);
   padding: 2px var(--el-space-1);
-  /* 负 margin 抵消自身水平 padding，让 hover 底色不出卡——与上方令牌联动，改令牌自动跟着变 */
-  margin: 0 calc(var(--el-space-1) * -1);
+  margin: 0 -4px;
   transition: background 0.15s;
 }
 
