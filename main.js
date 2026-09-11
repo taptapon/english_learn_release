@@ -260,11 +260,14 @@ function lemmaCandidates(w) {
   }
   return [...out];
 }
-var SHOW_MODAL_TAG = true;
+var showModalTag = true;
+function setShowModalTag(v) {
+  showModalTag = v;
+}
 var modalTagSeq = 0;
 function tagModal(modalEl, name, kb = true) {
   if (kb) modalEl.addClass("el-modal-kb");
-  if (!SHOW_MODAL_TAG) return;
+  if (!showModalTag) return;
   modalEl.createEl("span", {
     text: `${name}#${String(++modalTagSeq).padStart(2, "0")}`,
     cls: "el-modal-tag",
@@ -459,6 +462,21 @@ async function translateZh2En(q) {
     }
   }
   return [];
+}
+async function myMemoryTranslate(q, toEn) {
+  var _a, _b;
+  const pair = toEn ? "zh%7Cen" : "en%7Czh";
+  try {
+    const res = await timedRequestUrl(
+      (0, import_obsidian2.requestUrl)({ url: `https://api.mymemory.translated.net/get?q=${encodeURIComponent(q)}&langpair=${pair}` })
+    );
+    const data = JSON.parse(res.text.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ""));
+    const t = String((_b = (_a = data == null ? void 0 : data.responseData) == null ? void 0 : _a.translatedText) != null ? _b : "").replace(/mymemory warning.*/i, "").replace(/\(.*?\)/g, "").trim();
+    if ((data == null ? void 0 : data.quotaFinished) || !t) return null;
+    return t;
+  } catch (e) {
+    return null;
+  }
 }
 function rankZhHits(hits, q) {
   const exactOf = (e) => {
@@ -779,31 +797,69 @@ function vocabHover(plugin) {
     return null;
   });
 }
+function wordNotice(plugin, token) {
+  const doc = plugin.words.resolveWord(token);
+  if (!doc) return;
+  plugin.speakWord(doc.word);
+  const head = `${doc.word}${doc.phonetic ? `  ${doc.phonetic}` : ""}${doc.level ? `  [${levelLabel(doc.level)}]` : ""}`;
+  const frag = new DocumentFragment();
+  const l1 = document.createElement("div");
+  l1.textContent = head;
+  frag.appendChild(l1);
+  if (doc.translation) {
+    const l2 = document.createElement("div");
+    l2.textContent = doc.translation;
+    frag.appendChild(l2);
+  }
+  new import_obsidian3.Notice(frag, 6e3);
+}
 function vocabTapTranslate(plugin) {
   if (!import_obsidian3.Platform.isMobile) return [];
   return [
     import_view.EditorView.domEventHandlers({
-      click(event, view) {
+      click(event) {
         var _a, _b, _c;
         const t = event.target;
         if (!((_a = t == null ? void 0 : t.classList) == null ? void 0 : _a.contains("el-vocab"))) return false;
         const token = (_c = (_b = t.textContent) == null ? void 0 : _b.trim()) != null ? _c : "";
-        const doc = plugin.words.resolveWord(token);
-        if (!doc) return false;
+        if (!plugin.words.resolveWord(token)) return false;
         event.preventDefault();
-        plugin.speakWord(doc.word);
-        const head = `${doc.word}${doc.phonetic ? `  ${doc.phonetic}` : ""}${doc.level ? `  [${levelLabel(doc.level)}]` : ""}`;
-        const frag = new DocumentFragment();
-        const l1 = document.createElement("div");
-        l1.textContent = head;
-        frag.appendChild(l1);
-        if (doc.translation) {
-          const l2 = document.createElement("div");
-          l2.textContent = doc.translation;
-          frag.appendChild(l2);
-        }
-        new import_obsidian3.Notice(frag, 6e3);
+        wordNotice(plugin, token);
         return true;
+      }
+    })
+  ];
+}
+var HOLD_MS = 500;
+var MOVE_TOL = 4;
+function vocabHoldTranslate(plugin) {
+  if (import_obsidian3.Platform.isMobile) return [];
+  return [
+    import_view.EditorView.domEventHandlers({
+      mousedown(event) {
+        var _a;
+        if (event.button !== 0) return false;
+        const t = event.target;
+        if (!((_a = t == null ? void 0 : t.classList) == null ? void 0 : _a.contains("el-vocab"))) return false;
+        const startX = event.clientX;
+        const startY = event.clientY;
+        let timer = 0;
+        const onMove = (e) => {
+          if (Math.hypot(e.clientX - startX, e.clientY - startY) > MOVE_TOL) cancel();
+        };
+        const cancel = () => {
+          clearTimeout(timer);
+          document.removeEventListener("mousemove", onMove);
+          document.removeEventListener("mouseup", cancel);
+        };
+        timer = window.setTimeout(() => {
+          var _a2, _b;
+          cancel();
+          wordNotice(plugin, (_b = (_a2 = t.textContent) == null ? void 0 : _a2.trim()) != null ? _b : "");
+        }, HOLD_MS);
+        document.addEventListener("mousemove", onMove);
+        document.addEventListener("mouseup", cancel);
+        return false;
       }
     })
   ];
@@ -1884,7 +1940,7 @@ function showTipBubble(anchor, tip) {
 }
 
 // src/ui/learn-view.ts
-var import_obsidian13 = require("obsidian");
+var import_obsidian12 = require("obsidian");
 
 // node_modules/svelte/src/runtime/internal/utils.js
 function noop() {
@@ -2664,7 +2720,7 @@ if (typeof window !== "undefined")
   (window.__svelte || (window.__svelte = { v: /* @__PURE__ */ new Set() })).v.add(PUBLIC_VERSION);
 
 // src/components/LearnSession.svelte
-var import_obsidian12 = require("obsidian");
+var import_obsidian11 = require("obsidian");
 
 // src/cloze.ts
 var POS_RE = /^(?:n|v|vt|vi|adj|adv|prep|conj|pron|art|num|interj|aux|abbr)\./;
@@ -2885,6 +2941,10 @@ function recentVpLog() {
   return entries;
 }
 var capEntries = [];
+function pushCapLog(entry) {
+  capEntries.push(entry);
+  if (capEntries.length > MAX) capEntries.splice(0, capEntries.length - MAX);
+}
 function recentCapLog() {
   return capEntries;
 }
@@ -2994,6 +3054,165 @@ function fetchAntonyms(keyword, limit = 5) {
 
 // src/llm.ts
 var import_obsidian8 = require("obsidian");
+
+// src/prompts.ts
+function testPrompt() {
+  return { messages: [{ role: "user", content: "Reply with exactly: ok" }], temperature: 0 };
+}
+function topicClause(topics, focus, verb) {
+  const [primary = "", ...aux] = topics != null ? topics : [];
+  return primary ? `\u3002\u4E3B\u9898\u8BED\u5883\u300C${primary}\u300D${aux.length ? `\uFF08\u517C\u987E\u4E3B\u9898\uFF1A${aux.join("\u3001")}\uFF09` : ""}\uFF1A${focus}\uFF1B\u5176\u4E2D\u7684\u8BCD\u53EA\u662F\u9886\u57DF\u80CC\u666F\uFF0C\u4E0D\u662F\u8981${verb}\u7684\u5355\u8BCD` : "";
+}
+var EXPAND_ANGLES = [
+  "\u5B50\u9886\u57DF\u4E0E\u4E13\u4E1A\u672F\u8BED",
+  "\u5B9E\u9645\u5E94\u7528\u4E0E\u884C\u4E1A\u573A\u666F",
+  "\u76F8\u5173\u73B0\u8C61\u4E0E\u793E\u4F1A\u95EE\u9898",
+  "\u5E38\u89C1\u642D\u914D\u4E0E\u4E60\u60EF\u7528\u8BED",
+  "\u9886\u57DF\u4EBA\u7269\u3001\u7EC4\u7EC7\u4E0E\u5DE5\u5177",
+  "\u4E0A\u4F4D\u6982\u5FF5\u4E0E\u4E0B\u4F4D\u6982\u5FF5",
+  "\u8FD1\u4E49\u8BCD\u4E0E\u53CD\u4E49\u8BCD",
+  "\u4E0E\u79D1\u6280/\u7ECF\u6D4E/\u6587\u5316/\u73AF\u5883\u7684\u8DE8\u9886\u57DF\u4EA4\u53C9",
+  "\u53E3\u8BED\u4E0E\u4FDA\u8BED\u8868\u8FBE",
+  "\u5B66\u672F\u5199\u4F5C\u9AD8\u9891\u8BCD",
+  "\u5386\u53F2\u6E0A\u6E90\u4E0E\u7ECF\u5178\u7406\u8BBA",
+  "\u4E89\u8BAE\u4E0E\u524D\u6CBF\u8BDD\u9898"
+];
+function expandWordsPrompt(keywords, listed, count) {
+  const angles = shuffle(EXPAND_ANGLES).slice(0, 3);
+  const user = `\u4E3B\u9898\u5173\u952E\u8BCD\uFF08\u53EF\u80FD\u662F\u4E2D\u6587\u6216\u82F1\u6587\uFF0C\u4E2D\u6587\u5173\u952E\u8BCD\u8BF7\u7406\u89E3\u4E3A\u5176\u5BF9\u5E94\u7684\u82F1\u6587\u4E3B\u9898\u9886\u57DF\uFF09\uFF1A${keywords.join(", ")}
+${listed.length ? `\u4EE5\u4E0B\u5355\u8BCD\u5DF2\u5B58\u5728\u6216\u4E4B\u524D\u5DF2\u7ED9\u8FC7\uFF0C\u4E0D\u8981\u91CD\u590D\uFF08\u542B\u5B83\u4EEC\u7684\u53D8\u5F62\uFF09\uFF1A
+${listed.join(", ")}
+` : ""}\u8BF7\u7ED9\u51FA ${count} \u4E2A\u8BE5\u4E3B\u9898\u9886\u57DF\u4E2D\u503C\u5F97\u4E2D\u9AD8\u7EA7\u82F1\u8BED\u5B66\u4E60\u8005\u638C\u63E1\u7684\u82F1\u6587\u5355\u8BCD\uFF08\u53EF\u542B\u5C11\u91CF\u77ED\u8BED\uFF09\u3002\u5173\u952E\u8BCD\u53EA\u662F\u8D77\u70B9\uFF0C\u672C\u6B21\u8BF7\u4F18\u5148\u56F4\u7ED5\u8FD9\u4E9B\u4FA7\u9762\u53D1\u6563\uFF1A${angles.join("\u3001")}\u3002
+- \u5411\u5173\u8054\u6982\u5FF5\u6269\u5C55\uFF1A\u5B50\u9886\u57DF\u3001\u5E94\u7528\u573A\u666F\u3001\u76F8\u5173\u73B0\u8C61\u3001\u5E38\u89C1\u642D\u914D\u3001\u9886\u57DF\u4EBA\u7269/\u5DE5\u5177\u7B49\uFF0C\u4E0D\u5FC5\u9010\u5B57\u8D34\u5408\u5173\u952E\u8BCD
+- \u5DF2\u5217\u51FA\u7684\u8BCD\u5927\u591A\u5360\u4F4F\u4E86\u4E3B\u9898\u6700\u663E\u773C\u7684\u4F4D\u7F6E\uFF0C\u8BF7\u5411\u66F4\u8FB9\u7F18\u3001\u66F4\u7EC6\u5206\u3001\u66F4\u4E13\u4E1A\u7684\u8BCD\u6C47\u5EF6\u4F38
+\u8981\u6C42\uFF1A
+1. \u4E00\u5F8B\u7528\u539F\u5F62\uFF08\u5355\u6570\u540D\u8BCD\u3001\u52A8\u8BCD\u539F\u5F62\uFF09\uFF0C\u540C\u4E00\u5355\u8BCD\u53EA\u51FA\u73B0\u4E00\u6B21\uFF0C\u4E0D\u8981\u8F93\u51FA\u5176\u590D\u6570/\u65F6\u6001/\u6D3E\u751F\u5F62\u5F0F
+2. \u5404\u5355\u8BCD\u4E92\u4E0D\u91CD\u590D\uFF0C\u4E5F\u8DF3\u8FC7\u4E2D\u8003\u9AD8\u8003\u7EA7\u522B\u7684\u7B80\u5355\u57FA\u7840\u8BCD
+3. \u91CA\u4E49\u7B80\u660E\uFF1A\u8BCD\u6027\u7F29\u5199 + \u4E2D\u6587\u6838\u5FC3\u4E49\uFF0C\u4E00\u9879\u5373\u53EF
+\u6BCF\u9879\u683C\u5F0F\uFF1A{"word":"\u82F1\u6587\u5355\u8BCD","translation":"\u8BCD\u6027. \u4E2D\u6587\u91CA\u4E49\uFF08\u7B80\u660E\uFF09"}
+\u53EA\u8F93\u51FA JSON \u6570\u7EC4\uFF0C\u4E0D\u8981\u4EFB\u4F55\u5176\u4ED6\u6587\u5B57\u3002`;
+  return {
+    messages: [
+      { role: "system", content: "\u4F60\u662F\u82F1\u8BED\u8BCD\u6C47\u6559\u5B66\u4E13\u5BB6\u3002\u6839\u636E\u4E3B\u9898\u5173\u952E\u8BCD\uFF08\u53EF\u80FD\u662F\u4E2D\u6587\uFF0C\u5982\u300C\u4EBA\u5DE5\u667A\u80FD\u300D\u4EE3\u8868 AI \u9886\u57DF\uFF09\u7B5B\u9009\u503C\u5F97\u5B66\u4E60\u7684\u82F1\u6587\u8BCD\u6C47\uFF0C\u5584\u4E8E\u4ECE\u4E00\u4E2A\u4E3B\u9898\u8054\u60F3\u5230\u5176\u5468\u8FB9\u5B50\u9886\u57DF\u548C\u5173\u8054\u6982\u5FF5\uFF0C\u4FDD\u8BC1\u591A\u8F6E\u751F\u6210\u7684\u8BCD\u6C47\u4E30\u5BCC\u591A\u6837\u3002\u53EA\u8F93\u51FA JSON\u3002" },
+      { role: "user", content: user }
+    ],
+    // 扩词要发散，温度给高些；例句/翻译等结构化任务仍用各自默认值
+    temperature: 0.9
+  };
+}
+function examplesPrompt(batch, count, topics) {
+  const clause = topicClause(topics, "\u4F8B\u53E5\u5C3D\u91CF\u56F4\u7ED5\u8BE5\u9886\u57DF\u7684\u5E38\u89C1\u573A\u666F\u548C\u8BCD\u6C47", "\u9020\u53E5");
+  return {
+    messages: [
+      { role: "system", content: "\u4F60\u4E3A\u82F1\u8BED\u5355\u8BCD\u5199\u4F8B\u53E5\uFF0C\u4E3B\u9898\u8BCD\uFF08\u53EF\u80FD\u662F\u4E2D\u6587\uFF09\u4EE3\u8868\u76EE\u6807\u9886\u57DF\u3002\u53EA\u8F93\u51FA JSON\u3002" },
+      {
+        role: "user",
+        content: `\u4E3A\u4E0B\u5217\u6BCF\u4E2A\u5355\u8BCD\u5199 ${count} \u4E2A\u7B80\u6D01\u81EA\u7136\u7684\u82F1\u6587\u4F8B\u53E5\uFF08\u6BCF\u53E5 10 \u8BCD\u5DE6\u53F3\uFF0C\u5355\u8BCD\u7528\u539F\u5F62\u6216\u5408\u9002\u53D8\u5F62\uFF09\uFF0C\u5404\u53E5\u8BED\u5883\u4E0D\u540C\uFF08\u5982\u65E5\u5E38\u5BF9\u8BDD\u3001\u5DE5\u4F5C/\u5B66\u4E60\u573A\u666F\u3001\u4E66\u9762\u8868\u8FBE\uFF09${clause}\uFF1A
+${batch.map((w, i) => `${i + 1}. ${w}`).join("\n")}
+\u6BCF\u4E2A\u4F8B\u53E5\u90FD\u8981\u914D\u4E00\u53E5\u81EA\u7136\u7684\u4E2D\u6587\u7FFB\u8BD1\u3002
+\u8F93\u51FA JSON \u6570\u7EC4\uFF1A[{"word":"...","sentences":[{"en":"\u82F1\u6587\u4F8B\u53E5","zh":"\u4E2D\u6587\u7FFB\u8BD1"},...]}]\uFF0C\u5FC5\u987B\u8986\u76D6\u5168\u90E8 ${batch.length} \u4E2A\u5355\u8BCD\uFF0Cword \u53EA\u80FD\u53D6\u4E0A\u9762\u5217\u51FA\u7684\u5355\u8BCD\uFF0C\u6BCF\u4E2A\u5355\u8BCD\u7ED9\u6EE1 ${count} \u53E5\u3002`
+      }
+    ],
+    temperature: 0.5
+  };
+}
+function sensesPrompt(batch, topics) {
+  const clause = topicClause(topics, "\u4E49\u9879\u6309\u8BE5\u9886\u57DF\u7684\u5E38\u7528\u5EA6\u6392\u5E8F\u3001\u9886\u57DF\u4E49\u6392\u524D", "\u91CA\u4E49");
+  return {
+    messages: [
+      { role: "system", content: "\u4F60\u662F\u82F1\u8BED\u8BCD\u5178\u7F16\u7E82\u4E13\u5BB6\uFF0C\u5584\u7528\u7B80\u660E\u7684\u4E2D\u6587\u6807\u6CE8\u8BCD\u4E49\u3002\u53EA\u8F93\u51FA JSON\u3002" },
+      {
+        role: "user",
+        content: `\u5217\u51FA\u4E0B\u5217\u6BCF\u4E2A\u82F1\u8BED\u5355\u8BCD\u7684\u5E38\u7528\u4E2D\u6587\u4E49\u9879\uFF082~6 \u884C\uFF0C\u6309\u5E38\u7528\u5EA6\u6392\u5E8F\uFF0C\u77ED\u8BED\u5355\u8BCD\u7ED9 1~2 \u884C\uFF09${clause}\u3002\u6BCF\u884C\u662F\u4E00\u4E2A\u6838\u5FC3\u542B\u4E49\uFF1A\u540C\u4E00\u542B\u4E49\u7684\u8FD1\u4E49\u8868\u8FF0\uFF08\u540C\u8BCD\u6027\uFF09\u7528\u300C\uFF1B\u300D\u5408\u5E76\u5728\u4E00\u884C\uFF0C\u4E0D\u540C\u6838\u5FC3\u542B\u4E49\u5206\u884C\uFF1B\u683C\u5F0F\u300C\u8BCD\u6027. \u4E2D\u6587\u91CA\u4E49\u300D\uFF0C\u8BCD\u6027\u7528 n./v./adj./adv./vt./vi. \u7B49\u7F29\u5199\u2014\u2014\u6BCF\u884C\u53EA\u6709\u8BCD\u6027\u548C\u4E2D\u6587\u91CA\u4E49\uFF0C\u522B\u65E0\u5176\u4ED6\u3002
+\u2705 \u6B63\u4F8B\uFF1Abank \u2192 ["n. \u94F6\u884C", "n. \u5CB8\uFF1B\u5824", "v. \u5806\u79EF"]\uFF1Brecourse \u2192 ["n. \u6C42\u52A9\uFF1B\u6C42\u63F4\uFF1B\u8FFD\u7D22\u6743", "v. \u6C42\u52A9\u4E8E\uFF1B\u8BC9\u8BF8"]
+\u274C \u53CD\u4F8B\uFF08\u6BCF\u4E00\u6761\u90FD\u9519\uFF09\uFF1A["\u4EE5\u4E0B\u662F recourse \u7684\u5E38\u7528\u4E49\u9879", "n. \u6C42\u52A9\u9014\u5F84\uFF08\u878D\u8D44\u79DF\u8D41/\u4FE1\u8D37\u9886\u57DF\u6307\u503A\u6743\u4EBA\u5411\u62C5\u4FDD\u4EBA\u8FFD\u507F\uFF09", "recourse: n. \u8FFD\u7D22\u6743"]\u2014\u2014\u524D\u5BFC\u8BF4\u660E\u884C\u3001\u62EC\u53F7\u91CC\u7684\u9886\u57DF\u6CE8\u91CA\u3001\u91CA\u4E49\u91CC\u91CD\u590D\u82F1\u6587\u539F\u8BCD\uFF0C\u90FD\u662F\u4F1A\u539F\u6837\u5199\u8FDB\u8BCD\u5361\u7684\u65E0\u5173\u5185\u5BB9\uFF0C\u4E00\u5F8B\u7981\u6B62\uFF1A
+${batch.map((w, i) => `${i + 1}. ${w}`).join("\n")}
+\u8F93\u51FA JSON \u6570\u7EC4\uFF1A[{"word":"...","senses":["n. \u91CA\u4E49","v. \u91CA\u4E49"]}]\uFF0C\u5FC5\u987B\u8986\u76D6\u5168\u90E8 ${batch.length} \u4E2A\u5355\u8BCD\uFF0Cword \u53EA\u80FD\u53D6\u4E0A\u9762\u5217\u51FA\u7684\u5355\u8BCD\u3002`
+      }
+    ],
+    temperature: 0.2
+  };
+}
+function sensesExamplesPrompt(batch, count, topics) {
+  const clause = topicClause(topics, "\u4F8B\u53E5\u5C3D\u91CF\u56F4\u7ED5\u8BE5\u9886\u57DF\u7684\u5E38\u89C1\u573A\u666F\u548C\u8BCD\u6C47\uFF0C\u4E49\u9879\u6309\u8BE5\u9886\u57DF\u7684\u5E38\u7528\u5EA6\u6392\u5E8F\u3001\u9886\u57DF\u4E49\u6392\u524D", "\u91CA\u4E49/\u9020\u53E5");
+  return {
+    messages: [
+      { role: "system", content: "\u4F60\u662F\u82F1\u8BED\u8BCD\u5178\u7F16\u7E82\u4E13\u5BB6\uFF0C\u4E5F\u4E3A\u82F1\u8BED\u5355\u8BCD\u5199\u4F8B\u53E5\uFF0C\u5584\u7528\u7B80\u660E\u7684\u4E2D\u6587\u6807\u6CE8\u8BCD\u4E49\u3002\u53EA\u8F93\u51FA JSON\u3002" },
+      {
+        role: "user",
+        content: `\u5BF9\u4E0B\u5217\u6BCF\u4E2A\u82F1\u8BED\u5355\u8BCD\uFF1A\u5148\u5217\u5E38\u7528\u4E2D\u6587\u4E49\u9879\uFF0C\u518D\u5199\u4F8B\u53E5${clause}\u3002
+\u4E49\u9879\uFF1A2~6 \u884C\uFF0C\u6309\u5E38\u7528\u5EA6\u6392\u5E8F\uFF0C\u77ED\u8BED\u5355\u8BCD\u7ED9 1~2 \u884C\u3002\u6BCF\u884C\u662F\u4E00\u4E2A\u6838\u5FC3\u542B\u4E49\uFF1A\u540C\u4E00\u542B\u4E49\u7684\u8FD1\u4E49\u8868\u8FF0\uFF08\u540C\u8BCD\u6027\uFF09\u7528\u300C\uFF1B\u300D\u5408\u5E76\u5728\u4E00\u884C\uFF0C\u4E0D\u540C\u6838\u5FC3\u542B\u4E49\u5206\u884C\uFF1B\u683C\u5F0F\u300C\u8BCD\u6027. \u4E2D\u6587\u91CA\u4E49\u300D\uFF0C\u8BCD\u6027\u7528 n./v./adj./adv./vt./vi. \u7B49\u7F29\u5199\u2014\u2014\u6BCF\u884C\u53EA\u6709\u8BCD\u6027\u548C\u4E2D\u6587\u91CA\u4E49\uFF0C\u522B\u65E0\u5176\u4ED6\u3002
+\u2705 \u6B63\u4F8B\uFF1Abank \u2192 ["n. \u94F6\u884C", "n. \u5CB8\uFF1B\u5824", "v. \u5806\u79EF"]\uFF1B\u274C \u53CD\u4F8B\uFF08\u6BCF\u4E00\u6761\u90FD\u9519\uFF09\uFF1A["\u4EE5\u4E0B\u662F bank \u7684\u5E38\u7528\u4E49\u9879", "n. \u94F6\u884C\uFF08\u91D1\u878D\u9886\u57DF\u6307\u5438\u50A8\u653E\u8D37\u673A\u6784\uFF09", "bank: n. \u94F6\u884C"]\u2014\u2014\u524D\u5BFC\u8BF4\u660E\u884C\u3001\u62EC\u53F7\u91CC\u7684\u9886\u57DF\u6CE8\u91CA\u3001\u91CA\u4E49\u91CC\u91CD\u590D\u82F1\u6587\u539F\u8BCD\uFF0C\u4E00\u5F8B\u7981\u6B62\u3002
+\u4F8B\u53E5\uFF1A${count} \u4E2A\u7B80\u6D01\u81EA\u7136\u7684\u82F1\u6587\u4F8B\u53E5\uFF08\u6BCF\u53E5 10 \u8BCD\u5DE6\u53F3\uFF0C\u5355\u8BCD\u7528\u539F\u5F62\u6216\u5408\u9002\u53D8\u5F62\uFF09\uFF0C\u5404\u53E5\u8BED\u5883\u4E0D\u540C\uFF08\u5982\u65E5\u5E38\u5BF9\u8BDD\u3001\u5DE5\u4F5C/\u5B66\u4E60\u573A\u666F\u3001\u4E66\u9762\u8868\u8FBE\uFF09\uFF0C\u6BCF\u4E2A\u4F8B\u53E5\u90FD\u8981\u914D\u4E00\u53E5\u81EA\u7136\u7684\u4E2D\u6587\u7FFB\u8BD1\u3002
+${batch.map((w, i) => `${i + 1}. ${w}`).join("\n")}
+\u8F93\u51FA JSON \u6570\u7EC4\uFF1A[{"word":"...","senses":["n. \u91CA\u4E49",...],"sentences":[{"en":"\u82F1\u6587\u4F8B\u53E5","zh":"\u4E2D\u6587\u7FFB\u8BD1"},...]}]\uFF0C\u5FC5\u987B\u8986\u76D6\u5168\u90E8 ${batch.length} \u4E2A\u5355\u8BCD\uFF0Cword \u53EA\u80FD\u53D6\u4E0A\u9762\u5217\u51FA\u7684\u5355\u8BCD\uFF0C\u6BCF\u4E2A\u5355\u8BCD\u7ED9\u6EE1 ${count} \u53E5\u4F8B\u53E5\u3002`
+      }
+    ],
+    temperature: 0.3
+  };
+}
+function memoPrompt(word, translation) {
+  return {
+    messages: [
+      { role: "system", content: "\u4F60\u662F\u82F1\u8BED\u8BCD\u6C47\u8BB0\u5FC6\u6CD5\u4E13\u5BB6\uFF0C\u64C5\u957F\u7528\u8BCD\u6839\u8BCD\u7F00\u3001\u8C10\u97F3\u8054\u60F3\u3001\u6613\u6DF7\u8BCD\u5BF9\u6BD4\u5E2E\u4E2D\u56FD\u5B66\u4E60\u8005\u9AD8\u6548\u8BB0\u5355\u8BCD\u3002\u53EA\u8F93\u51FA JSON\u3002" },
+      {
+        role: "user",
+        content: `\u4E3A\u82F1\u8BED\u5355\u8BCD\u300C${word}\u300D${translation ? `\uFF08\u8BCD\u4E49\uFF1A${translation}\uFF09` : ""}\u5199 3 \u6761\u4E0D\u540C\u89D2\u5EA6\u7684\u4E2D\u6587\u52A9\u8BB0\uFF0C\u6BCF\u6761\u4E00\u4E24\u53E5\u8BDD\u3001\u7B80\u77ED\u597D\u8BB0\uFF1A
+1. \u8BCD\u6839\u8BCD\u7F00\u62C6\u89E3\uFF08\u660E\u663E\u53EF\u62C6\u624D\u5199\uFF09
+2. \u8C10\u97F3\u8054\u60F3\u6216\u5F62\u8C61\u573A\u666F\u8054\u60F3
+3. \u8FD1\u5F62/\u8FD1\u4E49\u6613\u6DF7\u8BCD\u5BF9\u6BD4\u8FA8\u6790
+\u53EA\u8F93\u51FA JSON \u6570\u7EC4\uFF1A["\u52A9\u8BB01","\u52A9\u8BB02","\u52A9\u8BB03"]\u3002`
+      }
+    ],
+    temperature: 0.6
+  };
+}
+function translateSentencesPrompt(texts) {
+  return {
+    messages: [
+      { role: "system", content: "\u4F60\u662F\u82F1\u8BD1\u4E2D\u7FFB\u8BD1\u5668\u3002\u53EA\u8F93\u51FA JSON\u3002" },
+      {
+        role: "user",
+        content: `\u628A\u4E0B\u5217\u82F1\u6587\u4F8B\u53E5\u7FFB\u8BD1\u6210\u81EA\u7136\u6D41\u7545\u7684\u4E2D\u6587\uFF08\u4FDD\u6301\u7F16\u53F7\u987A\u5E8F\uFF09\uFF1A
+${texts.map((t, j) => `${j + 1}. ${t}`).join("\n")}
+\u53EA\u8F93\u51FA JSON \u6570\u7EC4\uFF1A["\u8BD1\u65871","\u8BD1\u65872",...]\uFF0C\u6570\u7EC4\u957F\u5EA6\u5FC5\u987B\u7B49\u4E8E ${texts.length}\u3002`
+      }
+    ],
+    temperature: 0.3
+  };
+}
+function translateCollectPrompt(text2) {
+  const toEn = isZh(text2);
+  return {
+    messages: [
+      { role: "system", content: "\u4F60\u662F\u4E2D\u82F1\u4E92\u8BD1\u5668\uFF0C\u517C\u5E2E\u4E2D\u56FD\u5B66\u4E60\u8005\u7684\u82F1\u8BED\u6559\u5E08\u3002\u53EA\u8F93\u51FA JSON\u3002" },
+      {
+        role: "user",
+        content: `\u628A\u4E0B\u9762\u5F15\u53F7\u4E2D\u7684\u8BDD\u7FFB\u8BD1\u6210${toEn ? "\u82F1\u8BED" : "\u4E2D\u6587"}\uFF08\u610F\u601D\u51C6\u786E\u3001\u8868\u8FBE\u81EA\u7136\uFF09\uFF0C\u518D\u4ECE\u82F1\u6587\u4E00\u4FA7\uFF08\u539F\u6587\u6216\u8BD1\u6587\uFF09\u6311 3~6 \u4E2A\u503C\u5F97\u5B66\u4E60\u7684\u8BCD\u6216\u77ED\u8BED\uFF08\u52A8\u8BCD\u642D\u914D\u3001\u540D\u8BCD\u77ED\u8BED\u3001\u4E60\u8BED\u4F18\u5148\uFF09\uFF0C\u539F\u6837\u6458\u53D6\u3001\u4E0D\u8981\u6539\u5199\uFF0C\u4E0D\u8981\u5217\u51FA\u8FD9\u6BB5\u8BDD\u91CC\u6CA1\u6709\u7684\u8BCD\uFF0C\u6309\u5B66\u4E60\u4EF7\u503C\u6392\u5E8F\uFF1A
+\u300C${text2}\u300D
+\u53EA\u8F93\u51FA JSON\uFF1A{"translation":"\u8BD1\u6587","terms":[{"en":"\u8BCD\u6216\u77ED\u8BED","zh":"\u7B80\u77ED\u4E2D\u6587\u91CA\u4E49"}]}`
+      }
+    ],
+    temperature: 0.3
+  };
+}
+function zhToEnPrompt(words, per) {
+  const multi = per > 1;
+  return {
+    messages: [
+      { role: "system", content: "\u4F60\u662F\u4E2D\u8BD1\u82F1\u8BCD\u5178\u3002\u53EA\u8F93\u51FA JSON\u3002" },
+      {
+        role: "user",
+        content: `\u628A\u4E0B\u5217\u4E2D\u6587\u8BCD${multi ? `\u5404\u8BD1\u6210 ${per} \u4E2A\u6700\u5E38\u7528\u7684\u82F1\u6587\u5BF9\u5E94\u8BCD\uFF08\u6309\u5E38\u7528\u5EA6\u6392\u5E8F\uFF0C\u4F18\u5148\u5355\u4E2A\u5355\u8BCD\uFF0C\u5176\u6B21\u5E38\u89C1\u77ED\u8BED\uFF09` : "\u5404\u8BD1\u6210\u4E00\u4E2A\u6700\u5E38\u7528\u7684\u82F1\u6587\u5355\u8BCD\uFF08\u4F18\u5148\u5355\u4E2A\u5355\u8BCD\uFF0C\u5176\u6B21\u5E38\u89C1\u77ED\u8BED\uFF09"}\uFF1A
+${words.map((w, j) => `${j + 1}. ${w}`).join("\n")}
+${multi ? `\u53EA\u8F93\u51FA JSON \u6570\u7EC4\uFF1A[["\u82F1\u65871a","\u82F1\u65871b",...],["\u82F1\u65872a",...],...]\uFF08\u7B2C i \u4E2A\u6570\u7EC4\u5BF9\u5E94\u7B2C i \u4E2A\u4E2D\u6587\u8BCD\uFF0C\u957F\u5EA6 ${per}\uFF09\uFF0C\u4E0D\u8981\u4EFB\u4F55\u5176\u4ED6\u6587\u5B57\u3002` : `\u53EA\u8F93\u51FA JSON \u6570\u7EC4\uFF1A["\u82F1\u65871","\u82F1\u65872",...]\uFF0C\u6570\u7EC4\u957F\u5EA6\u5FC5\u987B\u7B49\u4E8E ${words.length}\u3002`}`
+      }
+    ],
+    temperature: 0.2
+  };
+}
+
+// src/llm.ts
 var LLM_OLLAMA_PRESET = { baseUrl: "http://localhost:11434/v1", apiKey: "ollama", model: "qwen2.5:3b" };
 var LLM_PRESETS = {
   ollama: LLM_OLLAMA_PRESET,
@@ -3026,9 +3245,8 @@ function llmConfigured(s) {
   return false;
 }
 async function llmTest(cfg) {
-  return llmChat(cfg, [
-    { role: "user", content: "Reply with exactly: ok" }
-  ], 0);
+  const spec = testPrompt();
+  return llmChat(cfg, spec.messages, spec.temperature);
 }
 async function llmChat(cfg, messages, temperature = 0.3) {
   var _a, _b, _c;
@@ -3162,83 +3380,43 @@ function parseJsonArray(text2) {
   }
   throw new Error("LLM \u8FD4\u56DE\u7684 JSON \u65E0\u6CD5\u89E3\u6790\uFF0C\u8BF7\u91CD\u8BD5\u6216\u6362\u66F4\u5927\u7684\u6A21\u578B");
 }
-async function llmTranslateSeeds(cfg, keyword) {
-  const content = await llmChat(cfg, [
-    {
-      role: "system",
-      content: "You are a translator. Reply ONLY with a JSON array of 2-3 common English words or short phrases (lowercase) that best represent the given Chinese concept. No explanation."
-    },
-    { role: "user", content: keyword }
-  ], 0.2);
-  const words = parseJsonArray(content).map((w) => String(w).trim().toLowerCase()).filter((w) => /^[a-z][a-z' -]*$/.test(w));
-  if (!words.length) throw new Error("LLM \u672A\u80FD\u7ED9\u51FA\u5BF9\u5E94\u7684\u82F1\u6587\u8BCD");
-  return words.slice(0, 3);
+function parseJsonObject(text2) {
+  const stripped = text2.replace(/```(?:json)?/gi, "").trim();
+  const start = stripped.indexOf("{");
+  const end = stripped.lastIndexOf("}");
+  if (start === -1 || end <= start) throw new Error("LLM \u672A\u8FD4\u56DE JSON \u5BF9\u8C61");
+  const raw = stripped.slice(start, end + 1);
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    return JSON.parse(repairJson(raw));
+  }
 }
-var EXPAND_ANGLES = [
-  "\u5B50\u9886\u57DF\u4E0E\u4E13\u4E1A\u672F\u8BED",
-  "\u5B9E\u9645\u5E94\u7528\u4E0E\u884C\u4E1A\u573A\u666F",
-  "\u76F8\u5173\u73B0\u8C61\u4E0E\u793E\u4F1A\u95EE\u9898",
-  "\u5E38\u89C1\u642D\u914D\u4E0E\u4E60\u60EF\u7528\u8BED",
-  "\u9886\u57DF\u4EBA\u7269\u3001\u7EC4\u7EC7\u4E0E\u5DE5\u5177",
-  "\u4E0A\u4F4D\u6982\u5FF5\u4E0E\u4E0B\u4F4D\u6982\u5FF5",
-  "\u8FD1\u4E49\u8BCD\u4E0E\u53CD\u4E49\u8BCD",
-  "\u4E0E\u79D1\u6280/\u7ECF\u6D4E/\u6587\u5316/\u73AF\u5883\u7684\u8DE8\u9886\u57DF\u4EA4\u53C9",
-  "\u53E3\u8BED\u4E0E\u4FDA\u8BED\u8868\u8FBE",
-  "\u5B66\u672F\u5199\u4F5C\u9AD8\u9891\u8BCD",
-  "\u5386\u53F2\u6E0A\u6E90\u4E0E\u7ECF\u5178\u7406\u8BBA",
-  "\u4E89\u8BAE\u4E0E\u524D\u6CBF\u8BDD\u9898"
-];
+function toExamples(list) {
+  return (Array.isArray(list) ? list : []).map((s) => {
+    if (typeof s === "string") return s.trim() ? { text: s.trim() } : void 0;
+    const en = typeof (s == null ? void 0 : s.en) === "string" ? s.en.trim() : "";
+    if (!en) return void 0;
+    return { text: en, zh: typeof s.zh === "string" ? s.zh.trim() : void 0 };
+  }).filter((e) => !!e);
+}
 async function llmExpandWords(cfg, keywords, existing, count = 12) {
   const listed = existing.length > 400 ? existing.slice(0, 400) : existing;
-  const angles = shuffle(EXPAND_ANGLES).slice(0, 3);
-  const user = `\u4E3B\u9898\u5173\u952E\u8BCD\uFF08\u53EF\u80FD\u662F\u4E2D\u6587\u6216\u82F1\u6587\uFF0C\u4E2D\u6587\u5173\u952E\u8BCD\u8BF7\u7406\u89E3\u4E3A\u5176\u5BF9\u5E94\u7684\u82F1\u6587\u4E3B\u9898\u9886\u57DF\uFF09\uFF1A${keywords.join(", ")}
-${listed.length ? `\u4EE5\u4E0B\u5355\u8BCD\u5DF2\u5B58\u5728\u6216\u4E4B\u524D\u5DF2\u7ED9\u8FC7\uFF0C\u4E0D\u8981\u91CD\u590D\uFF08\u542B\u5B83\u4EEC\u7684\u53D8\u5F62\uFF09\uFF1A
-${listed.join(", ")}
-` : ""}\u8BF7\u7ED9\u51FA ${count} \u4E2A\u8BE5\u4E3B\u9898\u9886\u57DF\u4E2D\u503C\u5F97\u4E2D\u9AD8\u7EA7\u82F1\u8BED\u5B66\u4E60\u8005\u638C\u63E1\u7684\u82F1\u6587\u5355\u8BCD\uFF08\u53EF\u542B\u5C11\u91CF\u77ED\u8BED\uFF09\u3002\u5173\u952E\u8BCD\u53EA\u662F\u8D77\u70B9\uFF0C\u672C\u6B21\u8BF7\u4F18\u5148\u56F4\u7ED5\u8FD9\u4E9B\u4FA7\u9762\u53D1\u6563\uFF1A${angles.join("\u3001")}\u3002
-- \u5411\u5173\u8054\u6982\u5FF5\u6269\u5C55\uFF1A\u5B50\u9886\u57DF\u3001\u5E94\u7528\u573A\u666F\u3001\u76F8\u5173\u73B0\u8C61\u3001\u5E38\u89C1\u642D\u914D\u3001\u9886\u57DF\u4EBA\u7269/\u5DE5\u5177\u7B49\uFF0C\u4E0D\u5FC5\u9010\u5B57\u8D34\u5408\u5173\u952E\u8BCD
-- \u5DF2\u5217\u51FA\u7684\u8BCD\u5927\u591A\u5360\u4F4F\u4E86\u4E3B\u9898\u6700\u663E\u773C\u7684\u4F4D\u7F6E\uFF0C\u8BF7\u5411\u66F4\u8FB9\u7F18\u3001\u66F4\u7EC6\u5206\u3001\u66F4\u4E13\u4E1A\u7684\u8BCD\u6C47\u5EF6\u4F38
-\u8981\u6C42\uFF1A
-1. \u4E00\u5F8B\u7528\u539F\u5F62\uFF08\u5355\u6570\u540D\u8BCD\u3001\u52A8\u8BCD\u539F\u5F62\uFF09\uFF0C\u540C\u4E00\u5355\u8BCD\u53EA\u51FA\u73B0\u4E00\u6B21\uFF0C\u4E0D\u8981\u8F93\u51FA\u5176\u590D\u6570/\u65F6\u6001/\u6D3E\u751F\u5F62\u5F0F
-2. \u5404\u5355\u8BCD\u4E92\u4E0D\u91CD\u590D\uFF0C\u4E5F\u8DF3\u8FC7\u4E2D\u8003\u9AD8\u8003\u7EA7\u522B\u7684\u7B80\u5355\u57FA\u7840\u8BCD
-3. \u91CA\u4E49\u7B80\u660E\uFF1A\u8BCD\u6027\u7F29\u5199 + \u4E2D\u6587\u6838\u5FC3\u4E49\uFF0C\u4E00\u9879\u5373\u53EF
-\u6BCF\u9879\u683C\u5F0F\uFF1A{"word":"\u82F1\u6587\u5355\u8BCD","translation":"\u8BCD\u6027. \u4E2D\u6587\u91CA\u4E49\uFF08\u7B80\u660E\uFF09"}
-\u53EA\u8F93\u51FA JSON \u6570\u7EC4\uFF0C\u4E0D\u8981\u4EFB\u4F55\u5176\u4ED6\u6587\u5B57\u3002`;
-  const out = await llmChat(
-    cfg,
-    [
-      { role: "system", content: "\u4F60\u662F\u82F1\u8BED\u8BCD\u6C47\u6559\u5B66\u4E13\u5BB6\u3002\u6839\u636E\u4E3B\u9898\u5173\u952E\u8BCD\uFF08\u53EF\u80FD\u662F\u4E2D\u6587\uFF0C\u5982\u300C\u4EBA\u5DE5\u667A\u80FD\u300D\u4EE3\u8868 AI \u9886\u57DF\uFF09\u7B5B\u9009\u503C\u5F97\u5B66\u4E60\u7684\u82F1\u6587\u8BCD\u6C47\uFF0C\u5584\u4E8E\u4ECE\u4E00\u4E2A\u4E3B\u9898\u8054\u60F3\u5230\u5176\u5468\u8FB9\u5B50\u9886\u57DF\u548C\u5173\u8054\u6982\u5FF5\uFF0C\u4FDD\u8BC1\u591A\u8F6E\u751F\u6210\u7684\u8BCD\u6C47\u4E30\u5BCC\u591A\u6837\u3002\u53EA\u8F93\u51FA JSON\u3002" },
-      { role: "user", content: user }
-    ],
-    0.9
-    // 扩词要发散，温度给高些；例句/翻译等结构化任务仍用各自默认值
-  );
+  const spec = expandWordsPrompt(keywords, listed, count);
+  const out = await llmChat(cfg, spec.messages, spec.temperature);
   return parseJsonArray(out).filter(
     (x) => !!x && typeof x.word === "string"
   );
 }
 async function llmExamples(cfg, words, topics, count = 3, onBatch, shouldStop, onRetry, onWords) {
-  const [primary = "", ...aux] = topics != null ? topics : [];
-  const topicClause = primary ? `\u3002\u4E3B\u9898\u8BED\u5883\u300C${primary}\u300D${aux.length ? `\uFF08\u517C\u987E\u4E3B\u9898\uFF1A${aux.join("\u3001")}\uFF09` : ""}\uFF1A\u4F8B\u53E5\u5C3D\u91CF\u56F4\u7ED5\u8BE5\u9886\u57DF\u7684\u5E38\u89C1\u573A\u666F\u548C\u8BCD\u6C47\uFF1B\u5176\u4E2D\u7684\u8BCD\u53EA\u662F\u9886\u57DF\u80CC\u666F\uFF0C\u4E0D\u662F\u8981\u9020\u53E5\u7684\u5355\u8BCD` : "";
   const m = /* @__PURE__ */ new Map();
   let firstErr;
   const ask = async (batch) => {
     var _a;
     let out;
     try {
-      out = await llmChat(
-        cfg,
-        [
-          { role: "system", content: "\u4F60\u4E3A\u82F1\u8BED\u5355\u8BCD\u5199\u4F8B\u53E5\uFF0C\u4E3B\u9898\u8BCD\uFF08\u53EF\u80FD\u662F\u4E2D\u6587\uFF09\u4EE3\u8868\u76EE\u6807\u9886\u57DF\u3002\u53EA\u8F93\u51FA JSON\u3002" },
-          {
-            role: "user",
-            content: `\u4E3A\u4E0B\u5217\u6BCF\u4E2A\u5355\u8BCD\u5199 ${count} \u4E2A\u7B80\u6D01\u81EA\u7136\u7684\u82F1\u6587\u4F8B\u53E5\uFF08\u6BCF\u53E5 10 \u8BCD\u5DE6\u53F3\uFF0C\u5355\u8BCD\u7528\u539F\u5F62\u6216\u5408\u9002\u53D8\u5F62\uFF09\uFF0C\u5404\u53E5\u8BED\u5883\u4E0D\u540C\uFF08\u5982\u65E5\u5E38\u5BF9\u8BDD\u3001\u5DE5\u4F5C/\u5B66\u4E60\u573A\u666F\u3001\u4E66\u9762\u8868\u8FBE\uFF09${topicClause}\uFF1A
-${batch.map((w, i) => `${i + 1}. ${w}`).join("\n")}
-\u6BCF\u4E2A\u4F8B\u53E5\u90FD\u8981\u914D\u4E00\u53E5\u81EA\u7136\u7684\u4E2D\u6587\u7FFB\u8BD1\u3002
-\u8F93\u51FA JSON \u6570\u7EC4\uFF1A[{"word":"...","sentences":[{"en":"\u82F1\u6587\u4F8B\u53E5","zh":"\u4E2D\u6587\u7FFB\u8BD1"},...]}]\uFF0C\u5FC5\u987B\u8986\u76D6\u5168\u90E8 ${batch.length} \u4E2A\u5355\u8BCD\uFF0Cword \u53EA\u80FD\u53D6\u4E0A\u9762\u5217\u51FA\u7684\u5355\u8BCD\uFF0C\u6BCF\u4E2A\u5355\u8BCD\u7ED9\u6EE1 ${count} \u53E5\u3002`
-          }
-        ],
-        0.5
-      );
+      const spec = examplesPrompt(batch, count, topics);
+      out = await llmChat(cfg, spec.messages, spec.temperature);
     } catch (e) {
       firstErr != null ? firstErr : firstErr = e;
       return;
@@ -3252,14 +3430,8 @@ ${batch.map((w, i) => `${i + 1}. ${w}`).join("\n")}
     }
     for (const x of items) {
       const w = x == null ? void 0 : x.word;
-      const list = x == null ? void 0 : x.sentences;
       if (!w) continue;
-      const arr = (Array.isArray(list) ? list : []).map((s) => {
-        if (typeof s === "string") return s.trim() ? { text: s.trim() } : void 0;
-        const en = typeof (s == null ? void 0 : s.en) === "string" ? s.en.trim() : "";
-        if (!en) return void 0;
-        return { text: en, zh: typeof s.zh === "string" ? s.zh.trim() : void 0 };
-      }).filter((e) => !!e);
+      const arr = toExamples(x == null ? void 0 : x.sentences);
       if (!arr.length) continue;
       const k = String(w).toLowerCase();
       m.set(k, [...(_a = m.get(k)) != null ? _a : [], ...arr]);
@@ -3285,28 +3457,13 @@ ${batch.map((w, i) => `${i + 1}. ${w}`).join("\n")}
   return m;
 }
 async function llmSenses(cfg, words, topics, onWords) {
-  const [primary = "", ...aux] = topics != null ? topics : [];
-  const topicClause = primary ? `\u3002\u4E3B\u9898\u8BED\u5883\u300C${primary}\u300D${aux.length ? `\uFF08\u517C\u987E\u4E3B\u9898\uFF1A${aux.join("\u3001")}\uFF09` : ""}\uFF1A\u4E49\u9879\u6309\u8BE5\u9886\u57DF\u7684\u5E38\u7528\u5EA6\u6392\u5E8F\u3001\u9886\u57DF\u4E49\u6392\u524D\uFF1B\u5176\u4E2D\u7684\u8BCD\u53EA\u662F\u9886\u57DF\u80CC\u666F\uFF0C\u4E0D\u662F\u8981\u91CA\u4E49\u7684\u5355\u8BCD` : "";
   const m = /* @__PURE__ */ new Map();
   let firstErr;
   const ask = async (batch) => {
     let out;
     try {
-      out = await llmChat(
-        cfg,
-        [
-          { role: "system", content: "\u4F60\u662F\u82F1\u8BED\u8BCD\u5178\u7F16\u7E82\u4E13\u5BB6\uFF0C\u5584\u7528\u7B80\u660E\u7684\u4E2D\u6587\u6807\u6CE8\u8BCD\u4E49\u3002\u53EA\u8F93\u51FA JSON\u3002" },
-          {
-            role: "user",
-            content: `\u5217\u51FA\u4E0B\u5217\u6BCF\u4E2A\u82F1\u8BED\u5355\u8BCD\u7684\u5E38\u7528\u4E2D\u6587\u4E49\u9879\uFF082~6 \u884C\uFF0C\u6309\u5E38\u7528\u5EA6\u6392\u5E8F\uFF0C\u77ED\u8BED\u5355\u8BCD\u7ED9 1~2 \u884C\uFF09${topicClause}\u3002\u6BCF\u884C\u662F\u4E00\u4E2A\u6838\u5FC3\u542B\u4E49\uFF1A\u540C\u4E00\u542B\u4E49\u7684\u8FD1\u4E49\u8868\u8FF0\uFF08\u540C\u8BCD\u6027\uFF09\u7528\u300C\uFF1B\u300D\u5408\u5E76\u5728\u4E00\u884C\uFF0C\u4E0D\u540C\u6838\u5FC3\u542B\u4E49\u5206\u884C\uFF1B\u683C\u5F0F\u300C\u8BCD\u6027. \u4E2D\u6587\u91CA\u4E49\u300D\uFF0C\u8BCD\u6027\u7528 n./v./adj./adv./vt./vi. \u7B49\u7F29\u5199\u2014\u2014\u6BCF\u884C\u53EA\u6709\u8BCD\u6027\u548C\u4E2D\u6587\u91CA\u4E49\uFF0C\u522B\u65E0\u5176\u4ED6\u3002
-\u2705 \u6B63\u4F8B\uFF1Abank \u2192 ["n. \u94F6\u884C", "n. \u5CB8\uFF1B\u5824", "v. \u5806\u79EF"]\uFF1Brecourse \u2192 ["n. \u6C42\u52A9\uFF1B\u6C42\u63F4\uFF1B\u8FFD\u7D22\u6743", "v. \u6C42\u52A9\u4E8E\uFF1B\u8BC9\u8BF8"]
-\u274C \u53CD\u4F8B\uFF08\u6BCF\u4E00\u6761\u90FD\u9519\uFF09\uFF1A["\u4EE5\u4E0B\u662F recourse \u7684\u5E38\u7528\u4E49\u9879", "n. \u6C42\u52A9\u9014\u5F84\uFF08\u878D\u8D44\u79DF\u8D41/\u4FE1\u8D37\u9886\u57DF\u6307\u503A\u6743\u4EBA\u5411\u62C5\u4FDD\u4EBA\u8FFD\u507F\uFF09", "recourse: n. \u8FFD\u7D22\u6743"]\u2014\u2014\u524D\u5BFC\u8BF4\u660E\u884C\u3001\u62EC\u53F7\u91CC\u7684\u9886\u57DF\u6CE8\u91CA\u3001\u91CA\u4E49\u91CC\u91CD\u590D\u82F1\u6587\u539F\u8BCD\uFF0C\u90FD\u662F\u4F1A\u539F\u6837\u5199\u8FDB\u8BCD\u5361\u7684\u65E0\u5173\u5185\u5BB9\uFF0C\u4E00\u5F8B\u7981\u6B62\uFF1A
-${batch.map((w, i) => `${i + 1}. ${w}`).join("\n")}
-\u8F93\u51FA JSON \u6570\u7EC4\uFF1A[{"word":"...","senses":["n. \u91CA\u4E49","v. \u91CA\u4E49"]}]\uFF0C\u5FC5\u987B\u8986\u76D6\u5168\u90E8 ${batch.length} \u4E2A\u5355\u8BCD\uFF0Cword \u53EA\u80FD\u53D6\u4E0A\u9762\u5217\u51FA\u7684\u5355\u8BCD\u3002`
-          }
-        ],
-        0.2
-      );
+      const spec = sensesPrompt(batch, topics);
+      out = await llmChat(cfg, spec.messages, spec.temperature);
     } catch (e) {
       firstErr != null ? firstErr : firstErr = e;
       return;
@@ -3339,6 +3496,20 @@ ${batch.map((w, i) => `${i + 1}. ${w}`).join("\n")}
   if (!m.size && firstErr) throw firstErr;
   return m;
 }
+async function llmSensesExamples(cfg, words, topics, count = 3) {
+  const spec = sensesExamplesPrompt(words, count, topics);
+  const out = await llmChat(cfg, spec.messages, spec.temperature);
+  const m = /* @__PURE__ */ new Map();
+  for (const x of parseJsonArray(out)) {
+    const w = x == null ? void 0 : x.word;
+    const s = x == null ? void 0 : x.senses;
+    if (!w) continue;
+    const senses = (Array.isArray(s) ? s : []).map(String).map((t) => t.trim()).filter(Boolean).slice(0, 6);
+    const examples = toExamples(x.sentences);
+    if (senses.length || examples.length) m.set(String(w).toLowerCase(), { senses, examples });
+  }
+  return m;
+}
 function memoSuggestions(items, cap = 5) {
   const out = [];
   for (const x of items) {
@@ -3350,39 +3521,15 @@ function memoSuggestions(items, cap = 5) {
   return out;
 }
 async function llmMemoSuggestions(cfg, word, translation) {
-  const out = await llmChat(
-    cfg,
-    [
-      { role: "system", content: "\u4F60\u662F\u82F1\u8BED\u8BCD\u6C47\u8BB0\u5FC6\u6CD5\u4E13\u5BB6\uFF0C\u64C5\u957F\u7528\u8BCD\u6839\u8BCD\u7F00\u3001\u8C10\u97F3\u8054\u60F3\u3001\u6613\u6DF7\u8BCD\u5BF9\u6BD4\u5E2E\u4E2D\u56FD\u5B66\u4E60\u8005\u9AD8\u6548\u8BB0\u5355\u8BCD\u3002\u53EA\u8F93\u51FA JSON\u3002" },
-      {
-        role: "user",
-        content: `\u4E3A\u82F1\u8BED\u5355\u8BCD\u300C${word}\u300D${translation ? `\uFF08\u8BCD\u4E49\uFF1A${translation}\uFF09` : ""}\u5199 3 \u6761\u4E0D\u540C\u89D2\u5EA6\u7684\u4E2D\u6587\u52A9\u8BB0\uFF0C\u6BCF\u6761\u4E00\u4E24\u53E5\u8BDD\u3001\u7B80\u77ED\u597D\u8BB0\uFF1A
-1. \u8BCD\u6839\u8BCD\u7F00\u62C6\u89E3\uFF08\u660E\u663E\u53EF\u62C6\u624D\u5199\uFF09
-2. \u8C10\u97F3\u8054\u60F3\u6216\u5F62\u8C61\u573A\u666F\u8054\u60F3
-3. \u8FD1\u5F62/\u8FD1\u4E49\u6613\u6DF7\u8BCD\u5BF9\u6BD4\u8FA8\u6790
-\u53EA\u8F93\u51FA JSON \u6570\u7EC4\uFF1A["\u52A9\u8BB01","\u52A9\u8BB02","\u52A9\u8BB03"]\u3002`
-      }
-    ],
-    0.6
-  );
+  const spec = memoPrompt(word, translation);
+  const out = await llmChat(cfg, spec.messages, spec.temperature);
   return memoSuggestions(parseJsonArray(out));
 }
 async function llmTranslateSentences(cfg, texts) {
   const out = new Array(texts.length).fill("");
   const translate = async (idx) => {
-    const out2 = await llmChat(
-      cfg,
-      [
-        { role: "system", content: "\u4F60\u662F\u82F1\u8BD1\u4E2D\u7FFB\u8BD1\u5668\u3002\u53EA\u8F93\u51FA JSON\u3002" },
-        {
-          role: "user",
-          content: `\u628A\u4E0B\u5217\u82F1\u6587\u4F8B\u53E5\u7FFB\u8BD1\u6210\u81EA\u7136\u6D41\u7545\u7684\u4E2D\u6587\uFF08\u4FDD\u6301\u7F16\u53F7\u987A\u5E8F\uFF09\uFF1A
-${idx.map((i, j) => `${j + 1}. ${texts[i]}`).join("\n")}
-\u53EA\u8F93\u51FA JSON \u6570\u7EC4\uFF1A["\u8BD1\u65871","\u8BD1\u65872",...]\uFF0C\u6570\u7EC4\u957F\u5EA6\u5FC5\u987B\u7B49\u4E8E ${idx.length}\u3002`
-        }
-      ],
-      0.3
-    );
+    const spec = translateSentencesPrompt(idx.map((i) => texts[i]));
+    const out2 = await llmChat(cfg, spec.messages, spec.temperature);
     const arr = parseJsonArray(out2);
     idx.forEach((origIdx, j) => {
       const t = arr[j];
@@ -3393,26 +3540,32 @@ ${idx.map((i, j) => `${j + 1}. ${texts[i]}`).join("\n")}
   await runPool(chunk(idxs, 15), 2, translate);
   return out;
 }
-async function llmTranslateZhToEn(cfg, words) {
-  const out = new Array(words.length).fill("");
+async function llmTranslateCollect(cfg, text2) {
+  var _a;
+  const spec = translateCollectPrompt(text2);
+  const out = await llmChat(cfg, spec.messages, spec.temperature);
+  const obj = parseJsonObject(out);
+  const translation = String((_a = obj.translation) != null ? _a : "").trim();
+  if (!translation) throw new Error("LLM \u672A\u7ED9\u51FA\u8BD1\u6587");
+  const terms = (Array.isArray(obj.terms) ? obj.terms : []).map((x) => {
+    var _a2, _b;
+    return {
+      en: String((_a2 = x == null ? void 0 : x.en) != null ? _a2 : "").trim().toLowerCase(),
+      zh: String((_b = x == null ? void 0 : x.zh) != null ? _b : "").trim()
+    };
+  }).filter((t) => /^[a-z][a-z' -]*$/.test(t.en) && t.en.split(/\s+/).length <= 5).slice(0, 8);
+  return { translation, terms };
+}
+async function llmTranslateZhToEn(cfg, words, per = 1) {
+  const out = Array.from({ length: words.length }, () => []);
   const translate = async (idx) => {
-    const out2 = await llmChat(
-      cfg,
-      [
-        { role: "system", content: "\u4F60\u662F\u4E2D\u8BD1\u82F1\u8BCD\u5178\u3002\u53EA\u8F93\u51FA JSON\u3002" },
-        {
-          role: "user",
-          content: `\u628A\u4E0B\u5217\u4E2D\u6587\u8BCD\u5404\u8BD1\u6210\u4E00\u4E2A\u6700\u5E38\u7528\u7684\u82F1\u6587\u5355\u8BCD\uFF08\u4F18\u5148\u5355\u4E2A\u5355\u8BCD\uFF0C\u5176\u6B21\u5E38\u89C1\u77ED\u8BED\uFF09\uFF1A
-${idx.map((i, j) => `${j + 1}. ${words[i]}`).join("\n")}
-\u53EA\u8F93\u51FA JSON \u6570\u7EC4\uFF1A["\u82F1\u65871","\u82F1\u65872",...]\uFF0C\u6570\u7EC4\u957F\u5EA6\u5FC5\u987B\u7B49\u4E8E ${idx.length}\u3002`
-        }
-      ],
-      0.2
-    );
+    const spec = zhToEnPrompt(idx.map((i) => words[i]), per);
+    const out2 = await llmChat(cfg, spec.messages, spec.temperature);
     const arr = parseJsonArray(out2);
     idx.forEach((origIdx, j) => {
-      const t = arr[j];
-      if (typeof t === "string" && t.trim()) out[origIdx] = t.trim();
+      const cell = arr[j];
+      const list = (Array.isArray(cell) ? cell : [cell]).map((v) => String(v).trim().toLowerCase()).filter((t) => /^[a-z][a-z' -]*$/.test(t));
+      if (list.length) out[origIdx] = list;
     });
   };
   const idxs = words.map((_, i) => i).filter((i) => words[i].trim());
@@ -5478,7 +5631,7 @@ function create_fragment2(ctx) {
     }
   };
 }
-var EXPAND_TIP_TAIL = "\u300C\u8054\u7F51\u6293\u53D6\u300D\u6293 OpenAlex \u8BBA\u6587\u6458\u8981\uFF08\u56FD\u5185\u76F4\u8FDE\uFF09\u6216 Wikipedia \u4E3B\u9898\u6587\u7AE0\uFF0C\u63D0\u53D6\u9AD8\u9891\u8BCD\uFF1B\u300C\u76F8\u5173\u8BCD\u300D\u8D70 Datamuse\uFF08\u514D Key\u3001\u56FD\u5185\u53EF\u76F4\u8FDE\uFF0C\u4E2D\u6587\u5173\u952E\u8BCD\u7ECF LLM/\u8BCD\u5178\u8F6C\u4E3A\u82F1\u6587\u79CD\u5B50\u540E\u67E5\u8BE2\uFF09\uFF1B\u300C\u6587\u7AE0\u63D0\u53D6\u300D\u8F93\u5165\u94FE\u63A5\u6216\u7C98\u8D34\u6B63\u6587\u63D0\u53D6\u751F\u8BCD\uFF1B\u300C\u5BFC\u5165\u8BCD\u8868\u300D\u7C98\u8D34\u6279\u91CF\u52A0\u5165\uFF08\u65E0\u91CA\u4E49\u81EA\u52A8\u67E5\u8BCD\u5178\u8865\u5168\uFF0C\u5DF2\u6709\u8BCD\u5408\u5E76\u4E3B\u9898\uFF09\uFF0C\u52FE\u9009\u540E\u52A0\u5165\u4E3B\u9898";
+var EXPAND_TIP_TAIL = "\u300C\u8054\u7F51\u6293\u53D6\u300D\u6293 OpenAlex \u8BBA\u6587\u6458\u8981\uFF08\u56FD\u5185\u76F4\u8FDE\uFF09\u6216 Wikipedia \u4E3B\u9898\u6587\u7AE0\uFF0C\u63D0\u53D6\u9AD8\u9891\u8BCD\uFF1B\u300C\u76F8\u5173\u8BCD\u300D\u8D70 Datamuse\uFF08\u514D Key\u3001\u56FD\u5185\u53EF\u76F4\u8FDE\uFF0C\u4E2D\u6587\u5173\u952E\u8BCD\u7ECF LLM/\u8BCD\u5178\u8F6C\u4E3A\u82F1\u6587\u79CD\u5B50\u540E\u67E5\u8BE2\uFF09\uFF1B\u300C\u6587\u7AE0\u63D0\u53D6\u300D\u8F93\u5165\u94FE\u63A5\u6216\u7C98\u8D34\u6B63\u6587\u63D0\u53D6\u751F\u8BCD\uFF1B\u300C\u5BFC\u5165\u8BCD\u8868\u300D\u7C98\u8D34\u6279\u91CF\u52A0\u5165\uFF08\u65E0\u91CA\u4E49\u81EA\u52A8\u67E5\u8BCD\u5178\u8865\u5168\uFF0C\u4F8B\u53E5/\u4E49\u9879\u540E\u53F0\u8865\u9F50\uFF0C\u5DF2\u6709\u8BCD\u5408\u5E76\u4E3B\u9898\uFF09\uFF0C\u52FE\u9009\u540E\u52A0\u5165\u4E3B\u9898";
 function checkedFirst(list) {
   return [...list.filter((c) => c.checked), ...list.filter((c) => !c.checked)];
 }
@@ -5688,8 +5841,8 @@ function instance2($$self, $$props, $$invalidate) {
         $$invalidate(5, status = `\u6B63\u5728\u5BFC\u5165 ${created + merged}/${lines.length} \u4E2A\u8BCD\u2026`);
       });
       await plugin.store.touchNow();
-      if (imported.length) void plugin.backfillTranslations(new Set(imported), true);
-      $$invalidate(7, summary = `\u5BFC\u5165\u5B8C\u6210\uFF1A\u65B0\u589E ${created}\uFF0C\u5408\u5E76 ${merged}\uFF0C\u8DF3\u8FC7 ${lines.length - created - merged}`);
+      if (imported.length) plugin.enrichWordsInBackground(imported, { theme });
+      $$invalidate(7, summary = `\u5BFC\u5165\u5B8C\u6210\uFF1A\u65B0\u589E ${created}\uFF0C\u5408\u5E76 ${merged}\uFF0C\u8DF3\u8FC7 ${lines.length - created - merged}` + (imported.length ? "\uFF08\u4F8B\u53E5/\u4E49\u9879/\u97F3\u6807/\u540C\u53CD\u4E49\u6B63\u5728\u540E\u53F0\u8865\u5168\uFF09" : ""));
       $$invalidate(5, status = "");
       $$invalidate(12, importText = "");
       $$invalidate(0, plugin.expandCache = void 0, plugin);
@@ -5779,7 +5932,7 @@ function instance2($$self, $$props, $$invalidate) {
         if (llmOn) {
           $$invalidate(5, status = `\u4E2D\u6587\u5173\u952E\u8BCD\u8F6C\u82F1\u6587\u79CD\u5B50\u8BCD\u2026\uFF08${k}\uFF09`);
           try {
-            seeds.push(...await llmTranslateSeeds(plugin.llmCfg, k));
+            seeds.push(...(await llmTranslateZhToEn(plugin.llmCfg, [k], 3))[0]);
           } catch (_b2) {
           }
         }
@@ -6405,8 +6558,7 @@ var AddWordModal = class _AddWordModal extends import_obsidian10.Modal {
     this.plugin.lastAddTheme = theme;
     if (backfill) new import_obsidian10.Notice(`\u5DF2\u56DE\u586B\u91CA\u4E49\uFF1A${tr}`);
     const doc = this.plugin.words.get(this.word);
-    if (doc && (!doc.phonetic || !hasTranslation(doc.translation)))
-      void this.plugin.backfillTranslations(/* @__PURE__ */ new Set([doc.word]), true);
+    if (doc) void this.plugin.enrichWordsInBackground([doc.word], { theme });
     void this.plugin.audio.prefetch(this.word);
     this.plugin.refreshStatusBar();
     (_a = this.onDone) == null ? void 0 : _a.call(this);
@@ -6498,7 +6650,7 @@ var AddWordModal = class _AddWordModal extends import_obsidian10.Modal {
       let cands = await collectCands(raw);
       if (!cands.length && llmReady(this.plugin.llmCfg)) {
         this.previewEl.setText("\u7FFB\u8BD1\u63A5\u53E3\u6CA1\u7ED9\u51FA\u7ED3\u679C\uFF0CAI \u7FFB\u8BD1\u6BD4\u5BF9\u4E2D\u2026");
-        const en = (_a = (await llmTranslateZhToEn(this.plugin.llmCfg, [q]))[0]) != null ? _a : "";
+        const en = ((_a = (await llmTranslateZhToEn(this.plugin.llmCfg, [q]))[0]) != null ? _a : []).join(" ");
         raw = en ? en.toLowerCase().split(/\s+/).filter(Boolean) : [];
         cands = await collectCands(raw);
       }
@@ -6593,7 +6745,7 @@ var AddWordModal = class _AddWordModal extends import_obsidian10.Modal {
     var _a;
     let en = await translateZh2En(q);
     if (!en.length && llmReady(this.plugin.llmCfg)) {
-      en = ((_a = (await llmTranslateZhToEn(this.plugin.llmCfg, [q]))[0]) != null ? _a : "").toLowerCase().split(/\s+/).filter(Boolean);
+      en = ((_a = (await llmTranslateZhToEn(this.plugin.llmCfg, [q]))[0]) != null ? _a : []).join(" ").toLowerCase().split(/\s+/).filter(Boolean);
     }
     const related = /* @__PURE__ */ new Set();
     for (const w of en.slice(0, 2)) {
@@ -6798,6 +6950,141 @@ ${this.exampleZh}` : ""}`);
     } finally {
       b.setDisabled(false).setButtonText("AI \u4F8B\u53E5");
     }
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+};
+var TranslateModal = class extends import_obsidian10.Modal {
+  // 另一侧句子（例句 translation）
+  constructor(app, plugin, onDone) {
+    super(app);
+    this.plugin = plugin;
+    this.onDone = onDone;
+    this.busy = false;
+    this.exEn = "";
+    // 最近一次翻译的英文侧句子（例句 text：输入中文取译文，输入英文取原文）
+    this.exOther = "";
+  }
+  onOpen() {
+    tagModal(this.modalEl, "Trans");
+    const { contentEl } = this;
+    contentEl.createEl("h3", { text: "\u7FFB\u8BD1" });
+    const ta = contentEl.createEl("textarea", {
+      cls: "el-memo-in",
+      // 复用助记弹窗的输入框样式（占满弹窗的多行文本框）
+      attr: { rows: "4", placeholder: "\u8F93\u5165\u6216\u7C98\u8D34\u4E00\u6BB5\u8BDD\uFF0C\u4E2D\u82F1\u81EA\u52A8\u5224\u5411\uFF1BCtrl/Cmd+Enter \u7FFB\u8BD1" }
+    });
+    const btnRow = contentEl.createDiv("el-confirm-btns");
+    const goBtn = new import_obsidian10.ButtonComponent(btnRow).setButtonText("\u7FFB\u8BD1").setCta();
+    const resultEl = contentEl.createDiv();
+    goBtn.onClick(() => void this.go(ta, resultEl, goBtn));
+    ta.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.isComposing) {
+        e.preventDefault();
+        void this.go(ta, resultEl, goBtn);
+      }
+    });
+    setTimeout(() => ta.focus(), 50);
+  }
+  async go(ta, resultEl, btn) {
+    var _a;
+    const text2 = ta.value.trim();
+    if (!text2 || this.busy) return;
+    this.busy = true;
+    btn.setDisabled(true).setButtonText("\u7FFB\u8BD1\u4E2D\u2026");
+    resultEl.empty();
+    try {
+      const zhIn = isZh(text2);
+      let translation = "";
+      let terms = [];
+      if (llmReady(this.plugin.llmCfg)) {
+        ({ translation, terms } = await llmTranslateCollect(this.plugin.llmCfg, text2));
+      } else {
+        translation = (_a = await myMemoryTranslate(text2, zhIn)) != null ? _a : "";
+        if (!translation) {
+          new import_obsidian10.Notice("\u514D\u8D39\u7FFB\u8BD1\u63A5\u53E3\u65E0\u7ED3\u679C\uFF1A\u53EF\u7A0D\u540E\u518D\u8BD5\uFF0C\u6216\u914D\u7F6E AI \u540E\u8FD8\u80FD\u540C\u65F6\u63D0\u53D6\u5173\u952E\u8BCD");
+          return;
+        }
+      }
+      this.exEn = zhIn ? translation : text2;
+      this.exOther = zhIn ? text2 : translation;
+      const box = resultEl.createDiv({ cls: "el-preview" });
+      box.style.cssText = "white-space:pre-wrap;font-size:14px;color:var(--text-normal);padding:8px 12px;";
+      box.setText(translation);
+      new import_obsidian10.ButtonComponent(resultEl).setButtonText("\u{1F4CB} \u590D\u5236\u8BD1\u6587").onClick(async () => {
+        await navigator.clipboard.writeText(translation);
+        new import_obsidian10.Notice("\u8BD1\u6587\u5DF2\u590D\u5236");
+      });
+      if (terms.length) this.renderTerms(resultEl, terms);
+    } catch (e) {
+      new import_obsidian10.Notice(`\u7FFB\u8BD1\u5931\u8D25\uFF1A${e instanceof Error ? e.message : e}`);
+    } finally {
+      this.busy = false;
+      btn.setDisabled(false).setButtonText("\u7FFB\u8BD1");
+    }
+  }
+  /** 关键词/短语勾选 + 选主题批量入库（翻译句作例句、提词释义直接当释义） */
+  renderTerms(host, terms) {
+    host.createDiv({ cls: "el-muted", text: "\u53EF\u6536\u5F55\u7684\u8BCD/\u77ED\u8BED\uFF08\u9ED8\u8BA4\u52FE\u9009\uFF0C\u7FFB\u8BD1\u53E5\u5C06\u4F5C\u4E3A\u4F8B\u53E5\u5165\u5E93\uFF09\uFF1A" });
+    const rows = [];
+    for (const t of terms) {
+      const owned = !!this.plugin.words.resolveWord(t.en);
+      const row = host.createDiv("el-trans-term");
+      row.style.cssText = "display:flex;align-items:center;gap:8px;padding:4px 0;";
+      const input = row.createEl("input", { type: "checkbox" });
+      input.disabled = owned;
+      input.checked = !owned;
+      row.createEl("strong", { text: t.en });
+      if (t.zh) row.createSpan({ text: t.zh, cls: "el-muted" });
+      if (owned) row.createSpan({ text: "\u5DF2\u6536\u5F55", cls: "el-chip" });
+      rows.push({ term: t, input });
+    }
+    const names = Object.keys(this.plugin.db.themes);
+    const addArea = host.createDiv();
+    if (!names.length) {
+      addArea.createEl("p", { text: "\u8FD8\u6CA1\u6709\u4E3B\u9898\uFF1A\u5148\u5728\u4E3B\u9898\u9762\u677F\u65B0\u5EFA\u4E3B\u9898\uFF0C\u518D\u56DE\u6765\u6536\u5F55\u3002", cls: "el-muted" });
+      return;
+    }
+    let theme = this.plugin.lastAddTheme && names.includes(this.plugin.lastAddTheme) ? this.plugin.lastAddTheme : names[0];
+    new import_obsidian10.Setting(addArea).setName("\u52A0\u5165\u4E3B\u9898").addDropdown((d) => {
+      d.addOptions(Object.fromEntries(names.map((n) => [n, n])));
+      d.setValue(theme);
+      d.onChange((v) => theme = v);
+    });
+    new import_obsidian10.Setting(addArea).addButton(
+      (b) => b.setButtonText("\u52A0\u5165\u6240\u9009").setCta().onClick(async () => {
+        var _a;
+        const picked = rows.filter((r) => r.input.checked).map((r) => r.term);
+        if (!picked.length) {
+          new import_obsidian10.Notice("\u5148\u52FE\u9009\u8981\u6536\u5F55\u7684\u8BCD/\u77ED\u8BED");
+          return;
+        }
+        b.setDisabled(true).setButtonText("\u52A0\u5165\u4E2D\u2026");
+        let created = 0;
+        let merged = 0;
+        try {
+          for (const t of picked) {
+            const r = await this.plugin.addWord(t.en, theme, {
+              translation: t.zh || void 0,
+              // 提词带的中文释义直接入库（短语词典查不到，正好补上）
+              examples: [{ text: this.exEn, translation: this.exOther || void 0, source: "\u7FFB\u8BD1" }]
+            });
+            if (r === "created") created++;
+            else if (r === "merged") merged++;
+          }
+        } catch (e) {
+          new import_obsidian10.Notice(`\u6536\u5F55\u5931\u8D25\uFF1A${e instanceof Error ? e.message : e}`);
+          return;
+        } finally {
+          b.setDisabled(false).setButtonText("\u52A0\u5165\u6240\u9009");
+        }
+        this.plugin.lastAddTheme = theme;
+        void this.plugin.enrichWordsInBackground(picked.map((t) => t.en), { theme });
+        new import_obsidian10.Notice(`\u5DF2\u6536\u5F55 ${created} \u8BCD${merged ? `\u3001${merged} \u8BCD\u5E76\u5165\u4E3B\u9898` : ""}\uFF0C\u4F8B\u53E5\u4E3A\u7FFB\u8BD1\u53E5`);
+        (_a = this.onDone) == null ? void 0 : _a.call(this);
+      })
+    );
   }
   onClose() {
     this.contentEl.empty();
@@ -7469,9 +7756,6 @@ var AiSetupModal = class extends import_obsidian10.Modal {
     this.contentEl.empty();
   }
 };
-
-// src/components/WordFullCard.svelte
-var import_obsidian11 = require("obsidian");
 
 // src/components/SenseList.svelte
 function get_each_context2(ctx, list, i) {
@@ -10585,7 +10869,8 @@ function instance4($$self, $$props, $$invalidate) {
   function exPointerDown(ev) {
     var _a2;
     lpSuppressClick = false;
-    if (!import_obsidian11.Platform.isMobile || ((_a2 = ev.target) === null || _a2 === void 0 ? void 0 : _a2.closest("button"))) return;
+    if (ev.pointerType === "mouse" ? ev.button !== 0 : ev.pointerType !== "touch" && ev.pointerType !== "pen") return;
+    if ((_a2 = ev.target) === null || _a2 === void 0 ? void 0 : _a2.closest("button")) return;
     lpFrom = { x: ev.clientX, y: ev.clientY };
     lpTimer = setTimeout(
       () => {
@@ -11155,17 +11440,17 @@ function get_if_ctx(ctx) {
     /*cur*/
     child_ctx[11].doc.word
   );
-  child_ctx[136] = constants_0;
+  child_ctx[141] = constants_0;
   return child_ctx;
 }
 function get_each_context5(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[131] = list[i];
+  child_ctx[136] = list[i];
   return child_ctx;
 }
 function get_each_context_13(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[131] = list[i];
+  child_ctx[136] = list[i];
   return child_ctx;
 }
 function create_if_block_212(ctx) {
@@ -11176,7 +11461,7 @@ function create_if_block_212(ctx) {
   let t1;
   let t2_value = (
     /*hardMode*/
-    ctx[15] ? " \xB7 \u96BE\u8BCD" : ""
+    ctx[16] ? " \xB7 \u96BE\u8BCD" : ""
   );
   let t2;
   let t3;
@@ -11213,11 +11498,11 @@ function create_if_block_212(ctx) {
   let if_block0 = (
     /*idx*/
     ctx[3] > 0 && /*browseFrom*/
-    ctx[4] < 0 && create_if_block_66(ctx)
+    ctx[4] < 0 && create_if_block_69(ctx)
   );
   let if_block1 = (
     /*browseFrom*/
-    ctx[4] < 0 && create_if_block_65(ctx)
+    ctx[4] < 0 && create_if_block_68(ctx)
   );
   const if_block_creators = [
     create_if_block_222,
@@ -11225,7 +11510,7 @@ function create_if_block_212(ctx) {
     create_if_block_252,
     create_if_block_29,
     create_if_block_40,
-    create_if_block_46
+    create_if_block_49
   ];
   const if_blocks = [];
   function select_block_type_4(ctx2, dirty) {
@@ -11267,11 +11552,11 @@ function create_if_block_212(ctx) {
       span0 = element("span");
       t0 = text(
         /*themeLabel*/
-        ctx[42]
+        ctx[43]
       );
       t1 = text(
         /*roundLabel*/
-        ctx[43]
+        ctx[44]
       );
       t2 = text(t2_value);
       t3 = space();
@@ -11305,13 +11590,13 @@ function create_if_block_212(ctx) {
         button0,
         "title",
         /*muteTip*/
-        ctx[45]
+        ctx[46]
       );
       attr(
         button0,
         "aria-label",
         /*muteTip*/
-        ctx[45]
+        ctx[46]
       );
       attr(button1, "class", "el-exit");
       attr(button1, "title", "\u6682\u505C\u672C\u8F6E\uFF08\u5DF2\u5B66\u8FDB\u5EA6\u5DF2\u4FDD\u5B58\uFF0C\u53EF\u7EE7\u7EED\uFF09");
@@ -11323,7 +11608,7 @@ function create_if_block_212(ctx) {
         div3,
         "width",
         /*pct*/
-        ctx[44] + "%"
+        ctx[45] + "%"
       );
       attr(div4, "class", "el-progress-bar");
     },
@@ -11362,7 +11647,7 @@ function create_if_block_212(ctx) {
       if (!mounted) {
         dispose = [
           action_destroyer(icon_action = /*icon*/
-          ctx[46].call(
+          ctx[47].call(
             null,
             button0,
             /*audioMuted*/
@@ -11372,15 +11657,15 @@ function create_if_block_212(ctx) {
             button0,
             "click",
             /*toggleMute*/
-            ctx[47]
+            ctx[48]
           ),
           action_destroyer(icon_action_1 = /*icon*/
-          ctx[46].call(null, button1, "x")),
+          ctx[47].call(null, button1, "x")),
           listen(
             button1,
             "click",
             /*click_handler_8*/
-            ctx[88]
+            ctx[91]
           )
         ];
         mounted = true;
@@ -11388,20 +11673,20 @@ function create_if_block_212(ctx) {
     },
     p(ctx2, dirty) {
       if (!current || dirty[1] & /*themeLabel*/
-      2048) set_data(
+      4096) set_data(
         t0,
         /*themeLabel*/
-        ctx2[42]
-      );
-      if (!current || dirty[1] & /*roundLabel*/
-      4096) set_data(
-        t1,
-        /*roundLabel*/
         ctx2[43]
       );
+      if (!current || dirty[1] & /*roundLabel*/
+      8192) set_data(
+        t1,
+        /*roundLabel*/
+        ctx2[44]
+      );
       if ((!current || dirty[0] & /*hardMode*/
-      32768) && t2_value !== (t2_value = /*hardMode*/
-      ctx2[15] ? " \xB7 \u96BE\u8BCD" : "")) set_data(t2, t2_value);
+      65536) && t2_value !== (t2_value = /*hardMode*/
+      ctx2[16] ? " \xB7 \u96BE\u8BCD" : "")) set_data(t2, t2_value);
       if (
         /*idx*/
         ctx2[3] > 0 && /*browseFrom*/
@@ -11410,7 +11695,7 @@ function create_if_block_212(ctx) {
         if (if_block0) {
           if_block0.p(ctx2, dirty);
         } else {
-          if_block0 = create_if_block_66(ctx2);
+          if_block0 = create_if_block_69(ctx2);
           if_block0.c();
           if_block0.m(div1, t5);
         }
@@ -11419,21 +11704,21 @@ function create_if_block_212(ctx) {
         if_block0 = null;
       }
       if (!current || dirty[1] & /*muteTip*/
-      16384) {
+      32768) {
         attr(
           button0,
           "title",
           /*muteTip*/
-          ctx2[45]
+          ctx2[46]
         );
       }
       if (!current || dirty[1] & /*muteTip*/
-      16384) {
+      32768) {
         attr(
           button0,
           "aria-label",
           /*muteTip*/
-          ctx2[45]
+          ctx2[46]
         );
       }
       if (icon_action && is_function(icon_action.update) && dirty[0] & /*audioMuted*/
@@ -11449,7 +11734,7 @@ function create_if_block_212(ctx) {
         if (if_block1) {
           if_block1.p(ctx2, dirty);
         } else {
-          if_block1 = create_if_block_65(ctx2);
+          if_block1 = create_if_block_68(ctx2);
           if_block1.c();
           if_block1.m(div1, t7);
         }
@@ -11467,12 +11752,12 @@ function create_if_block_212(ctx) {
         ctx2[12]
       );
       if (!current || dirty[1] & /*pct*/
-      8192) {
+      16384) {
         set_style(
           div3,
           "width",
           /*pct*/
-          ctx2[44] + "%"
+          ctx2[45] + "%"
         );
       }
       let previous_block_index = current_block_type_index;
@@ -11542,7 +11827,7 @@ function create_if_block_93(ctx) {
   let t1;
   let t2_value = (
     /*stats*/
-    ctx[17].rev + ""
+    ctx[18].rev + ""
   );
   let t2;
   let t3;
@@ -11550,7 +11835,7 @@ function create_if_block_93(ctx) {
   let t4;
   let t5_value = (
     /*stats*/
-    ctx[17].new + ""
+    ctx[18].new + ""
   );
   let t5;
   let t6;
@@ -11559,11 +11844,11 @@ function create_if_block_93(ctx) {
   let t8;
   let t9_value = (
     /*stats*/
-    ctx[17].quizOk + /*stats*/
-    ctx[17].quizBad > 0 ? `${/*stats*/
-    ctx[17].quizOk}/${/*stats*/
-    ctx[17].quizOk + /*stats*/
-    ctx[17].quizBad}` : "\u2014"
+    ctx[18].quizOk + /*stats*/
+    ctx[18].quizBad > 0 ? `${/*stats*/
+    ctx[18].quizOk}/${/*stats*/
+    ctx[18].quizOk + /*stats*/
+    ctx[18].quizBad}` : "\u2014"
   );
   let t9;
   let t10;
@@ -11596,7 +11881,7 @@ function create_if_block_93(ctx) {
   function select_block_type_2(ctx2, dirty) {
     if (
       /*exitedEarly*/
-      ctx2[14]
+      ctx2[15]
     ) return create_if_block_202;
     return create_else_block_13;
   }
@@ -11604,53 +11889,53 @@ function create_if_block_93(ctx) {
   let if_block0 = current_block_type(ctx);
   let if_block1 = (
     /*stats*/
-    ctx[17].easy && create_if_block_192(ctx)
+    ctx[18].easy && create_if_block_192(ctx)
   );
   let if_block2 = (
     /*todayTotals*/
-    ctx[29].new + /*todayTotals*/
-    ctx[29].rev > /*stats*/
-    ctx[17].rev + /*stats*/
-    ctx[17].new + /*stats*/
-    ctx[17].easy && create_if_block_182(ctx)
+    ctx[30].new + /*todayTotals*/
+    ctx[30].rev > /*stats*/
+    ctx[18].rev + /*stats*/
+    ctx[18].new + /*stats*/
+    ctx[18].easy && create_if_block_182(ctx)
   );
   let if_block3 = (
     /*masteredNow*/
-    ctx[18].length && create_if_block_172(ctx)
+    ctx[19].length && create_if_block_172(ctx)
   );
   let if_block4 = (
     /*weakNow*/
-    ctx[19].length && create_if_block_162(ctx)
+    ctx[20].length && create_if_block_162(ctx)
   );
   let if_block5 = !/*hardMode*/
-  ctx[15] && /*dueTotal*/
-  ctx[16] > /*stats*/
-  ctx[17].rev && create_if_block_153(ctx);
+  ctx[16] && /*dueTotal*/
+  ctx[17] > /*stats*/
+  ctx[18].rev && create_if_block_153(ctx);
   let if_block6 = (
     /*tomorrowDue*/
-    ctx[28] > 0 && create_if_block_143(ctx)
+    ctx[29] > 0 && create_if_block_143(ctx)
   );
   function select_block_type_3(ctx2, dirty) {
     if (
       /*exitedEarly*/
-      ctx2[14]
+      ctx2[15]
     ) return create_if_block_123;
     if (
       /*remaining*/
-      ctx2[20] > 0
+      ctx2[21] > 0
     ) return create_if_block_133;
   }
   let current_block_type_1 = select_block_type_3(ctx, [-1, -1, -1, -1, -1]);
   let if_block7 = current_block_type_1 && current_block_type_1(ctx);
   let if_block8 = !/*exitedEarly*/
-  ctx[14] && !/*hardMode*/
-  ctx[15] && /*remaining*/
-  ctx[20] === 0 && /*finishFresh*/
-  ctx[27] > 0 && /*dailyLimit*/
-  ctx[25] > 0 && create_if_block_113(ctx);
+  ctx[15] && !/*hardMode*/
+  ctx[16] && /*remaining*/
+  ctx[21] === 0 && /*finishFresh*/
+  ctx[28] > 0 && /*dailyLimit*/
+  ctx[26] > 0 && create_if_block_113(ctx);
   let if_block9 = !/*hardMode*/
-  ctx[15] && /*hardInTheme*/
-  ctx[34] > 0 && create_if_block_103(ctx);
+  ctx[16] && /*hardInTheme*/
+  ctx[35] > 0 && create_if_block_103(ctx);
   return {
     c() {
       div2 = element("div");
@@ -11675,7 +11960,7 @@ function create_if_block_93(ctx) {
       t11 = text("\u7528\u65F6 ");
       t12 = text(
         /*sessionMinutes*/
-        ctx[30]
+        ctx[31]
       );
       t13 = text(" \u5206\u949F");
       t14 = space();
@@ -11759,7 +12044,7 @@ function create_if_block_93(ctx) {
           button,
           "click",
           /*back*/
-          ctx[79]
+          ctx[82]
         );
         mounted = true;
       }
@@ -11776,14 +12061,14 @@ function create_if_block_93(ctx) {
         }
       }
       if (dirty[0] & /*stats*/
-      131072 && t2_value !== (t2_value = /*stats*/
-      ctx2[17].rev + "")) set_data(t2, t2_value);
+      262144 && t2_value !== (t2_value = /*stats*/
+      ctx2[18].rev + "")) set_data(t2, t2_value);
       if (dirty[0] & /*stats*/
-      131072 && t5_value !== (t5_value = /*stats*/
-      ctx2[17].new + "")) set_data(t5, t5_value);
+      262144 && t5_value !== (t5_value = /*stats*/
+      ctx2[18].new + "")) set_data(t5, t5_value);
       if (
         /*stats*/
-        ctx2[17].easy
+        ctx2[18].easy
       ) {
         if (if_block1) {
           if_block1.p(ctx2, dirty);
@@ -11797,28 +12082,28 @@ function create_if_block_93(ctx) {
         if_block1 = null;
       }
       if (dirty[0] & /*stats*/
-      131072 && t9_value !== (t9_value = /*stats*/
-      ctx2[17].quizOk + /*stats*/
-      ctx2[17].quizBad > 0 ? `${/*stats*/
-      ctx2[17].quizOk}/${/*stats*/
-      ctx2[17].quizOk + /*stats*/
-      ctx2[17].quizBad}` : "\u2014")) set_data(t9, t9_value);
-      if (dirty[0] & /*sessionMinutes*/
-      1073741824) set_data(
+      262144 && t9_value !== (t9_value = /*stats*/
+      ctx2[18].quizOk + /*stats*/
+      ctx2[18].quizBad > 0 ? `${/*stats*/
+      ctx2[18].quizOk}/${/*stats*/
+      ctx2[18].quizOk + /*stats*/
+      ctx2[18].quizBad}` : "\u2014")) set_data(t9, t9_value);
+      if (dirty[1] & /*sessionMinutes*/
+      1) set_data(
         t12,
         /*sessionMinutes*/
-        ctx2[30]
+        ctx2[31]
       );
       if (dirty[0] & /*plugin*/
       1 && t16_value !== (t16_value = /*plugin*/
       ctx2[0].db.stats.streak + "")) set_data(t16, t16_value);
       if (
         /*todayTotals*/
-        ctx2[29].new + /*todayTotals*/
-        ctx2[29].rev > /*stats*/
-        ctx2[17].rev + /*stats*/
-        ctx2[17].new + /*stats*/
-        ctx2[17].easy
+        ctx2[30].new + /*todayTotals*/
+        ctx2[30].rev > /*stats*/
+        ctx2[18].rev + /*stats*/
+        ctx2[18].new + /*stats*/
+        ctx2[18].easy
       ) {
         if (if_block2) {
           if_block2.p(ctx2, dirty);
@@ -11833,7 +12118,7 @@ function create_if_block_93(ctx) {
       }
       if (
         /*masteredNow*/
-        ctx2[18].length
+        ctx2[19].length
       ) {
         if (if_block3) {
           if_block3.p(ctx2, dirty);
@@ -11848,7 +12133,7 @@ function create_if_block_93(ctx) {
       }
       if (
         /*weakNow*/
-        ctx2[19].length
+        ctx2[20].length
       ) {
         if (if_block4) {
           if_block4.p(ctx2, dirty);
@@ -11862,9 +12147,9 @@ function create_if_block_93(ctx) {
         if_block4 = null;
       }
       if (!/*hardMode*/
-      ctx2[15] && /*dueTotal*/
-      ctx2[16] > /*stats*/
-      ctx2[17].rev) {
+      ctx2[16] && /*dueTotal*/
+      ctx2[17] > /*stats*/
+      ctx2[18].rev) {
         if (if_block5) {
           if_block5.p(ctx2, dirty);
         } else {
@@ -11878,7 +12163,7 @@ function create_if_block_93(ctx) {
       }
       if (
         /*tomorrowDue*/
-        ctx2[28] > 0
+        ctx2[29] > 0
       ) {
         if (if_block6) {
           if_block6.p(ctx2, dirty);
@@ -11902,11 +12187,11 @@ function create_if_block_93(ctx) {
         }
       }
       if (!/*exitedEarly*/
-      ctx2[14] && !/*hardMode*/
-      ctx2[15] && /*remaining*/
-      ctx2[20] === 0 && /*finishFresh*/
-      ctx2[27] > 0 && /*dailyLimit*/
-      ctx2[25] > 0) {
+      ctx2[15] && !/*hardMode*/
+      ctx2[16] && /*remaining*/
+      ctx2[21] === 0 && /*finishFresh*/
+      ctx2[28] > 0 && /*dailyLimit*/
+      ctx2[26] > 0) {
         if (if_block8) {
           if_block8.p(ctx2, dirty);
         } else {
@@ -11919,8 +12204,8 @@ function create_if_block_93(ctx) {
         if_block8 = null;
       }
       if (!/*hardMode*/
-      ctx2[15] && /*hardInTheme*/
-      ctx2[34] > 0) {
+      ctx2[16] && /*hardInTheme*/
+      ctx2[35] > 0) {
         if (if_block9) {
           if_block9.p(ctx2, dirty);
         } else {
@@ -11965,7 +12250,7 @@ function create_if_block_43(ctx) {
   let t3;
   let show_if = (
     /*hardInThemeLive*/
-    ctx[71]() > 0
+    ctx[74]() > 0
   );
   let t4;
   let button;
@@ -11974,7 +12259,7 @@ function create_if_block_43(ctx) {
   function select_block_type_1(ctx2, dirty) {
     if (
       /*hardMode*/
-      ctx2[15]
+      ctx2[16]
     ) return create_if_block_73;
     if (
       /*themeName*/
@@ -11985,9 +12270,9 @@ function create_if_block_43(ctx) {
   let current_block_type = select_block_type_1(ctx, [-1, -1, -1, -1, -1]);
   let if_block0 = current_block_type(ctx);
   let if_block1 = !/*hardMode*/
-  ctx[15] && /*doneFresh*/
-  ctx[26] > 0 && /*dailyLimit*/
-  ctx[25] > 0 && create_if_block_67(ctx);
+  ctx[16] && /*doneFresh*/
+  ctx[27] > 0 && /*dailyLimit*/
+  ctx[26] > 0 && create_if_block_610(ctx);
   let if_block2 = show_if && create_if_block_510(ctx);
   return {
     c() {
@@ -12025,7 +12310,7 @@ function create_if_block_43(ctx) {
           button,
           "click",
           /*back*/
-          ctx[79]
+          ctx[82]
         );
         mounted = true;
       }
@@ -12042,13 +12327,13 @@ function create_if_block_43(ctx) {
         }
       }
       if (!/*hardMode*/
-      ctx2[15] && /*doneFresh*/
-      ctx2[26] > 0 && /*dailyLimit*/
-      ctx2[25] > 0) {
+      ctx2[16] && /*doneFresh*/
+      ctx2[27] > 0 && /*dailyLimit*/
+      ctx2[26] > 0) {
         if (if_block1) {
           if_block1.p(ctx2, dirty);
         } else {
-          if_block1 = create_if_block_67(ctx2);
+          if_block1 = create_if_block_610(ctx2);
           if_block1.c();
           if_block1.m(div1, t3);
         }
@@ -12131,7 +12416,7 @@ function create_if_block_33(ctx) {
           button,
           "click",
           /*back*/
-          ctx[79]
+          ctx[82]
         );
         mounted = true;
       }
@@ -12162,7 +12447,7 @@ function create_if_block_28(ctx) {
   let h2;
   let t2_value = (
     /*hardMode*/
-    ctx[15] ? "\u6CA1\u6709\u9700\u8981\u4E13\u9879\u8BAD\u7EC3\u7684\u96BE\u8BCD" : "\u8FD8\u6CA1\u6709\u53EF\u5B66\u7684\u8BCD"
+    ctx[16] ? "\u6CA1\u6709\u9700\u8981\u4E13\u9879\u8BAD\u7EC3\u7684\u96BE\u8BCD" : "\u8FD8\u6CA1\u6709\u53EF\u5B66\u7684\u8BCD"
   );
   let t2;
   let t3;
@@ -12209,15 +12494,15 @@ function create_if_block_28(ctx) {
           button,
           "click",
           /*back*/
-          ctx[79]
+          ctx[82]
         );
         mounted = true;
       }
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*hardMode*/
-      32768 && t2_value !== (t2_value = /*hardMode*/
-      ctx2[15] ? "\u6CA1\u6709\u9700\u8981\u4E13\u9879\u8BAD\u7EC3\u7684\u96BE\u8BCD" : "\u8FD8\u6CA1\u6709\u53EF\u5B66\u7684\u8BCD")) set_data(t2, t2_value);
+      65536 && t2_value !== (t2_value = /*hardMode*/
+      ctx2[16] ? "\u6CA1\u6709\u9700\u8981\u4E13\u9879\u8BAD\u7EC3\u7684\u96BE\u8BCD" : "\u8FD8\u6CA1\u6709\u53EF\u5B66\u7684\u8BCD")) set_data(t2, t2_value);
     },
     i: noop,
     o: noop,
@@ -12257,7 +12542,7 @@ function create_if_block_111(ctx) {
       div1 = element("div");
       t4 = text(
         /*loadError*/
-        ctx[31]
+        ctx[32]
       );
       t5 = space();
       div2 = element("div");
@@ -12291,13 +12576,13 @@ function create_if_block_111(ctx) {
             button0,
             "click",
             /*click_handler*/
-            ctx[80]
+            ctx[83]
           ),
           listen(
             button1,
             "click",
             /*back*/
-            ctx[79]
+            ctx[82]
           )
         ];
         mounted = true;
@@ -12305,10 +12590,10 @@ function create_if_block_111(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[1] & /*loadError*/
-      1) set_data(
+      2) set_data(
         t4,
         /*loadError*/
-        ctx2[31]
+        ctx2[32]
       );
     },
     i: noop,
@@ -12343,7 +12628,7 @@ function create_if_block5(ctx) {
     }
   };
 }
-function create_if_block_66(ctx) {
+function create_if_block_69(ctx) {
   let button;
   let mounted;
   let dispose;
@@ -12361,7 +12646,7 @@ function create_if_block_66(ctx) {
           button,
           "click",
           /*goBack*/
-          ctx[49]
+          ctx[50]
         );
         mounted = true;
       }
@@ -12376,7 +12661,7 @@ function create_if_block_66(ctx) {
     }
   };
 }
-function create_if_block_65(ctx) {
+function create_if_block_68(ctx) {
   let button;
   let icon_action;
   let mounted;
@@ -12393,12 +12678,12 @@ function create_if_block_65(ctx) {
       if (!mounted) {
         dispose = [
           action_destroyer(icon_action = /*icon*/
-          ctx[46].call(null, button, "trash-2")),
+          ctx[47].call(null, button, "trash-2")),
           listen(
             button,
             "click",
             /*deleteCurrent*/
-            ctx[78]
+            ctx[81]
           )
         ];
         mounted = true;
@@ -12414,7 +12699,7 @@ function create_if_block_65(ctx) {
     }
   };
 }
-function create_if_block_46(ctx) {
+function create_if_block_49(ctx) {
   let div;
   let t0;
   let t1;
@@ -12422,32 +12707,32 @@ function create_if_block_46(ctx) {
   let t2;
   let if_block2_anchor;
   let current;
-  function select_block_type_11(ctx2, dirty) {
+  function select_block_type_12(ctx2, dirty) {
     if (
       /*cur*/
       ctx2[11].quiz.kind === "spell"
-    ) return create_if_block_50;
+    ) return create_if_block_53;
     if (
       /*cur*/
       ctx2[11].quiz.kind === "cloze"
-    ) return create_if_block_61;
+    ) return create_if_block_64;
     if (
       /*cur*/
       ctx2[11].quiz.question === /*cur*/
       ctx2[11].doc.word
-    ) return create_if_block_622;
-    return create_else_block_9;
+    ) return create_if_block_65;
+    return create_else_block_11;
   }
   function select_block_ctx(ctx2, type) {
-    if (type === create_if_block_50) return get_if_ctx(ctx2);
+    if (type === create_if_block_53) return get_if_ctx(ctx2);
     return ctx2;
   }
-  let current_block_type = select_block_type_11(ctx, [-1, -1, -1, -1, -1]);
+  let current_block_type = select_block_type_12(ctx, [-1, -1, -1, -1, -1]);
   let if_block0 = current_block_type(select_block_ctx(ctx, current_block_type));
   let if_block1 = (
     /*quizAnswered*/
-    ctx[39] && !/*quizCorrect*/
-    ctx[13] && create_if_block_49(ctx)
+    ctx[40] && !/*quizCorrect*/
+    ctx[13] && create_if_block_522(ctx)
   );
   quizoptions = new QuizOptions_default({
     props: {
@@ -12461,7 +12746,7 @@ function create_if_block_46(ctx) {
       ),
       answered: (
         /*quizAnswered*/
-        ctx[39]
+        ctx[40]
       ),
       correct: (
         /*quizCorrect*/
@@ -12469,17 +12754,17 @@ function create_if_block_46(ctx) {
       ),
       onpick: (
         /*pick*/
-        ctx[69]
+        ctx[72]
       )
     }
   });
-  function select_block_type_16(ctx2, dirty) {
+  function select_block_type_17(ctx2, dirty) {
     if (!/*quizAnswered*/
-    ctx2[39]) return create_if_block_47;
+    ctx2[40]) return create_if_block_50;
     if (!/*quizCorrect*/
-    ctx2[13]) return create_if_block_48;
+    ctx2[13]) return create_if_block_51;
   }
-  let current_block_type_1 = select_block_type_16(ctx, [-1, -1, -1, -1, -1]);
+  let current_block_type_1 = select_block_type_17(ctx, [-1, -1, -1, -1, -1]);
   let if_block2 = current_block_type_1 && current_block_type_1(ctx);
   return {
     c() {
@@ -12507,7 +12792,7 @@ function create_if_block_46(ctx) {
       current = true;
     },
     p(ctx2, dirty) {
-      if (current_block_type === (current_block_type = select_block_type_11(ctx2, dirty)) && if_block0) {
+      if (current_block_type === (current_block_type = select_block_type_12(ctx2, dirty)) && if_block0) {
         if_block0.p(select_block_ctx(ctx2, current_block_type), dirty);
       } else {
         if_block0.d(1);
@@ -12519,18 +12804,18 @@ function create_if_block_46(ctx) {
       }
       if (
         /*quizAnswered*/
-        ctx2[39] && !/*quizCorrect*/
+        ctx2[40] && !/*quizCorrect*/
         ctx2[13]
       ) {
         if (if_block1) {
           if_block1.p(ctx2, dirty);
           if (dirty[0] & /*quizCorrect*/
           8192 | dirty[1] & /*quizAnswered*/
-          256) {
+          512) {
             transition_in(if_block1, 1);
           }
         } else {
-          if_block1 = create_if_block_49(ctx2);
+          if_block1 = create_if_block_522(ctx2);
           if_block1.c();
           transition_in(if_block1, 1);
           if_block1.m(div, null);
@@ -12550,13 +12835,13 @@ function create_if_block_46(ctx) {
       64) quizoptions_changes.picked = /*quizPicked*/
       ctx2[6];
       if (dirty[1] & /*quizAnswered*/
-      256) quizoptions_changes.answered = /*quizAnswered*/
-      ctx2[39];
+      512) quizoptions_changes.answered = /*quizAnswered*/
+      ctx2[40];
       if (dirty[0] & /*quizCorrect*/
       8192) quizoptions_changes.correct = /*quizCorrect*/
       ctx2[13];
       quizoptions.$set(quizoptions_changes);
-      if (current_block_type_1 === (current_block_type_1 = select_block_type_16(ctx2, dirty)) && if_block2) {
+      if (current_block_type_1 === (current_block_type_1 = select_block_type_17(ctx2, dirty)) && if_block2) {
         if_block2.p(ctx2, dirty);
       } else {
         if (if_block2) if_block2.d(1);
@@ -12595,225 +12880,134 @@ function create_if_block_46(ctx) {
   };
 }
 function create_if_block_40(ctx) {
-  let div2;
-  let div0;
+  let div;
+  let current_block_type_index;
+  let if_block0;
+  let t0;
   let t1;
-  let div1;
-  let t2_value = (
-    /*cur*/
-    ctx[11].quiz.question + ""
-  );
-  let t2;
-  let show_if = isPhrase(
-    /*cur*/
-    ctx[11].doc.word
-  );
-  let fitText_action;
-  let t3;
-  let t4;
-  let t5;
-  let quizoptions;
-  let t6;
-  let if_block3_anchor;
+  let if_block2_anchor;
   let current;
-  let mounted;
-  let dispose;
-  let if_block0 = show_if && create_if_block_45(ctx);
-  let if_block1 = (
-    /*cur*/
-    ctx[11].quiz.phonetic && create_if_block_44(ctx)
-  );
-  let if_block2 = (
-    /*quizAnswered*/
-    ctx[39] && !/*quizCorrect*/
-    ctx[13] && create_if_block_432(ctx)
-  );
-  quizoptions = new QuizOptions_default({
-    props: {
-      quiz: (
-        /*cur*/
-        ctx[11].quiz
-      ),
-      picked: (
-        /*quizPicked*/
-        ctx[6]
-      ),
-      answered: (
-        /*quizAnswered*/
-        ctx[39]
-      ),
-      correct: (
-        /*quizCorrect*/
-        ctx[13]
-      ),
-      onpick: (
-        /*checkPick*/
-        ctx[53]
-      )
-    }
-  });
+  const if_block_creators = [create_if_block_45, create_else_block_7];
+  const if_blocks = [];
   function select_block_type_10(ctx2, dirty) {
+    if (
+      /*peeking*/
+      ctx2[14]
+    ) return 0;
+    return 1;
+  }
+  current_block_type_index = select_block_type_10(ctx, [-1, -1, -1, -1, -1]);
+  if_block0 = if_blocks[current_block_type_index] = if_block_creators[current_block_type_index](ctx);
+  let if_block1 = !/*peeking*/
+  ctx[14] && create_if_block_44(ctx);
+  function select_block_type_11(ctx2, dirty) {
     if (!/*quizAnswered*/
-    ctx2[39]) return create_if_block_41;
+    ctx2[40]) return create_if_block_41;
     if (!/*quizCorrect*/
     ctx2[13]) return create_if_block_422;
+    if (
+      /*peeking*/
+      ctx2[14]
+    ) return create_if_block_432;
+    return create_else_block_6;
   }
-  let current_block_type = select_block_type_10(ctx, [-1, -1, -1, -1, -1]);
-  let if_block3 = current_block_type && current_block_type(ctx);
+  let current_block_type = select_block_type_11(ctx, [-1, -1, -1, -1, -1]);
+  let if_block2 = current_block_type(ctx);
   return {
     c() {
-      div2 = element("div");
-      div0 = element("div");
-      div0.textContent = "\u786E\u8BA4\u4E00\u4E0B\uFF1A\u9009\u51FA\u6B63\u786E\u91CA\u4E49";
-      t1 = space();
-      div1 = element("div");
-      t2 = text(t2_value);
-      if (if_block0) if_block0.c();
-      t3 = space();
+      div = element("div");
+      if_block0.c();
+      t0 = space();
       if (if_block1) if_block1.c();
-      t4 = space();
-      if (if_block2) if_block2.c();
-      t5 = space();
-      create_component(quizoptions.$$.fragment);
-      t6 = space();
-      if (if_block3) if_block3.c();
-      if_block3_anchor = empty();
-      attr(div0, "class", "el-hint");
-      attr(div1, "class", "el-word");
-      set_style(div1, "font-size", "var(--el-font-display-sm)");
-      attr(div2, "class", "el-card");
+      t1 = space();
+      if_block2.c();
+      if_block2_anchor = empty();
+      attr(div, "class", "el-card");
     },
     m(target, anchor) {
-      insert(target, div2, anchor);
-      append(div2, div0);
-      append(div2, t1);
-      append(div2, div1);
-      append(div1, t2);
-      if (if_block0) if_block0.m(div1, null);
-      append(div2, t3);
-      if (if_block1) if_block1.m(div2, null);
-      append(div2, t4);
-      if (if_block2) if_block2.m(div2, null);
-      insert(target, t5, anchor);
-      mount_component(quizoptions, target, anchor);
-      insert(target, t6, anchor);
-      if (if_block3) if_block3.m(target, anchor);
-      insert(target, if_block3_anchor, anchor);
+      insert(target, div, anchor);
+      if_blocks[current_block_type_index].m(div, null);
+      insert(target, t0, anchor);
+      if (if_block1) if_block1.m(target, anchor);
+      insert(target, t1, anchor);
+      if_block2.m(target, anchor);
+      insert(target, if_block2_anchor, anchor);
       current = true;
-      if (!mounted) {
-        dispose = action_destroyer(fitText_action = fitText.call(null, div1, { dep: (
-          /*cur*/
-          ctx[11].quiz.question
-        ) }));
-        mounted = true;
-      }
     },
     p(ctx2, dirty) {
-      if ((!current || dirty[0] & /*cur*/
-      2048) && t2_value !== (t2_value = /*cur*/
-      ctx2[11].quiz.question + "")) set_data(t2, t2_value);
-      if (dirty[0] & /*cur*/
-      2048) show_if = isPhrase(
-        /*cur*/
-        ctx2[11].doc.word
-      );
-      if (show_if) {
-        if (if_block0) {
-        } else {
-          if_block0 = create_if_block_45(ctx2);
+      let previous_block_index = current_block_type_index;
+      current_block_type_index = select_block_type_10(ctx2, dirty);
+      if (current_block_type_index === previous_block_index) {
+        if_blocks[current_block_type_index].p(ctx2, dirty);
+      } else {
+        group_outros();
+        transition_out(if_blocks[previous_block_index], 1, 1, () => {
+          if_blocks[previous_block_index] = null;
+        });
+        check_outros();
+        if_block0 = if_blocks[current_block_type_index];
+        if (!if_block0) {
+          if_block0 = if_blocks[current_block_type_index] = if_block_creators[current_block_type_index](ctx2);
           if_block0.c();
-          if_block0.m(div1, null);
+        } else {
+          if_block0.p(ctx2, dirty);
         }
-      } else if (if_block0) {
-        if_block0.d(1);
-        if_block0 = null;
+        transition_in(if_block0, 1);
+        if_block0.m(div, null);
       }
-      if (fitText_action && is_function(fitText_action.update) && dirty[0] & /*cur*/
-      2048) fitText_action.update.call(null, { dep: (
-        /*cur*/
-        ctx2[11].quiz.question
-      ) });
-      if (
-        /*cur*/
-        ctx2[11].quiz.phonetic
-      ) {
+      if (!/*peeking*/
+      ctx2[14]) {
         if (if_block1) {
           if_block1.p(ctx2, dirty);
+          if (dirty[0] & /*peeking*/
+          16384) {
+            transition_in(if_block1, 1);
+          }
         } else {
           if_block1 = create_if_block_44(ctx2);
           if_block1.c();
-          if_block1.m(div2, t4);
+          transition_in(if_block1, 1);
+          if_block1.m(t1.parentNode, t1);
         }
       } else if (if_block1) {
-        if_block1.d(1);
-        if_block1 = null;
+        group_outros();
+        transition_out(if_block1, 1, 1, () => {
+          if_block1 = null;
+        });
+        check_outros();
       }
-      if (
-        /*quizAnswered*/
-        ctx2[39] && !/*quizCorrect*/
-        ctx2[13]
-      ) {
-        if (if_block2) {
-          if_block2.p(ctx2, dirty);
-        } else {
-          if_block2 = create_if_block_432(ctx2);
-          if_block2.c();
-          if_block2.m(div2, null);
-        }
-      } else if (if_block2) {
-        if_block2.d(1);
-        if_block2 = null;
-      }
-      const quizoptions_changes = {};
-      if (dirty[0] & /*cur*/
-      2048) quizoptions_changes.quiz = /*cur*/
-      ctx2[11].quiz;
-      if (dirty[0] & /*quizPicked*/
-      64) quizoptions_changes.picked = /*quizPicked*/
-      ctx2[6];
-      if (dirty[1] & /*quizAnswered*/
-      256) quizoptions_changes.answered = /*quizAnswered*/
-      ctx2[39];
-      if (dirty[0] & /*quizCorrect*/
-      8192) quizoptions_changes.correct = /*quizCorrect*/
-      ctx2[13];
-      quizoptions.$set(quizoptions_changes);
-      if (current_block_type === (current_block_type = select_block_type_10(ctx2, dirty)) && if_block3) {
-        if_block3.p(ctx2, dirty);
+      if (current_block_type === (current_block_type = select_block_type_11(ctx2, dirty)) && if_block2) {
+        if_block2.p(ctx2, dirty);
       } else {
-        if (if_block3) if_block3.d(1);
-        if_block3 = current_block_type && current_block_type(ctx2);
-        if (if_block3) {
-          if_block3.c();
-          if_block3.m(if_block3_anchor.parentNode, if_block3_anchor);
+        if_block2.d(1);
+        if_block2 = current_block_type(ctx2);
+        if (if_block2) {
+          if_block2.c();
+          if_block2.m(if_block2_anchor.parentNode, if_block2_anchor);
         }
       }
     },
     i(local) {
       if (current) return;
-      transition_in(quizoptions.$$.fragment, local);
+      transition_in(if_block0);
+      transition_in(if_block1);
       current = true;
     },
     o(local) {
-      transition_out(quizoptions.$$.fragment, local);
+      transition_out(if_block0);
+      transition_out(if_block1);
       current = false;
     },
     d(detaching) {
       if (detaching) {
-        detach(div2);
-        detach(t5);
-        detach(t6);
-        detach(if_block3_anchor);
+        detach(div);
+        detach(t0);
+        detach(t1);
+        detach(if_block2_anchor);
       }
-      if (if_block0) if_block0.d();
-      if (if_block1) if_block1.d();
-      if (if_block2) if_block2.d();
-      destroy_component(quizoptions, detaching);
-      if (if_block3) {
-        if_block3.d(detaching);
-      }
-      mounted = false;
-      dispose();
+      if_blocks[current_block_type_index].d();
+      if (if_block1) if_block1.d(detaching);
+      if_block2.d(detaching);
     }
   };
 }
@@ -12832,7 +13026,7 @@ function create_if_block_29(ctx) {
     if (
       /*cur*/
       ctx2[11].check && !/*quizAnswered*/
-      ctx2[39]
+      ctx2[40]
     ) return 0;
     if (
       /*cur*/
@@ -12952,19 +13146,19 @@ function create_if_block_252(ctx) {
       ),
       synonyms: (
         /*synRow*/
-        ctx[32]
+        ctx[33]
       ),
       antonyms: (
         /*antRow*/
-        ctx[33]
+        ctx[34]
       ),
       showAi: (
         /*showFull*/
-        ctx[40]
+        ctx[41]
       ),
       showBody: (
         /*showFull*/
-        ctx[40]
+        ctx[41]
       )
     }
   });
@@ -13017,17 +13211,17 @@ function create_if_block_252(ctx) {
       2048) wordfullcard_changes.doc = /*cur*/
       ctx2[11].doc;
       if (dirty[1] & /*synRow*/
-      2) wordfullcard_changes.synonyms = /*synRow*/
-      ctx2[32];
-      if (dirty[1] & /*antRow*/
-      4) wordfullcard_changes.antonyms = /*antRow*/
+      4) wordfullcard_changes.synonyms = /*synRow*/
       ctx2[33];
+      if (dirty[1] & /*antRow*/
+      8) wordfullcard_changes.antonyms = /*antRow*/
+      ctx2[34];
       if (dirty[1] & /*showFull*/
-      512) wordfullcard_changes.showAi = /*showFull*/
-      ctx2[40];
+      1024) wordfullcard_changes.showAi = /*showFull*/
+      ctx2[41];
       if (dirty[1] & /*showFull*/
-      512) wordfullcard_changes.showBody = /*showFull*/
-      ctx2[40];
+      1024) wordfullcard_changes.showBody = /*showFull*/
+      ctx2[41];
       wordfullcard.$set(wordfullcard_changes);
       if (
         /*cur*/
@@ -13143,19 +13337,19 @@ function create_if_block_242(ctx) {
             button0,
             "click",
             /*tooEasy*/
-            ctx[51]
+            ctx[52]
           ),
           listen(
             button1,
             "click",
             /*knowIt*/
-            ctx[52]
+            ctx[53]
           ),
           listen(
             button2,
             "click",
             /*unknownWord*/
-            ctx[55]
+            ctx[58]
           )
         ];
         mounted = true;
@@ -13214,11 +13408,11 @@ function create_if_block_222(ctx) {
       ),
       synonyms: (
         /*synRow*/
-        ctx[32]
+        ctx[33]
       ),
       antonyms: (
         /*antRow*/
-        ctx[33]
+        ctx[34]
       )
     }
   });
@@ -13254,7 +13448,7 @@ function create_if_block_222(ctx) {
           button,
           "click",
           /*goForward*/
-          ctx[50]
+          ctx[51]
         );
         mounted = true;
       }
@@ -13268,11 +13462,11 @@ function create_if_block_222(ctx) {
       2048) wordfullcard_changes.doc = /*cur*/
       ctx2[11].doc;
       if (dirty[1] & /*synRow*/
-      2) wordfullcard_changes.synonyms = /*synRow*/
-      ctx2[32];
-      if (dirty[1] & /*antRow*/
-      4) wordfullcard_changes.antonyms = /*antRow*/
+      4) wordfullcard_changes.synonyms = /*synRow*/
       ctx2[33];
+      if (dirty[1] & /*antRow*/
+      8) wordfullcard_changes.antonyms = /*antRow*/
+      ctx2[34];
       wordfullcard.$set(wordfullcard_changes);
       if (
         /*idx*/
@@ -13312,7 +13506,7 @@ function create_if_block_222(ctx) {
     }
   };
 }
-function create_else_block_9(ctx) {
+function create_else_block_11(ctx) {
   let div0;
   let t1;
   let div1;
@@ -13351,7 +13545,7 @@ function create_else_block_9(ctx) {
     }
   };
 }
-function create_if_block_622(ctx) {
+function create_if_block_65(ctx) {
   let div0;
   let t1;
   let div1;
@@ -13369,10 +13563,10 @@ function create_if_block_622(ctx) {
   let if_block1_anchor;
   let mounted;
   let dispose;
-  let if_block0 = show_if && create_if_block_64(ctx);
+  let if_block0 = show_if && create_if_block_67(ctx);
   let if_block1 = (
     /*cur*/
-    ctx[11].quiz.phonetic && create_if_block_63(ctx)
+    ctx[11].quiz.phonetic && create_if_block_66(ctx)
   );
   return {
     c() {
@@ -13418,7 +13612,7 @@ function create_if_block_622(ctx) {
       if (show_if) {
         if (if_block0) {
         } else {
-          if_block0 = create_if_block_64(ctx2);
+          if_block0 = create_if_block_67(ctx2);
           if_block0.c();
           if_block0.m(div1, null);
         }
@@ -13438,7 +13632,7 @@ function create_if_block_622(ctx) {
         if (if_block1) {
           if_block1.p(ctx2, dirty);
         } else {
-          if_block1 = create_if_block_63(ctx2);
+          if_block1 = create_if_block_66(ctx2);
           if_block1.c();
           if_block1.m(if_block1_anchor.parentNode, if_block1_anchor);
         }
@@ -13462,7 +13656,7 @@ function create_if_block_622(ctx) {
     }
   };
 }
-function create_if_block_61(ctx) {
+function create_if_block_64(ctx) {
   let div0;
   let t1;
   let div1;
@@ -13501,27 +13695,27 @@ function create_if_block_61(ctx) {
     }
   };
 }
-function create_if_block_50(ctx) {
+function create_if_block_53(ctx) {
   let t;
   let if_block1_anchor;
-  function select_block_type_12(ctx2, dirty) {
+  function select_block_type_13(ctx2, dirty) {
     if (
       /*cur*/
       ctx2[11].quiz.audioOnly
-    ) return create_if_block_58;
-    return create_else_block_8;
+    ) return create_if_block_61;
+    return create_else_block_10;
   }
-  let current_block_type = select_block_type_12(ctx, [-1, -1, -1, -1, -1]);
+  let current_block_type = select_block_type_13(ctx, [-1, -1, -1, -1, -1]);
   let if_block0 = current_block_type(ctx);
-  function select_block_type_14(ctx2, dirty) {
+  function select_block_type_15(ctx2, dirty) {
     if (!/*quizAnswered*/
-    ctx2[39]) return create_if_block_51;
+    ctx2[40]) return create_if_block_54;
     if (
       /*quizCorrect*/
       ctx2[13]
-    ) return create_if_block_57;
+    ) return create_if_block_60;
   }
-  let current_block_type_1 = select_block_type_14(ctx, [-1, -1, -1, -1, -1]);
+  let current_block_type_1 = select_block_type_15(ctx, [-1, -1, -1, -1, -1]);
   let if_block1 = current_block_type_1 && current_block_type_1(ctx);
   return {
     c() {
@@ -13537,7 +13731,7 @@ function create_if_block_50(ctx) {
       insert(target, if_block1_anchor, anchor);
     },
     p(ctx2, dirty) {
-      if (current_block_type === (current_block_type = select_block_type_12(ctx2, dirty)) && if_block0) {
+      if (current_block_type === (current_block_type = select_block_type_13(ctx2, dirty)) && if_block0) {
         if_block0.p(ctx2, dirty);
       } else {
         if_block0.d(1);
@@ -13547,7 +13741,7 @@ function create_if_block_50(ctx) {
           if_block0.m(t.parentNode, t);
         }
       }
-      if (current_block_type_1 === (current_block_type_1 = select_block_type_14(ctx2, dirty)) && if_block1) {
+      if (current_block_type_1 === (current_block_type_1 = select_block_type_15(ctx2, dirty)) && if_block1) {
         if_block1.p(ctx2, dirty);
       } else {
         if (if_block1) if_block1.d(1);
@@ -13570,7 +13764,7 @@ function create_if_block_50(ctx) {
     }
   };
 }
-function create_if_block_64(ctx) {
+function create_if_block_67(ctx) {
   let span;
   return {
     c() {
@@ -13588,7 +13782,7 @@ function create_if_block_64(ctx) {
     }
   };
 }
-function create_if_block_63(ctx) {
+function create_if_block_66(ctx) {
   let div;
   let t_value = (
     /*cur*/
@@ -13617,7 +13811,7 @@ function create_if_block_63(ctx) {
     }
   };
 }
-function create_else_block_8(ctx) {
+function create_else_block_10(ctx) {
   let div0;
   let t1;
   let div1;
@@ -13630,7 +13824,7 @@ function create_else_block_8(ctx) {
   let if_block_anchor;
   let if_block = (
     /*cur*/
-    ctx[11].quiz.phonetic && create_if_block_60(ctx)
+    ctx[11].quiz.phonetic && create_if_block_63(ctx)
   );
   return {
     c() {
@@ -13665,7 +13859,7 @@ function create_else_block_8(ctx) {
         if (if_block) {
           if_block.p(ctx2, dirty);
         } else {
-          if_block = create_if_block_60(ctx2);
+          if_block = create_if_block_63(ctx2);
           if_block.c();
           if_block.m(if_block_anchor.parentNode, if_block_anchor);
         }
@@ -13686,28 +13880,28 @@ function create_else_block_8(ctx) {
     }
   };
 }
-function create_if_block_58(ctx) {
+function create_if_block_61(ctx) {
   let div;
   let t1;
   let button;
   let button_title_value;
   let mounted;
   let dispose;
-  function select_block_type_13(ctx2, dirty) {
+  function select_block_type_14(ctx2, dirty) {
     if (
       /*hasAudio*/
-      ctx2[35]
-    ) return create_if_block_59;
-    return create_else_block_7;
+      ctx2[36]
+    ) return create_if_block_622;
+    return create_else_block_9;
   }
-  let current_block_type = select_block_type_13(ctx, [-1, -1, -1, -1, -1]);
+  let current_block_type = select_block_type_14(ctx, [-1, -1, -1, -1, -1]);
   let if_block = current_block_type(ctx);
   function click_handler_12() {
     return (
       /*click_handler_12*/
-      ctx[92](
+      ctx[95](
         /*word*/
-        ctx[136]
+        ctx[141]
       )
     );
   }
@@ -13721,7 +13915,7 @@ function create_if_block_58(ctx) {
       attr(div, "class", "el-hint");
       attr(button, "class", "el-spell-audio");
       attr(button, "title", button_title_value = /*hasAudio*/
-      ctx[35] ? "\u6807\u51C6\u53D1\u97F3 \xB7 \u518D\u542C\u4E00\u904D" : "\u7CFB\u7EDF TTS \xB7 \u518D\u542C\u4E00\u904D");
+      ctx[36] ? "\u6807\u51C6\u53D1\u97F3 \xB7 \u518D\u542C\u4E00\u904D" : "\u7CFB\u7EDF TTS \xB7 \u518D\u542C\u4E00\u904D");
     },
     m(target, anchor) {
       insert(target, div, anchor);
@@ -13735,7 +13929,7 @@ function create_if_block_58(ctx) {
     },
     p(new_ctx, dirty) {
       ctx = new_ctx;
-      if (current_block_type !== (current_block_type = select_block_type_13(ctx, dirty))) {
+      if (current_block_type !== (current_block_type = select_block_type_14(ctx, dirty))) {
         if_block.d(1);
         if_block = current_block_type(ctx);
         if (if_block) {
@@ -13744,8 +13938,8 @@ function create_if_block_58(ctx) {
         }
       }
       if (dirty[1] & /*hasAudio*/
-      16 && button_title_value !== (button_title_value = /*hasAudio*/
-      ctx[35] ? "\u6807\u51C6\u53D1\u97F3 \xB7 \u518D\u542C\u4E00\u904D" : "\u7CFB\u7EDF TTS \xB7 \u518D\u542C\u4E00\u904D")) {
+      32 && button_title_value !== (button_title_value = /*hasAudio*/
+      ctx[36] ? "\u6807\u51C6\u53D1\u97F3 \xB7 \u518D\u542C\u4E00\u904D" : "\u7CFB\u7EDF TTS \xB7 \u518D\u542C\u4E00\u904D")) {
         attr(button, "title", button_title_value);
       }
     },
@@ -13761,7 +13955,7 @@ function create_if_block_58(ctx) {
     }
   };
 }
-function create_if_block_60(ctx) {
+function create_if_block_63(ctx) {
   let div;
   let t_value = (
     /*cur*/
@@ -13790,7 +13984,7 @@ function create_if_block_60(ctx) {
     }
   };
 }
-function create_else_block_7(ctx) {
+function create_else_block_9(ctx) {
   let t;
   return {
     c() {
@@ -13806,7 +14000,7 @@ function create_else_block_7(ctx) {
     }
   };
 }
-function create_if_block_59(ctx) {
+function create_if_block_622(ctx) {
   let span;
   return {
     c() {
@@ -13824,7 +14018,7 @@ function create_if_block_59(ctx) {
     }
   };
 }
-function create_if_block_57(ctx) {
+function create_if_block_60(ctx) {
   let div;
   let t0;
   let t1_value = (
@@ -13856,7 +14050,7 @@ function create_if_block_57(ctx) {
     }
   };
 }
-function create_if_block_51(ctx) {
+function create_if_block_54(ctx) {
   let t0;
   let t1;
   let div;
@@ -13869,7 +14063,7 @@ function create_if_block_51(ctx) {
   let button1;
   let t6_value = (
     /*spellHinted*/
-    ctx[37] ? `${/*cur*/
+    ctx[38] ? `${/*cur*/
     ctx[11].doc.word.slice(0, 1)}${"\xB7".repeat(Math.max(
       /*cur*/
       ctx[11].doc.word.length - 1,
@@ -13883,13 +14077,13 @@ function create_if_block_51(ctx) {
   let if_block0 = (
     /*cur*/
     ctx[11].quiz.audioOnly && !/*spellShowQ*/
-    ctx[38] && create_if_block_56(ctx)
+    ctx[39] && create_if_block_59(ctx)
   );
   let if_block1 = (!/*cur*/
   ctx[11].quiz.audioOnly || /*spellShowQ*/
-  ctx[38]) && create_if_block_54(ctx);
+  ctx[39]) && create_if_block_57(ctx);
   let if_block2 = !/*cur*/
-  ctx[11].quiz.audioOnly && create_if_block_522(ctx);
+  ctx[11].quiz.audioOnly && create_if_block_55(ctx);
   return {
     c() {
       if (if_block0) if_block0.c();
@@ -13926,7 +14120,7 @@ function create_if_block_51(ctx) {
       set_input_value(
         input,
         /*spellInput*/
-        ctx[36]
+        ctx[37]
       );
       append(div, t2);
       if (if_block2) if_block2.m(div, null);
@@ -13941,26 +14135,26 @@ function create_if_block_51(ctx) {
             input,
             "input",
             /*input_input_handler*/
-            ctx[94]
+            ctx[97]
           ),
           action_destroyer(focusOnMount_action = focusOnMount.call(null, input)),
           listen(
             input,
             "keydown",
             /*spellKeydown*/
-            ctx[67]
+            ctx[70]
           ),
           listen(
             button0,
             "click",
             /*submitSpell*/
-            ctx[68]
+            ctx[71]
           ),
           listen(
             button1,
             "click",
             /*click_handler_15*/
-            ctx[96]
+            ctx[99]
           )
         ];
         mounted = true;
@@ -13970,12 +14164,12 @@ function create_if_block_51(ctx) {
       if (
         /*cur*/
         ctx2[11].quiz.audioOnly && !/*spellShowQ*/
-        ctx2[38]
+        ctx2[39]
       ) {
         if (if_block0) {
           if_block0.p(ctx2, dirty);
         } else {
-          if_block0 = create_if_block_56(ctx2);
+          if_block0 = create_if_block_59(ctx2);
           if_block0.c();
           if_block0.m(t0.parentNode, t0);
         }
@@ -13985,11 +14179,11 @@ function create_if_block_51(ctx) {
       }
       if (!/*cur*/
       ctx2[11].quiz.audioOnly || /*spellShowQ*/
-      ctx2[38]) {
+      ctx2[39]) {
         if (if_block1) {
           if_block1.p(ctx2, dirty);
         } else {
-          if_block1 = create_if_block_54(ctx2);
+          if_block1 = create_if_block_57(ctx2);
           if_block1.c();
           if_block1.m(t1.parentNode, t1);
         }
@@ -13998,12 +14192,12 @@ function create_if_block_51(ctx) {
         if_block1 = null;
       }
       if (dirty[1] & /*spellInput*/
-      32 && input.value !== /*spellInput*/
-      ctx2[36]) {
+      64 && input.value !== /*spellInput*/
+      ctx2[37]) {
         set_input_value(
           input,
           /*spellInput*/
-          ctx2[36]
+          ctx2[37]
         );
       }
       if (!/*cur*/
@@ -14011,7 +14205,7 @@ function create_if_block_51(ctx) {
         if (if_block2) {
           if_block2.p(ctx2, dirty);
         } else {
-          if_block2 = create_if_block_522(ctx2);
+          if_block2 = create_if_block_55(ctx2);
           if_block2.c();
           if_block2.m(div, t3);
         }
@@ -14021,8 +14215,8 @@ function create_if_block_51(ctx) {
       }
       if (dirty[0] & /*cur*/
       2048 | dirty[1] & /*spellHinted*/
-      64 && t6_value !== (t6_value = /*spellHinted*/
-      ctx2[37] ? `${/*cur*/
+      128 && t6_value !== (t6_value = /*spellHinted*/
+      ctx2[38] ? `${/*cur*/
       ctx2[11].doc.word.slice(0, 1)}${"\xB7".repeat(Math.max(
         /*cur*/
         ctx2[11].doc.word.length - 1,
@@ -14046,7 +14240,7 @@ function create_if_block_51(ctx) {
     }
   };
 }
-function create_if_block_56(ctx) {
+function create_if_block_59(ctx) {
   let button;
   let mounted;
   let dispose;
@@ -14063,7 +14257,7 @@ function create_if_block_56(ctx) {
           button,
           "click",
           /*click_handler_13*/
-          ctx[93]
+          ctx[96]
         );
         mounted = true;
       }
@@ -14078,7 +14272,7 @@ function create_if_block_56(ctx) {
     }
   };
 }
-function create_if_block_54(ctx) {
+function create_if_block_57(ctx) {
   let div;
   let t0_value = (
     /*cur*/
@@ -14089,7 +14283,7 @@ function create_if_block_54(ctx) {
   let if_block_anchor;
   let if_block = (
     /*cur*/
-    ctx[11].quiz.phonetic && create_if_block_55(ctx)
+    ctx[11].quiz.phonetic && create_if_block_58(ctx)
   );
   return {
     c() {
@@ -14118,7 +14312,7 @@ function create_if_block_54(ctx) {
         if (if_block) {
           if_block.p(ctx2, dirty);
         } else {
-          if_block = create_if_block_55(ctx2);
+          if_block = create_if_block_58(ctx2);
           if_block.c();
           if_block.m(if_block_anchor.parentNode, if_block_anchor);
         }
@@ -14137,7 +14331,7 @@ function create_if_block_54(ctx) {
     }
   };
 }
-function create_if_block_55(ctx) {
+function create_if_block_58(ctx) {
   let div;
   let t_value = (
     /*cur*/
@@ -14166,26 +14360,26 @@ function create_if_block_55(ctx) {
     }
   };
 }
-function create_if_block_522(ctx) {
+function create_if_block_55(ctx) {
   let button;
   let button_title_value;
   let mounted;
   let dispose;
-  function select_block_type_15(ctx2, dirty) {
+  function select_block_type_16(ctx2, dirty) {
     if (
       /*hasAudio*/
-      ctx2[35]
-    ) return create_if_block_53;
-    return create_else_block_6;
+      ctx2[36]
+    ) return create_if_block_56;
+    return create_else_block_8;
   }
-  let current_block_type = select_block_type_15(ctx, [-1, -1, -1, -1, -1]);
+  let current_block_type = select_block_type_16(ctx, [-1, -1, -1, -1, -1]);
   let if_block = current_block_type(ctx);
   function click_handler_14() {
     return (
       /*click_handler_14*/
-      ctx[95](
+      ctx[98](
         /*word*/
-        ctx[136]
+        ctx[141]
       )
     );
   }
@@ -14195,7 +14389,7 @@ function create_if_block_522(ctx) {
       if_block.c();
       attr(button, "class", "el-tts");
       attr(button, "title", button_title_value = /*hasAudio*/
-      ctx[35] ? "\u6807\u51C6\u53D1\u97F3\u63D0\u793A\uFF08\u7B97\u4F5C\u63D0\u793A\uFF0C\u4E0D\u6CC4\u62FC\u5199\uFF09" : "TTS \u53D1\u97F3\u63D0\u793A\uFF08\u7B97\u4F5C\u63D0\u793A\uFF0C\u4E0D\u6CC4\u62FC\u5199\uFF09");
+      ctx[36] ? "\u6807\u51C6\u53D1\u97F3\u63D0\u793A\uFF08\u7B97\u4F5C\u63D0\u793A\uFF0C\u4E0D\u6CC4\u62FC\u5199\uFF09" : "TTS \u53D1\u97F3\u63D0\u793A\uFF08\u7B97\u4F5C\u63D0\u793A\uFF0C\u4E0D\u6CC4\u62FC\u5199\uFF09");
     },
     m(target, anchor) {
       insert(target, button, anchor);
@@ -14207,7 +14401,7 @@ function create_if_block_522(ctx) {
     },
     p(new_ctx, dirty) {
       ctx = new_ctx;
-      if (current_block_type !== (current_block_type = select_block_type_15(ctx, dirty))) {
+      if (current_block_type !== (current_block_type = select_block_type_16(ctx, dirty))) {
         if_block.d(1);
         if_block = current_block_type(ctx);
         if (if_block) {
@@ -14216,8 +14410,8 @@ function create_if_block_522(ctx) {
         }
       }
       if (dirty[1] & /*hasAudio*/
-      16 && button_title_value !== (button_title_value = /*hasAudio*/
-      ctx[35] ? "\u6807\u51C6\u53D1\u97F3\u63D0\u793A\uFF08\u7B97\u4F5C\u63D0\u793A\uFF0C\u4E0D\u6CC4\u62FC\u5199\uFF09" : "TTS \u53D1\u97F3\u63D0\u793A\uFF08\u7B97\u4F5C\u63D0\u793A\uFF0C\u4E0D\u6CC4\u62FC\u5199\uFF09")) {
+      32 && button_title_value !== (button_title_value = /*hasAudio*/
+      ctx[36] ? "\u6807\u51C6\u53D1\u97F3\u63D0\u793A\uFF08\u7B97\u4F5C\u63D0\u793A\uFF0C\u4E0D\u6CC4\u62FC\u5199\uFF09" : "TTS \u53D1\u97F3\u63D0\u793A\uFF08\u7B97\u4F5C\u63D0\u793A\uFF0C\u4E0D\u6CC4\u62FC\u5199\uFF09")) {
         attr(button, "title", button_title_value);
       }
     },
@@ -14231,7 +14425,7 @@ function create_if_block_522(ctx) {
     }
   };
 }
-function create_else_block_6(ctx) {
+function create_else_block_8(ctx) {
   let t;
   return {
     c() {
@@ -14247,7 +14441,7 @@ function create_else_block_6(ctx) {
     }
   };
 }
-function create_if_block_53(ctx) {
+function create_if_block_56(ctx) {
   let span;
   return {
     c() {
@@ -14265,7 +14459,7 @@ function create_if_block_53(ctx) {
     }
   };
 }
-function create_if_block_49(ctx) {
+function create_if_block_522(ctx) {
   let div0;
   let t0;
   let t1_value = (
@@ -14290,11 +14484,11 @@ function create_if_block_49(ctx) {
       ),
       synonyms: (
         /*synRow*/
-        ctx[32]
+        ctx[33]
       ),
       antonyms: (
         /*antRow*/
-        ctx[33]
+        ctx[34]
       )
     }
   });
@@ -14334,11 +14528,11 @@ function create_if_block_49(ctx) {
       2048) wordfullcard_changes.doc = /*cur*/
       ctx2[11].doc;
       if (dirty[1] & /*synRow*/
-      2) wordfullcard_changes.synonyms = /*synRow*/
-      ctx2[32];
-      if (dirty[1] & /*antRow*/
-      4) wordfullcard_changes.antonyms = /*antRow*/
+      4) wordfullcard_changes.synonyms = /*synRow*/
       ctx2[33];
+      if (dirty[1] & /*antRow*/
+      8) wordfullcard_changes.antonyms = /*antRow*/
+      ctx2[34];
       wordfullcard.$set(wordfullcard_changes);
     },
     i(local) {
@@ -14361,7 +14555,7 @@ function create_if_block_49(ctx) {
     }
   };
 }
-function create_if_block_48(ctx) {
+function create_if_block_51(ctx) {
   let button;
   let mounted;
   let dispose;
@@ -14378,7 +14572,7 @@ function create_if_block_48(ctx) {
           button,
           "click",
           /*advance*/
-          ctx[48]
+          ctx[49]
         );
         mounted = true;
       }
@@ -14393,7 +14587,7 @@ function create_if_block_48(ctx) {
     }
   };
 }
-function create_if_block_47(ctx) {
+function create_if_block_50(ctx) {
   let button;
   let mounted;
   let dispose;
@@ -14410,7 +14604,7 @@ function create_if_block_47(ctx) {
           button,
           "click",
           /*quizGiveUp*/
-          ctx[70]
+          ctx[73]
         );
         mounted = true;
       }
@@ -14425,7 +14619,210 @@ function create_if_block_47(ctx) {
     }
   };
 }
+function create_else_block_7(ctx) {
+  let div0;
+  let t1;
+  let div1;
+  let t2_value = (
+    /*cur*/
+    ctx[11].quiz.question + ""
+  );
+  let t2;
+  let show_if = isPhrase(
+    /*cur*/
+    ctx[11].doc.word
+  );
+  let fitText_action;
+  let t3;
+  let t4;
+  let if_block2_anchor;
+  let mounted;
+  let dispose;
+  let if_block0 = show_if && create_if_block_48(ctx);
+  let if_block1 = (
+    /*cur*/
+    ctx[11].quiz.phonetic && create_if_block_47(ctx)
+  );
+  let if_block2 = (
+    /*quizAnswered*/
+    ctx[40] && !/*quizCorrect*/
+    ctx[13] && create_if_block_46(ctx)
+  );
+  return {
+    c() {
+      div0 = element("div");
+      div0.textContent = "\u9009\u51FA\u6B63\u786E\u91CA\u4E49";
+      t1 = space();
+      div1 = element("div");
+      t2 = text(t2_value);
+      if (if_block0) if_block0.c();
+      t3 = space();
+      if (if_block1) if_block1.c();
+      t4 = space();
+      if (if_block2) if_block2.c();
+      if_block2_anchor = empty();
+      attr(div0, "class", "el-hint");
+      attr(div1, "class", "el-word");
+      set_style(div1, "font-size", "var(--el-font-display-sm)");
+    },
+    m(target, anchor) {
+      insert(target, div0, anchor);
+      insert(target, t1, anchor);
+      insert(target, div1, anchor);
+      append(div1, t2);
+      if (if_block0) if_block0.m(div1, null);
+      insert(target, t3, anchor);
+      if (if_block1) if_block1.m(target, anchor);
+      insert(target, t4, anchor);
+      if (if_block2) if_block2.m(target, anchor);
+      insert(target, if_block2_anchor, anchor);
+      if (!mounted) {
+        dispose = action_destroyer(fitText_action = fitText.call(null, div1, { dep: (
+          /*cur*/
+          ctx[11].quiz.question
+        ) }));
+        mounted = true;
+      }
+    },
+    p(ctx2, dirty) {
+      if (dirty[0] & /*cur*/
+      2048 && t2_value !== (t2_value = /*cur*/
+      ctx2[11].quiz.question + "")) set_data(t2, t2_value);
+      if (dirty[0] & /*cur*/
+      2048) show_if = isPhrase(
+        /*cur*/
+        ctx2[11].doc.word
+      );
+      if (show_if) {
+        if (if_block0) {
+        } else {
+          if_block0 = create_if_block_48(ctx2);
+          if_block0.c();
+          if_block0.m(div1, null);
+        }
+      } else if (if_block0) {
+        if_block0.d(1);
+        if_block0 = null;
+      }
+      if (fitText_action && is_function(fitText_action.update) && dirty[0] & /*cur*/
+      2048) fitText_action.update.call(null, { dep: (
+        /*cur*/
+        ctx2[11].quiz.question
+      ) });
+      if (
+        /*cur*/
+        ctx2[11].quiz.phonetic
+      ) {
+        if (if_block1) {
+          if_block1.p(ctx2, dirty);
+        } else {
+          if_block1 = create_if_block_47(ctx2);
+          if_block1.c();
+          if_block1.m(t4.parentNode, t4);
+        }
+      } else if (if_block1) {
+        if_block1.d(1);
+        if_block1 = null;
+      }
+      if (
+        /*quizAnswered*/
+        ctx2[40] && !/*quizCorrect*/
+        ctx2[13]
+      ) {
+        if (if_block2) {
+          if_block2.p(ctx2, dirty);
+        } else {
+          if_block2 = create_if_block_46(ctx2);
+          if_block2.c();
+          if_block2.m(if_block2_anchor.parentNode, if_block2_anchor);
+        }
+      } else if (if_block2) {
+        if_block2.d(1);
+        if_block2 = null;
+      }
+    },
+    i: noop,
+    o: noop,
+    d(detaching) {
+      if (detaching) {
+        detach(div0);
+        detach(t1);
+        detach(div1);
+        detach(t3);
+        detach(t4);
+        detach(if_block2_anchor);
+      }
+      if (if_block0) if_block0.d();
+      if (if_block1) if_block1.d(detaching);
+      if (if_block2) if_block2.d(detaching);
+      mounted = false;
+      dispose();
+    }
+  };
+}
 function create_if_block_45(ctx) {
+  let wordfullcard;
+  let current;
+  wordfullcard = new WordFullCard_default({
+    props: {
+      plugin: (
+        /*plugin*/
+        ctx[0]
+      ),
+      doc: (
+        /*cur*/
+        ctx[11].doc
+      ),
+      synonyms: (
+        /*synRow*/
+        ctx[33]
+      ),
+      antonyms: (
+        /*antRow*/
+        ctx[34]
+      ),
+      showBody: true
+    }
+  });
+  return {
+    c() {
+      create_component(wordfullcard.$$.fragment);
+    },
+    m(target, anchor) {
+      mount_component(wordfullcard, target, anchor);
+      current = true;
+    },
+    p(ctx2, dirty) {
+      const wordfullcard_changes = {};
+      if (dirty[0] & /*plugin*/
+      1) wordfullcard_changes.plugin = /*plugin*/
+      ctx2[0];
+      if (dirty[0] & /*cur*/
+      2048) wordfullcard_changes.doc = /*cur*/
+      ctx2[11].doc;
+      if (dirty[1] & /*synRow*/
+      4) wordfullcard_changes.synonyms = /*synRow*/
+      ctx2[33];
+      if (dirty[1] & /*antRow*/
+      8) wordfullcard_changes.antonyms = /*antRow*/
+      ctx2[34];
+      wordfullcard.$set(wordfullcard_changes);
+    },
+    i(local) {
+      if (current) return;
+      transition_in(wordfullcard.$$.fragment, local);
+      current = true;
+    },
+    o(local) {
+      transition_out(wordfullcard.$$.fragment, local);
+      current = false;
+    },
+    d(detaching) {
+      destroy_component(wordfullcard, detaching);
+    }
+  };
+}
+function create_if_block_48(ctx) {
   let span;
   return {
     c() {
@@ -14443,7 +14840,7 @@ function create_if_block_45(ctx) {
     }
   };
 }
-function create_if_block_44(ctx) {
+function create_if_block_47(ctx) {
   let div;
   let t_value = (
     /*cur*/
@@ -14472,7 +14869,7 @@ function create_if_block_44(ctx) {
     }
   };
 }
-function create_if_block_432(ctx) {
+function create_if_block_46(ctx) {
   let div0;
   let t0;
   let t1_value = (
@@ -14515,6 +14912,135 @@ function create_if_block_432(ctx) {
     }
   };
 }
+function create_if_block_44(ctx) {
+  let quizoptions;
+  let current;
+  quizoptions = new QuizOptions_default({
+    props: {
+      quiz: (
+        /*cur*/
+        ctx[11].quiz
+      ),
+      picked: (
+        /*quizPicked*/
+        ctx[6]
+      ),
+      answered: (
+        /*quizAnswered*/
+        ctx[40]
+      ),
+      correct: (
+        /*quizCorrect*/
+        ctx[13]
+      ),
+      onpick: (
+        /*checkPick*/
+        ctx[54]
+      )
+    }
+  });
+  return {
+    c() {
+      create_component(quizoptions.$$.fragment);
+    },
+    m(target, anchor) {
+      mount_component(quizoptions, target, anchor);
+      current = true;
+    },
+    p(ctx2, dirty) {
+      const quizoptions_changes = {};
+      if (dirty[0] & /*cur*/
+      2048) quizoptions_changes.quiz = /*cur*/
+      ctx2[11].quiz;
+      if (dirty[0] & /*quizPicked*/
+      64) quizoptions_changes.picked = /*quizPicked*/
+      ctx2[6];
+      if (dirty[1] & /*quizAnswered*/
+      512) quizoptions_changes.answered = /*quizAnswered*/
+      ctx2[40];
+      if (dirty[0] & /*quizCorrect*/
+      8192) quizoptions_changes.correct = /*quizCorrect*/
+      ctx2[13];
+      quizoptions.$set(quizoptions_changes);
+    },
+    i(local) {
+      if (current) return;
+      transition_in(quizoptions.$$.fragment, local);
+      current = true;
+    },
+    o(local) {
+      transition_out(quizoptions.$$.fragment, local);
+      current = false;
+    },
+    d(detaching) {
+      destroy_component(quizoptions, detaching);
+    }
+  };
+}
+function create_else_block_6(ctx) {
+  let button;
+  let mounted;
+  let dispose;
+  return {
+    c() {
+      button = element("button");
+      button.innerHTML = `\u770B\u8BCD\u4E49\u4F8B\u53E5<span class="el-kbd">\u2190</span>`;
+      attr(button, "class", "el-grade el-grade-sub");
+    },
+    m(target, anchor) {
+      insert(target, button, anchor);
+      if (!mounted) {
+        dispose = listen(
+          button,
+          "click",
+          /*peekFull*/
+          ctx[57]
+        );
+        mounted = true;
+      }
+    },
+    p: noop,
+    d(detaching) {
+      if (detaching) {
+        detach(button);
+      }
+      mounted = false;
+      dispose();
+    }
+  };
+}
+function create_if_block_432(ctx) {
+  let button;
+  let mounted;
+  let dispose;
+  return {
+    c() {
+      button = element("button");
+      button.textContent = "\u7EE7\u7EED\uFF08\u7A7A\u683C\uFF09";
+      attr(button, "class", "el-reveal el-reveal-ok");
+    },
+    m(target, anchor) {
+      insert(target, button, anchor);
+      if (!mounted) {
+        dispose = listen(
+          button,
+          "click",
+          /*advance*/
+          ctx[49]
+        );
+        mounted = true;
+      }
+    },
+    p: noop,
+    d(detaching) {
+      if (detaching) {
+        detach(button);
+      }
+      mounted = false;
+      dispose();
+    }
+  };
+}
 function create_if_block_422(ctx) {
   let button;
   let mounted;
@@ -14532,7 +15058,7 @@ function create_if_block_422(ctx) {
           button,
           "click",
           /*advance*/
-          ctx[48]
+          ctx[49]
         );
         mounted = true;
       }
@@ -14548,34 +15074,54 @@ function create_if_block_422(ctx) {
   };
 }
 function create_if_block_41(ctx) {
-  let button;
+  let div;
+  let button0;
+  let t2;
+  let button1;
   let mounted;
   let dispose;
   return {
     c() {
-      button = element("button");
-      button.innerHTML = `\u5176\u5B9E\u4E0D\u8BA4\u8BC6<span class="el-kbd">0</span>`;
-      attr(button, "class", "el-grade el-grade-sub");
+      div = element("div");
+      button0 = element("button");
+      button0.innerHTML = `\u592A\u7B80\u5355<span class="el-kbd">5</span>`;
+      t2 = space();
+      button1 = element("button");
+      button1.innerHTML = `\u5176\u5B9E\u4E0D\u8BA4\u8BC6<span class="el-kbd">0</span>`;
+      attr(button0, "class", "el-grade el-grade-sub");
+      attr(button1, "class", "el-grade el-grade-sub");
+      attr(div, "class", "el-grade-btns");
     },
     m(target, anchor) {
-      insert(target, button, anchor);
+      insert(target, div, anchor);
+      append(div, button0);
+      append(div, t2);
+      append(div, button1);
       if (!mounted) {
-        dispose = listen(
-          button,
-          "click",
-          /*checkUnknown*/
-          ctx[54]
-        );
+        dispose = [
+          listen(
+            button0,
+            "click",
+            /*checkEasy*/
+            ctx[56]
+          ),
+          listen(
+            button1,
+            "click",
+            /*checkUnknown*/
+            ctx[55]
+          )
+        ];
         mounted = true;
       }
     },
     p: noop,
     d(detaching) {
       if (detaching) {
-        detach(button);
+        detach(div);
       }
       mounted = false;
-      dispose();
+      run_all(dispose);
     }
   };
 }
@@ -14596,11 +15142,11 @@ function create_else_block_5(ctx) {
       ),
       synonyms: (
         /*synRow*/
-        ctx[32]
+        ctx[33]
       ),
       antonyms: (
         /*antRow*/
-        ctx[33]
+        ctx[34]
       ),
       showBody: (
         /*revealed*/
@@ -14611,7 +15157,7 @@ function create_else_block_5(ctx) {
   let if_block = (
     /*cur*/
     ctx[11].check && /*quizAnswered*/
-    ctx[39] && create_if_block_39(ctx)
+    ctx[40] && create_if_block_39(ctx)
   );
   return {
     c() {
@@ -14636,11 +15182,11 @@ function create_else_block_5(ctx) {
       2048) wordfullcard_changes.doc = /*cur*/
       ctx2[11].doc;
       if (dirty[1] & /*synRow*/
-      2) wordfullcard_changes.synonyms = /*synRow*/
-      ctx2[32];
-      if (dirty[1] & /*antRow*/
-      4) wordfullcard_changes.antonyms = /*antRow*/
+      4) wordfullcard_changes.synonyms = /*synRow*/
       ctx2[33];
+      if (dirty[1] & /*antRow*/
+      8) wordfullcard_changes.antonyms = /*antRow*/
+      ctx2[34];
       if (dirty[0] & /*revealed*/
       32) wordfullcard_changes.showBody = /*revealed*/
       ctx2[5];
@@ -14648,7 +15194,7 @@ function create_else_block_5(ctx) {
       if (
         /*cur*/
         ctx2[11].check && /*quizAnswered*/
-        ctx2[39]
+        ctx2[40]
       ) {
         if (if_block) {
           if_block.p(ctx2, dirty);
@@ -14694,7 +15240,7 @@ function create_if_block_37(ctx) {
   let if_block_anchor;
   let if_block = (
     /*reverseHint*/
-    ctx[41] && create_if_block_38(ctx)
+    ctx[42] && create_if_block_38(ctx)
   );
   return {
     c() {
@@ -14726,7 +15272,7 @@ function create_if_block_37(ctx) {
       )[0] || "\uFF08\u91CA\u4E49\u5F85\u8865\u5145\uFF09") + "")) set_data(t2, t2_value);
       if (
         /*reverseHint*/
-        ctx2[41]
+        ctx2[42]
       ) {
         if (if_block) {
           if_block.p(ctx2, dirty);
@@ -14844,7 +15390,7 @@ function create_if_block_38(ctx) {
       div = element("div");
       t = text(
         /*reverseHint*/
-        ctx[41]
+        ctx[42]
       );
       attr(div, "class", "el-example");
       set_style(div, "margin-top", "var(--el-space-4)");
@@ -14855,10 +15401,10 @@ function create_if_block_38(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[1] & /*reverseHint*/
-      1024) set_data(
+      2048) set_data(
         t,
         /*reverseHint*/
-        ctx2[41]
+        ctx2[42]
       );
     },
     d(detaching) {
@@ -14881,7 +15427,7 @@ function create_else_block_42(ctx) {
   let if_block_anchor;
   let if_block = (
     /*reverseHint*/
-    ctx[41] && create_if_block_36(ctx)
+    ctx[42] && create_if_block_36(ctx)
   );
   return {
     c() {
@@ -14911,7 +15457,7 @@ function create_else_block_42(ctx) {
       ctx2[11].check.question + "")) set_data(t2, t2_value);
       if (
         /*reverseHint*/
-        ctx2[41]
+        ctx2[42]
       ) {
         if (if_block) {
           if_block.p(ctx2, dirty);
@@ -15056,7 +15602,7 @@ function create_if_block_36(ctx) {
       div = element("div");
       t = text(
         /*reverseHint*/
-        ctx[41]
+        ctx[42]
       );
       attr(div, "class", "el-example");
       set_style(div, "margin-top", "var(--el-space-4)");
@@ -15067,10 +15613,10 @@ function create_if_block_36(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[1] & /*reverseHint*/
-      1024) set_data(
+      2048) set_data(
         t,
         /*reverseHint*/
-        ctx2[41]
+        ctx2[42]
       );
     },
     d(detaching) {
@@ -15174,25 +15720,25 @@ function create_else_block_32(ctx) {
             button0,
             "click",
             /*click_handler_9*/
-            ctx[89]
+            ctx[92]
           ),
           listen(
             button1,
             "click",
             /*click_handler_10*/
-            ctx[90]
+            ctx[93]
           ),
           listen(
             button2,
             "click",
             /*click_handler_11*/
-            ctx[91]
+            ctx[94]
           ),
           listen(
             button3,
             "click",
             /*reviewEasy*/
-            ctx[65]
+            ctx[68]
           )
         ];
         mounted = true;
@@ -15292,7 +15838,7 @@ function create_else_block_22(ctx) {
           button,
           "click",
           /*reveal*/
-          ctx[61]
+          ctx[64]
         );
         mounted = true;
       }
@@ -15328,7 +15874,7 @@ function create_if_block_31(ctx) {
       ),
       answered: (
         /*quizAnswered*/
-        ctx[39]
+        ctx[40]
       ),
       correct: (
         /*quizCorrect*/
@@ -15336,7 +15882,7 @@ function create_if_block_31(ctx) {
       ),
       onpick: (
         /*reviewPick*/
-        ctx[62]
+        ctx[65]
       )
     }
   });
@@ -15358,7 +15904,7 @@ function create_if_block_31(ctx) {
           button,
           "click",
           /*reviewUnknown*/
-          ctx[63]
+          ctx[66]
         );
         mounted = true;
       }
@@ -15372,8 +15918,8 @@ function create_if_block_31(ctx) {
       64) quizoptions_changes.picked = /*quizPicked*/
       ctx2[6];
       if (dirty[1] & /*quizAnswered*/
-      256) quizoptions_changes.answered = /*quizAnswered*/
-      ctx2[39];
+      512) quizoptions_changes.answered = /*quizAnswered*/
+      ctx2[40];
       if (dirty[0] & /*quizCorrect*/
       8192) quizoptions_changes.correct = /*quizCorrect*/
       ctx2[13];
@@ -15420,7 +15966,7 @@ function create_if_block_282(ctx) {
           button,
           "click",
           /*reveal*/
-          ctx[61]
+          ctx[64]
         );
         mounted = true;
       }
@@ -15473,19 +16019,19 @@ function create_if_block_272(ctx) {
             button0,
             "click",
             /*studyEasy*/
-            ctx[58]
+            ctx[61]
           ),
           listen(
             button1,
             "click",
             /*confirmContinue*/
-            ctx[59]
+            ctx[62]
           ),
           listen(
             button2,
             "click",
             /*confirmNo*/
-            ctx[60]
+            ctx[63]
           )
         ];
         mounted = true;
@@ -15539,19 +16085,19 @@ function create_if_block_262(ctx) {
             button0,
             "click",
             /*studyEasy*/
-            ctx[58]
+            ctx[61]
           ),
           listen(
             button1,
             "click",
             /*studied*/
-            ctx[56]
+            ctx[59]
           ),
           listen(
             button2,
             "click",
             /*restudy*/
-            ctx[57]
+            ctx[60]
           )
         ];
         mounted = true;
@@ -15584,7 +16130,7 @@ function create_if_block_232(ctx) {
           button,
           "click",
           /*goBack*/
-          ctx[49]
+          ctx[50]
         );
         mounted = true;
       }
@@ -15605,12 +16151,12 @@ function create_else_block_13(ctx) {
   let h2;
   let t2_value = (
     /*hardMode*/
-    ctx[15] || /*themeName*/
+    ctx[16] || /*themeName*/
     ctx[9] ? `${sessionLabel(
       /*themeName*/
       ctx[9],
       /*hardMode*/
-      ctx[15]
+      ctx[16]
     )}\u5B66\u4E60\u5B8C\u6210` : "\u4ECA\u65E5\u5B66\u4E60\u5B8C\u6210"
   );
   let t2;
@@ -15631,13 +16177,13 @@ function create_else_block_13(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*hardMode, themeName*/
-      33280 && t2_value !== (t2_value = /*hardMode*/
-      ctx2[15] || /*themeName*/
+      66048 && t2_value !== (t2_value = /*hardMode*/
+      ctx2[16] || /*themeName*/
       ctx2[9] ? `${sessionLabel(
         /*themeName*/
         ctx2[9],
         /*hardMode*/
-        ctx2[15]
+        ctx2[16]
       )}\u5B66\u4E60\u5B8C\u6210` : "\u4ECA\u65E5\u5B66\u4E60\u5B8C\u6210")) set_data(t2, t2_value);
     },
     d(detaching) {
@@ -15657,7 +16203,7 @@ function create_if_block_202(ctx) {
     /*themeName*/
     ctx[9],
     /*hardMode*/
-    ctx[15]
+    ctx[16]
   ) + "";
   let t2;
   let t3;
@@ -15680,11 +16226,11 @@ function create_if_block_202(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*themeName, hardMode*/
-      33280 && t2_value !== (t2_value = sessionLabel(
+      66048 && t2_value !== (t2_value = sessionLabel(
         /*themeName*/
         ctx2[9],
         /*hardMode*/
-        ctx2[15]
+        ctx2[16]
       ) + "")) set_data(t2, t2_value);
     },
     d(detaching) {
@@ -15701,7 +16247,7 @@ function create_if_block_192(ctx) {
   let t0;
   let t1_value = (
     /*stats*/
-    ctx[17].easy + ""
+    ctx[18].easy + ""
   );
   let t1;
   return {
@@ -15717,8 +16263,8 @@ function create_if_block_192(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*stats*/
-      131072 && t1_value !== (t1_value = /*stats*/
-      ctx2[17].easy + "")) set_data(t1, t1_value);
+      262144 && t1_value !== (t1_value = /*stats*/
+      ctx2[18].easy + "")) set_data(t1, t1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -15732,13 +16278,13 @@ function create_if_block_182(ctx) {
   let t0;
   let t1_value = (
     /*todayTotals*/
-    ctx[29].new + ""
+    ctx[30].new + ""
   );
   let t1;
   let t2;
   let t3_value = (
     /*todayTotals*/
-    ctx[29].rev + ""
+    ctx[30].rev + ""
   );
   let t3;
   return {
@@ -15760,11 +16306,11 @@ function create_if_block_182(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*todayTotals*/
-      536870912 && t1_value !== (t1_value = /*todayTotals*/
-      ctx2[29].new + "")) set_data(t1, t1_value);
+      1073741824 && t1_value !== (t1_value = /*todayTotals*/
+      ctx2[30].new + "")) set_data(t1, t1_value);
       if (dirty[0] & /*todayTotals*/
-      536870912 && t3_value !== (t3_value = /*todayTotals*/
-      ctx2[29].rev + "")) set_data(t3, t3_value);
+      1073741824 && t3_value !== (t3_value = /*todayTotals*/
+      ctx2[30].rev + "")) set_data(t3, t3_value);
     },
     d(detaching) {
       if (detaching) {
@@ -15778,7 +16324,7 @@ function create_if_block_172(ctx) {
   let t;
   let each_value_1 = ensure_array_like(
     /*masteredNow*/
-    ctx[18]
+    ctx[19]
   );
   let each_blocks = [];
   for (let i = 0; i < each_value_1.length; i += 1) {
@@ -15804,10 +16350,10 @@ function create_if_block_172(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*plugin, masteredNow*/
-      262145) {
+      524289) {
         each_value_1 = ensure_array_like(
           /*masteredNow*/
-          ctx2[18]
+          ctx2[19]
         );
         let i;
         for (i = 0; i < each_value_1.length; i += 1) {
@@ -15838,7 +16384,7 @@ function create_each_block_13(ctx) {
   let button;
   let t_value = (
     /*w*/
-    ctx[131] + ""
+    ctx[136] + ""
   );
   let t;
   let mounted;
@@ -15846,9 +16392,9 @@ function create_each_block_13(ctx) {
   function click_handler_3() {
     return (
       /*click_handler_3*/
-      ctx[83](
+      ctx[86](
         /*w*/
-        ctx[131]
+        ctx[136]
       )
     );
   }
@@ -15870,8 +16416,8 @@ function create_each_block_13(ctx) {
     p(new_ctx, dirty) {
       ctx = new_ctx;
       if (dirty[0] & /*masteredNow*/
-      262144 && t_value !== (t_value = /*w*/
-      ctx[131] + "")) set_data(t, t_value);
+      524288 && t_value !== (t_value = /*w*/
+      ctx[136] + "")) set_data(t, t_value);
     },
     d(detaching) {
       if (detaching) {
@@ -15887,7 +16433,7 @@ function create_if_block_162(ctx) {
   let t;
   let each_value = ensure_array_like(
     /*weakNow*/
-    ctx[19]
+    ctx[20]
   );
   let each_blocks = [];
   for (let i = 0; i < each_value.length; i += 1) {
@@ -15913,10 +16459,10 @@ function create_if_block_162(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*plugin, weakNow*/
-      524289) {
+      1048577) {
         each_value = ensure_array_like(
           /*weakNow*/
-          ctx2[19]
+          ctx2[20]
         );
         let i;
         for (i = 0; i < each_value.length; i += 1) {
@@ -15947,7 +16493,7 @@ function create_each_block5(ctx) {
   let button;
   let t_value = (
     /*w*/
-    ctx[131] + ""
+    ctx[136] + ""
   );
   let t;
   let mounted;
@@ -15955,9 +16501,9 @@ function create_each_block5(ctx) {
   function click_handler_4() {
     return (
       /*click_handler_4*/
-      ctx[84](
+      ctx[87](
         /*w*/
-        ctx[131]
+        ctx[136]
       )
     );
   }
@@ -15979,8 +16525,8 @@ function create_each_block5(ctx) {
     p(new_ctx, dirty) {
       ctx = new_ctx;
       if (dirty[0] & /*weakNow*/
-      524288 && t_value !== (t_value = /*w*/
-      ctx[131] + "")) set_data(t, t_value);
+      1048576 && t_value !== (t_value = /*w*/
+      ctx[136] + "")) set_data(t, t_value);
     },
     d(detaching) {
       if (detaching) {
@@ -15996,8 +16542,8 @@ function create_if_block_153(ctx) {
   let t0;
   let t1_value = (
     /*dueTotal*/
-    ctx[16] - /*stats*/
-    ctx[17].rev + ""
+    ctx[17] - /*stats*/
+    ctx[18].rev + ""
   );
   let t1;
   let t2;
@@ -16017,9 +16563,9 @@ function create_if_block_153(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*dueTotal, stats*/
-      196608 && t1_value !== (t1_value = /*dueTotal*/
-      ctx2[16] - /*stats*/
-      ctx2[17].rev + "")) set_data(t1, t1_value);
+      393216 && t1_value !== (t1_value = /*dueTotal*/
+      ctx2[17] - /*stats*/
+      ctx2[18].rev + "")) set_data(t1, t1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -16039,7 +16585,7 @@ function create_if_block_143(ctx) {
       t0 = text("\u660E\u5929\u5C06\u6709 ");
       t1 = text(
         /*tomorrowDue*/
-        ctx[28]
+        ctx[29]
       );
       t2 = text(" \u4E2A\u8BCD\u5230\u671F\u590D\u4E60");
       attr(div, "class", "el-muted");
@@ -16052,10 +16598,10 @@ function create_if_block_143(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*tomorrowDue*/
-      268435456) set_data(
+      536870912) set_data(
         t1,
         /*tomorrowDue*/
-        ctx2[28]
+        ctx2[29]
       );
     },
     d(detaching) {
@@ -16078,7 +16624,7 @@ function create_if_block_133(ctx) {
       t0 = text("\u518D\u6765\u4E00\u8F6E\uFF08");
       t1 = text(
         /*remaining*/
-        ctx[20]
+        ctx[21]
       );
       t2 = text("\uFF09");
       attr(button, "class", "mod-cta");
@@ -16093,17 +16639,17 @@ function create_if_block_133(ctx) {
           button,
           "click",
           /*click_handler_5*/
-          ctx[85]
+          ctx[88]
         );
         mounted = true;
       }
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*remaining*/
-      1048576) set_data(
+      2097152) set_data(
         t1,
         /*remaining*/
-        ctx2[20]
+        ctx2[21]
       );
     },
     d(detaching) {
@@ -16146,7 +16692,7 @@ function create_if_block_123(ctx) {
           button,
           "click",
           /*resume*/
-          ctx[75]
+          ctx[78]
         );
         mounted = true;
       }
@@ -16171,9 +16717,9 @@ function create_if_block_113(ctx) {
   let t0;
   let t1_value = Math.min(
     /*finishFresh*/
-    ctx[27],
+    ctx[28],
     /*dailyLimit*/
-    ctx[25]
+    ctx[26]
   ) + "";
   let t1;
   let t2;
@@ -16198,18 +16744,18 @@ function create_if_block_113(ctx) {
           button,
           "click",
           /*click_handler_6*/
-          ctx[86]
+          ctx[89]
         );
         mounted = true;
       }
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*finishFresh, dailyLimit*/
-      167772160 && t1_value !== (t1_value = Math.min(
+      335544320 && t1_value !== (t1_value = Math.min(
         /*finishFresh*/
-        ctx2[27],
+        ctx2[28],
         /*dailyLimit*/
-        ctx2[25]
+        ctx2[26]
       ) + "")) set_data(t1, t1_value);
     },
     d(detaching) {
@@ -16234,7 +16780,7 @@ function create_if_block_103(ctx) {
       t0 = text("\u96BE\u8BCD\u590D\u4E60\uFF08");
       t1 = text(
         /*hardInTheme*/
-        ctx[34]
+        ctx[35]
       );
       t2 = text("\uFF09");
       attr(button, "class", "mod-warning");
@@ -16249,17 +16795,17 @@ function create_if_block_103(ctx) {
           button,
           "click",
           /*click_handler_7*/
-          ctx[87]
+          ctx[90]
         );
         mounted = true;
       }
     },
     p(ctx2, dirty) {
       if (dirty[1] & /*hardInTheme*/
-      8) set_data(
+      16) set_data(
         t1,
         /*hardInTheme*/
-        ctx2[34]
+        ctx2[35]
       );
     },
     d(detaching) {
@@ -16289,12 +16835,12 @@ function create_else_block4(ctx) {
       t2 = text("\u4ECA\u65E5\u65B0\u8BCD ");
       t3 = text(
         /*todayNew*/
-        ctx[24]
+        ctx[25]
       );
       t4 = text("/");
       t5 = text(
         /*dailyLimit*/
-        ctx[25]
+        ctx[26]
       );
       t6 = text("\uFF0C\u5230\u671F\u590D\u4E60\u4E5F\u6E05\u7A7A\u4E86\u3002");
       attr(div, "class", "el-muted");
@@ -16311,16 +16857,16 @@ function create_else_block4(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*todayNew*/
-      16777216) set_data(
+      33554432) set_data(
         t3,
         /*todayNew*/
-        ctx2[24]
+        ctx2[25]
       );
       if (dirty[0] & /*dailyLimit*/
-      33554432) set_data(
+      67108864) set_data(
         t5,
         /*dailyLimit*/
-        ctx2[25]
+        ctx2[26]
       );
     },
     d(detaching) {
@@ -16353,11 +16899,11 @@ function create_if_block_83(ctx) {
       t3 = space();
       div0 = element("div");
       div0.textContent = `${/*themeIdleText*/
-      ctx[72]()}\u3002`;
+      ctx[75]()}\u3002`;
       t6 = space();
       div1 = element("div");
       div1.textContent = `${/*todayQuotaText*/
-      ctx[73]()}\u3002`;
+      ctx[76]()}\u3002`;
       attr(div0, "class", "el-muted");
       attr(div1, "class", "el-muted");
     },
@@ -16408,14 +16954,14 @@ function create_if_block_73(ctx) {
     }
   };
 }
-function create_if_block_67(ctx) {
+function create_if_block_610(ctx) {
   let button;
   let t0;
   let t1_value = Math.min(
     /*doneFresh*/
-    ctx[26],
+    ctx[27],
     /*dailyLimit*/
-    ctx[25]
+    ctx[26]
   ) + "";
   let t1;
   let t2;
@@ -16440,18 +16986,18 @@ function create_if_block_67(ctx) {
           button,
           "click",
           /*click_handler_1*/
-          ctx[81]
+          ctx[84]
         );
         mounted = true;
       }
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*doneFresh, dailyLimit*/
-      100663296 && t1_value !== (t1_value = Math.min(
+      201326592 && t1_value !== (t1_value = Math.min(
         /*doneFresh*/
-        ctx2[26],
+        ctx2[27],
         /*dailyLimit*/
-        ctx2[25]
+        ctx2[26]
       ) + "")) set_data(t1, t1_value);
     },
     d(detaching) {
@@ -16471,7 +17017,7 @@ function create_if_block_510(ctx) {
     c() {
       button = element("button");
       button.textContent = `\u96BE\u8BCD\u590D\u4E60\uFF08${/*hardInThemeLive*/
-      ctx[71]()}\uFF09`;
+      ctx[74]()}\uFF09`;
       attr(button, "class", "mod-warning");
     },
     m(target, anchor) {
@@ -16481,7 +17027,7 @@ function create_if_block_510(ctx) {
           button,
           "click",
           /*click_handler_2*/
-          ctx[82]
+          ctx[85]
         );
         mounted = true;
       }
@@ -16521,19 +17067,19 @@ function create_fragment6(ctx) {
     ) return 0;
     if (
       /*loadError*/
-      ctx2[31]
+      ctx2[32]
     ) return 1;
     if (
       /*empty*/
-      ctx2[21]
+      ctx2[22]
     ) return 2;
     if (
       /*emptyTheme*/
-      ctx2[22]
+      ctx2[23]
     ) return 3;
     if (
       /*done*/
-      ctx2[23]
+      ctx2[24]
     ) return 4;
     if (
       /*finished*/
@@ -16566,10 +17112,10 @@ function create_fragment6(ctx) {
             window_1,
             "keydown",
             /*onKey*/
-            ctx[77]
+            ctx[80]
           ),
           action_destroyer(fitViewport_action = /*fitViewport*/
-          ctx[66].call(null, div))
+          ctx[69].call(null, div))
         ];
         mounted = true;
       }
@@ -16665,6 +17211,7 @@ function instance6($$self, $$props, $$invalidate) {
   let quizPicked = -1;
   let quizGaveUp = false;
   let quizCorrect = false;
+  let peeking = false;
   let finished = false;
   let exitedEarly = false;
   let themeName = "";
@@ -16699,8 +17246,8 @@ function instance6($$self, $$props, $$invalidate) {
   let loadError = "";
   let audioMuted = plugin.muted;
   function icon(node, name) {
-    (0, import_obsidian12.setIcon)(node, name);
-    return { update: (n) => (0, import_obsidian12.setIcon)(node, n) };
+    (0, import_obsidian11.setIcon)(node, name);
+    return { update: (n) => (0, import_obsidian11.setIcon)(node, n) };
   }
   function toggleMute() {
     plugin.toggleMute();
@@ -16715,19 +17262,19 @@ function instance6($$self, $$props, $$invalidate) {
   let relLoadSeq = 0;
   async function loadRelWords(doc) {
     if (!doc) {
-      $$invalidate(32, synRow = []);
-      $$invalidate(33, antRow = []);
+      $$invalidate(33, synRow = []);
+      $$invalidate(34, antRow = []);
       return;
     }
     const seq = ++relLoadSeq;
-    $$invalidate(32, synRow = []);
-    $$invalidate(33, antRow = []);
+    $$invalidate(33, synRow = []);
+    $$invalidate(34, antRow = []);
     const r = await plugin.relWords(doc, {
       online: plugin.db.settings.enrichOnLearn !== false
     });
     if (seq !== relLoadSeq) return;
-    $$invalidate(32, synRow = r.synonyms);
-    $$invalidate(33, antRow = r.antonyms);
+    $$invalidate(33, synRow = r.synonyms);
+    $$invalidate(34, antRow = r.antonyms);
   }
   const enrichTried = /* @__PURE__ */ new Set();
   function enrichAll() {
@@ -16771,7 +17318,7 @@ function instance6($$self, $$props, $$invalidate) {
     const seq = ++audioSeq;
     const ok = w ? await plugin.audio.has(w) : false;
     if (seq !== audioSeq) return;
-    $$invalidate(35, hasAudio = ok);
+    $$invalidate(36, hasAudio = ok);
   }
   onDestroy(() => {
     cancelFlip();
@@ -16781,7 +17328,7 @@ function instance6($$self, $$props, $$invalidate) {
   onMount(async () => {
     var _a, _b, _c;
     $$invalidate(9, themeName = (_a = plugin.sessionTheme) !== null && _a !== void 0 ? _a : "");
-    $$invalidate(15, hardMode = plugin.sessionHard);
+    $$invalidate(16, hardMode = plugin.sessionHard);
     $$invalidate(0, plugin.sessionActive = true, plugin);
     let s;
     try {
@@ -16789,29 +17336,29 @@ function instance6($$self, $$props, $$invalidate) {
     } catch (e) {
       if (destroyed) return;
       $$invalidate(0, plugin.sessionActive = false, plugin);
-      $$invalidate(31, loadError = e instanceof Error ? e.message : String(e));
+      $$invalidate(32, loadError = e instanceof Error ? e.message : String(e));
       $$invalidate(1, loading = false);
       return;
     }
     if (destroyed) return;
-    $$invalidate(16, dueTotal = s.dueTotal);
+    $$invalidate(17, dueTotal = s.dueTotal);
     sessionPool = themeName ? plugin.words.byTheme(themeName) : plugin.activeWords();
     $$invalidate(2, cards = [
       ...s.queue.slice(0, s.dueFirst).map((doc) => reviewCard(doc, sessionPool)),
-      ...s.queue.slice(s.dueFirst).map((doc) => ({ kind: "new", doc }))
+      ...s.queue.slice(s.dueFirst).map(newWordCard)
     ]);
     $$invalidate(1, loading = false);
     startedAt = Date.now();
     if (!cards.length) {
       $$invalidate(0, plugin.sessionActive = false, plugin);
       if (!sessionPool.length) {
-        if (themeName && !hardMode) $$invalidate(22, emptyTheme = true);
-        else $$invalidate(21, empty2 = true);
+        if (themeName && !hardMode) $$invalidate(23, emptyTheme = true);
+        else $$invalidate(22, empty2 = true);
       } else {
-        $$invalidate(23, done = true);
-        $$invalidate(24, todayNew = (_c = (_b = plugin.db.stats.days[fmtDate(Date.now())]) === null || _b === void 0 ? void 0 : _b.new) !== null && _c !== void 0 ? _c : 0);
-        $$invalidate(25, dailyLimit = plugin.db.settings.dailyNew);
-        $$invalidate(26, doneFresh = sessionPool.filter((w) => !plugin.db.progress[w.word]).length);
+        $$invalidate(24, done = true);
+        $$invalidate(25, todayNew = (_c = (_b = plugin.db.stats.days[fmtDate(Date.now())]) === null || _b === void 0 ? void 0 : _b.new) !== null && _c !== void 0 ? _c : 0);
+        $$invalidate(26, dailyLimit = plugin.db.settings.dailyNew);
+        $$invalidate(27, doneFresh = sessionPool.filter((w) => !plugin.db.progress[w.word]).length);
       }
     } else autoSpeak(cards[0]);
   });
@@ -16870,7 +17417,10 @@ function instance6($$self, $$props, $$invalidate) {
       if (card.quiz.kind === "spell" && card.quiz.audioOnly) plugin.speakWord(card.doc.word);
       return;
     }
-    if (card.kind === "check" && !answered) return;
+    if (card.kind === "check" && !answered) {
+      plugin.speakWord(card.doc.word);
+      return;
+    }
     if (card.kind === "review" && card.reverse && !revealed) return;
     plugin.speakWord(card.doc.word, void 0, fullCardBody(card, answered) ? firstExample(card.doc) : void 0);
   }
@@ -16913,7 +17463,7 @@ function instance6($$self, $$props, $$invalidate) {
   }
   function armFlip() {
     cancelFlip();
-    autoTimer = setTimeout(advance, 1100);
+    autoTimer = setTimeout(advance, 2e3);
   }
   function cancelFlip() {
     clearTimeout(autoTimer);
@@ -16926,9 +17476,10 @@ function instance6($$self, $$props, $$invalidate) {
     $$invalidate(5, revealed = false);
     $$invalidate(6, quizPicked = -1);
     $$invalidate(7, quizGaveUp = false);
-    $$invalidate(36, spellInput = "");
-    $$invalidate(37, spellHinted = false);
-    $$invalidate(38, spellShowQ = false);
+    $$invalidate(14, peeking = false);
+    $$invalidate(37, spellInput = "");
+    $$invalidate(38, spellHinted = false);
+    $$invalidate(39, spellShowQ = false);
     if (!viaFlip) plugin.stopSpeaking();
     settleTail();
   }
@@ -16955,14 +17506,14 @@ function instance6($$self, $$props, $$invalidate) {
     landCurrent();
   }
   function finishGrade(r) {
-    if (r.isNew) $$invalidate(17, stats.new++, stats);
-    else $$invalidate(17, stats.rev++, stats);
+    if (r.isNew) $$invalidate(18, stats.new++, stats);
+    else $$invalidate(18, stats.rev++, stats);
     if (r.masteredNow && cur) masteredNow.push(cur.doc.word);
   }
   function tooEasy() {
     if ((cur === null || cur === void 0 ? void 0 : cur.kind) !== "new") return;
     plugin.markMastered(cur.doc.word);
-    $$invalidate(17, stats.easy++, stats);
+    $$invalidate(18, stats.easy++, stats);
     masteredNow.push(cur.doc.word);
     advance();
   }
@@ -16978,11 +17529,23 @@ function instance6($$self, $$props, $$invalidate) {
     }
     advance();
   }
+  function newWordCard(doc) {
+    if (plugin.db.settings.knowCheck === false) {
+      studiedDocs.push(doc);
+      return { kind: "study", doc };
+    }
+    const q = buildCheckQuiz(doc, checkPool(doc));
+    return q ? { kind: "check", doc, quiz: q } : { kind: "new", doc };
+  }
   function checkPool(self) {
     return [...studiedDocs, ...sessionPool].filter((d) => d.word && d.word !== self.word);
   }
+  function markStudied(doc) {
+    if (!studiedDocs.some((d) => d.word === doc.word)) studiedDocs.push(doc);
+  }
   function checkPick(i) {
     if ((cur === null || cur === void 0 ? void 0 : cur.kind) !== "check" || quizAnswered) return;
+    markStudied(cur.doc);
     $$invalidate(6, quizPicked = i);
     $$invalidate(13, quizCorrect = i === cur.quiz.answer);
     if (quizCorrect) {
@@ -16995,8 +17558,23 @@ function instance6($$self, $$props, $$invalidate) {
   }
   function checkUnknown() {
     if ((cur === null || cur === void 0 ? void 0 : cur.kind) !== "check" || quizAnswered) return;
+    markStudied(cur.doc);
     insertNext({ kind: "study", doc: cur.doc });
     advance();
+  }
+  function checkEasy() {
+    const c = cur;
+    if (!c || c.kind !== "check" || quizAnswered) return;
+    studiedDocs = studiedDocs.filter((d) => d.word !== c.doc.word);
+    plugin.markMastered(c.doc.word);
+    $$invalidate(18, stats.easy++, stats);
+    masteredNow.push(c.doc.word);
+    advance();
+  }
+  function peekFull() {
+    if (peeking || !flipPending()) return;
+    cancelFlip();
+    $$invalidate(14, peeking = true);
   }
   function unknownWord() {
     if ((cur === null || cur === void 0 ? void 0 : cur.kind) !== "new") return;
@@ -17025,7 +17603,7 @@ function instance6($$self, $$props, $$invalidate) {
     if (!c || c.kind !== "study" && c.kind !== "confirm" && c.kind !== "restudy") return;
     studiedDocs = studiedDocs.filter((d) => d.word !== c.doc.word);
     plugin.markMastered(c.doc.word);
-    $$invalidate(17, stats.easy++, stats);
+    $$invalidate(18, stats.easy++, stats);
     masteredNow.push(c.doc.word);
     advance();
   }
@@ -17035,7 +17613,7 @@ function instance6($$self, $$props, $$invalidate) {
   function confirmNo() {
     if ((cur === null || cur === void 0 ? void 0 : cur.kind) !== "confirm") return;
     plugin.recordGrade(cur.doc.word, 1);
-    $$invalidate(17, stats.rev++, stats);
+    $$invalidate(18, stats.rev++, stats);
     insertNext({ kind: "study", doc: cur.doc });
     advance();
   }
@@ -17064,7 +17642,7 @@ function instance6($$self, $$props, $$invalidate) {
   function reviewEasy() {
     if ((cur === null || cur === void 0 ? void 0 : cur.kind) !== "review" || !revealed) return;
     plugin.markMastered(cur.doc.word);
-    $$invalidate(17, stats.rev++, stats);
+    $$invalidate(18, stats.rev++, stats);
     masteredNow.push(cur.doc.word);
     advance();
   }
@@ -17126,8 +17704,8 @@ function instance6($$self, $$props, $$invalidate) {
     $$invalidate(6, quizPicked = 0);
     $$invalidate(13, quizCorrect = ok);
     const r = plugin.recordGrade(cur.doc.word, ok ? 3 : 1);
-    if (!r.isNew) $$invalidate(17, stats.rev++, stats);
-    if (ok) $$invalidate(17, stats.quizOk++, stats);
+    if (!r.isNew) $$invalidate(18, stats.rev++, stats);
+    if (ok) $$invalidate(18, stats.quizOk++, stats);
     else quizWrong(cur.doc, cur.quiz);
     if (r.masteredNow) masteredNow.push(cur.doc.word);
     if (ok) {
@@ -17137,7 +17715,7 @@ function instance6($$self, $$props, $$invalidate) {
   }
   function quizWrong(doc, fallback) {
     var _a;
-    $$invalidate(17, stats.quizBad++, stats);
+    $$invalidate(18, stats.quizBad++, stats);
     if (!weakNow.includes(doc.word)) weakNow.push(doc.word);
     autoSpeak();
     if (!retested.has(doc.word)) {
@@ -17156,9 +17734,9 @@ function instance6($$self, $$props, $$invalidate) {
     $$invalidate(6, quizPicked = i);
     $$invalidate(13, quizCorrect = i === cur.quiz.answer);
     const r = plugin.recordGrade(cur.doc.word, quizCorrect ? 3 : 1);
-    if (!r.isNew) $$invalidate(17, stats.rev++, stats);
+    if (!r.isNew) $$invalidate(18, stats.rev++, stats);
     if (quizCorrect) {
-      $$invalidate(17, stats.quizOk++, stats);
+      $$invalidate(18, stats.quizOk++, stats);
       plugin.speakWord(cur.doc.word);
       armFlip();
     } else {
@@ -17175,7 +17753,7 @@ function instance6($$self, $$props, $$invalidate) {
     }
     $$invalidate(13, quizCorrect = false);
     const r = plugin.recordGrade(cur.doc.word, 1);
-    if (!r.isNew) $$invalidate(17, stats.rev++, stats);
+    if (!r.isNew) $$invalidate(18, stats.rev++, stats);
     quizWrong(cur.doc, cur.quiz);
     if (r.masteredNow) masteredNow.push(cur.doc.word);
   }
@@ -17242,16 +17820,16 @@ function instance6($$self, $$props, $$invalidate) {
     cancelFlip();
     plugin.stopSpeaking();
     $$invalidate(8, finished = true);
-    $$invalidate(14, exitedEarly = early);
+    $$invalidate(15, exitedEarly = early);
     $$invalidate(4, browseFrom = -1);
     $$invalidate(0, plugin.sessionActive = false, plugin);
-    $$invalidate(30, sessionMinutes = Math.max(1, Math.round((Date.now() - startedAt) / 6e4)));
-    $$invalidate(29, todayTotals = (_a = plugin.db.stats.days[fmtDate(Date.now())]) !== null && _a !== void 0 ? _a : { new: 0, rev: 0 });
-    $$invalidate(34, hardInTheme = hardInThemeLive());
-    $$invalidate(27, finishFresh = freshLeftCount());
+    $$invalidate(31, sessionMinutes = Math.max(1, Math.round((Date.now() - startedAt) / 6e4)));
+    $$invalidate(30, todayTotals = (_a = plugin.db.stats.days[fmtDate(Date.now())]) !== null && _a !== void 0 ? _a : { new: 0, rev: 0 });
+    $$invalidate(35, hardInTheme = hardInThemeLive());
+    $$invalidate(28, finishFresh = freshLeftCount());
     const now2 = Date.now();
     const tmrEnd = (/* @__PURE__ */ new Date()).setHours(24, 0, 0, 0) + 864e5;
-    $$invalidate(28, tomorrowDue = plugin.activeWords().filter((w) => {
+    $$invalidate(29, tomorrowDue = plugin.activeWords().filter((w) => {
       const p = plugin.db.progress[w.word];
       return p && !isMastered(p) && p.next > now2 && p.next <= tmrEnd;
     }).length);
@@ -17260,14 +17838,14 @@ function instance6($$self, $$props, $$invalidate) {
   }
   async function updateRemaining() {
     if (hardMode) {
-      $$invalidate(20, remaining = 0);
+      $$invalidate(21, remaining = 0);
       return;
     }
     try {
       const s = await plugin.buildSession(themeName || null, false);
-      $$invalidate(20, remaining = s.queue.length);
+      $$invalidate(21, remaining = s.queue.length);
     } catch (_a) {
-      $$invalidate(20, remaining = 0);
+      $$invalidate(21, remaining = 0);
     }
   }
   function resume() {
@@ -17276,11 +17854,11 @@ function instance6($$self, $$props, $$invalidate) {
       return;
     }
     if (flipPending() && idx + 1 >= cards.length) {
-      $$invalidate(14, exitedEarly = false);
+      $$invalidate(15, exitedEarly = false);
       return;
     }
     $$invalidate(8, finished = false);
-    $$invalidate(14, exitedEarly = false);
+    $$invalidate(15, exitedEarly = false);
     $$invalidate(0, plugin.sessionActive = true, plugin);
     landCurrent();
   }
@@ -17289,44 +17867,44 @@ function instance6($$self, $$props, $$invalidate) {
     try {
       s = await plugin.buildSession(themeName || null, false, extraNew);
     } catch (e) {
-      new import_obsidian12.Notice(`\u52A0\u8F7D\u65B0\u4E00\u8F6E\u5931\u8D25\uFF1A${e instanceof Error ? e.message : e}`);
+      new import_obsidian11.Notice(`\u52A0\u8F7D\u65B0\u4E00\u8F6E\u5931\u8D25\uFF1A${e instanceof Error ? e.message : e}`);
       return;
     }
     if (destroyed) return;
     if (!s.queue.length) {
-      $$invalidate(20, remaining = 0);
-      $$invalidate(26, doneFresh = freshLeftCount());
+      $$invalidate(21, remaining = 0);
+      $$invalidate(27, doneFresh = freshLeftCount());
       return;
     }
-    $$invalidate(16, dueTotal = s.dueTotal);
+    $$invalidate(17, dueTotal = s.dueTotal);
     sessionPool = themeName ? plugin.words.byTheme(themeName) : plugin.activeWords();
     $$invalidate(2, cards = [
       ...s.queue.slice(0, s.dueFirst).map((doc) => reviewCard(doc, sessionPool)),
-      ...s.queue.slice(s.dueFirst).map((doc) => ({ kind: "new", doc }))
+      ...s.queue.slice(s.dueFirst).map(newWordCard)
     ]);
     $$invalidate(3, idx = 0);
     $$invalidate(5, revealed = false);
     $$invalidate(6, quizPicked = -1);
     $$invalidate(7, quizGaveUp = false);
-    $$invalidate(36, spellInput = "");
-    $$invalidate(37, spellHinted = false);
-    $$invalidate(38, spellShowQ = false);
+    $$invalidate(37, spellInput = "");
+    $$invalidate(38, spellHinted = false);
+    $$invalidate(39, spellShowQ = false);
     studiedDocs = [];
     reinforcementBuilt = false;
     retested = /* @__PURE__ */ new Set();
-    $$invalidate(17, stats = {
+    $$invalidate(18, stats = {
       rev: 0,
       new: 0,
       easy: 0,
       quizOk: 0,
       quizBad: 0
     });
-    $$invalidate(18, masteredNow = []);
-    $$invalidate(19, weakNow = []);
+    $$invalidate(19, masteredNow = []);
+    $$invalidate(20, weakNow = []);
     startedAt = Date.now();
-    $$invalidate(20, remaining = -1);
+    $$invalidate(21, remaining = -1);
     $$invalidate(8, finished = false);
-    $$invalidate(23, done = false);
+    $$invalidate(24, done = false);
     $$invalidate(0, plugin.sessionActive = true, plugin);
     autoSpeak(cards[idx]);
   }
@@ -17338,7 +17916,7 @@ function instance6($$self, $$props, $$invalidate) {
     if (k === "?") {
       const tip = document.querySelector(".el-learn .el-helptip");
       if (tip) showTipBubble(tip, KEYS_TIP);
-      else new import_obsidian12.Notice(KEYS_TIP, 8e3);
+      else new import_obsidian11.Notice(KEYS_TIP, 8e3);
       return;
     }
     if (k === "Escape") {
@@ -17369,6 +17947,13 @@ function instance6($$self, $$props, $$invalidate) {
       } else if (!quizAnswered && k === "0") {
         if (cur.kind === "check") checkUnknown();
         else quizGiveUp();
+      } else if (!quizAnswered && cur.kind === "check" && k === "5") {
+        checkEasy();
+      } else if (cur.kind === "check" && peeking && (k === " " || k === "Enter")) {
+        e.preventDefault();
+        advance();
+      } else if (cur.kind === "check" && flipPending() && k === "ArrowLeft") {
+        peekFull();
       } else if (quizAnswered && !quizCorrect && k === " ") {
         e.preventDefault();
         advance();
@@ -17421,16 +18006,16 @@ function instance6($$self, $$props, $$invalidate) {
       studiedDocs = studiedDocs.filter((d) => d.word !== w);
       quizPool = quizPool.filter((d) => d.word !== w);
       sessionPool = sessionPool.filter((d) => d.word !== w);
-      $$invalidate(18, masteredNow = masteredNow.filter((x) => x !== w));
+      $$invalidate(19, masteredNow = masteredNow.filter((x) => x !== w));
       cancelFlip();
       $$invalidate(5, revealed = false);
       $$invalidate(6, quizPicked = -1);
       $$invalidate(7, quizGaveUp = false);
-      $$invalidate(36, spellInput = "");
-      $$invalidate(37, spellHinted = false);
-      $$invalidate(38, spellShowQ = false);
+      $$invalidate(37, spellInput = "");
+      $$invalidate(38, spellHinted = false);
+      $$invalidate(39, spellShowQ = false);
       if (!finished) settleTail();
-      plugin.deleteWord(w).then(() => new import_obsidian12.Notice(`\u5DF2\u5220\u9664\u300C${w}\u300D`)).catch((e) => new import_obsidian12.Notice(`\u5220\u9664\u5931\u8D25\uFF08\u300C${w}\u300D\u53EF\u80FD\u8FD8\u5728\u8BCD\u5E93\uFF09\uFF1A${e instanceof Error ? e.message : e}`));
+      plugin.deleteWord(w).then(() => new import_obsidian11.Notice(`\u5DF2\u5220\u9664\u300C${w}\u300D`)).catch((e) => new import_obsidian11.Notice(`\u5220\u9664\u5931\u8D25\uFF08\u300C${w}\u300D\u53EF\u80FD\u8FD8\u5728\u8BCD\u5E93\uFF09\uFF1A${e instanceof Error ? e.message : e}`));
     });
   }
   function back() {
@@ -17455,24 +18040,24 @@ function instance6($$self, $$props, $$invalidate) {
   const click_handler_10 = () => grade(2);
   const click_handler_11 = () => grade(3);
   const click_handler_12 = (word) => plugin.speakWord(word);
-  const click_handler_13 = () => $$invalidate(38, spellShowQ = true);
+  const click_handler_13 = () => $$invalidate(39, spellShowQ = true);
   function input_input_handler() {
     spellInput = this.value;
-    $$invalidate(36, spellInput);
+    $$invalidate(37, spellInput);
   }
   const click_handler_14 = (word) => plugin.speakWord(word);
-  const click_handler_15 = () => $$invalidate(37, spellHinted = true);
+  const click_handler_15 = () => $$invalidate(38, spellHinted = true);
   $$self.$$set = ($$props2) => {
     if ("plugin" in $$props2) $$invalidate(0, plugin = $$props2.plugin);
   };
   $$self.$$.update = () => {
     if ($$self.$$.dirty[0] & /*quizPicked, quizGaveUp*/
     192) {
-      $: $$invalidate(39, quizAnswered = quizPicked >= 0 || quizGaveUp);
+      $: $$invalidate(40, quizAnswered = quizPicked >= 0 || quizGaveUp);
     }
     if ($$self.$$.dirty[0] & /*audioMuted*/
     1024) {
-      $: $$invalidate(45, muteTip = audioMuted ? "\u5DF2\u9759\u97F3\uFF1A\u70B9\u51FB\u5F00\u542F\u5168\u5C40\u53D1\u97F3" : "\u53D1\u97F3\u5F00\u542F\u4E2D\uFF1A\u70B9\u51FB\u5168\u5C40\u9759\u97F3");
+      $: $$invalidate(46, muteTip = audioMuted ? "\u5DF2\u9759\u97F3\uFF1A\u70B9\u51FB\u5F00\u542F\u5168\u5C40\u53D1\u97F3" : "\u53D1\u97F3\u5F00\u542F\u4E2D\uFF1A\u70B9\u51FB\u5168\u5C40\u9759\u97F3");
     }
     if ($$self.$$.dirty[0] & /*cards*/
     4) {
@@ -17484,23 +18069,23 @@ function instance6($$self, $$props, $$invalidate) {
     }
     if ($$self.$$.dirty[0] & /*total, idx*/
     4104) {
-      $: $$invalidate(44, pct = total ? idx / total * 100 : 0);
+      $: $$invalidate(45, pct = total ? idx / total * 100 : 0);
     }
     if ($$self.$$.dirty[0] & /*browseFrom, cur*/
     2064) {
-      $: $$invalidate(43, roundLabel = browseFrom >= 0 ? "\u56DE\u770B" : (cur === null || cur === void 0 ? void 0 : cur.kind) === "review" ? cur.reverse ? "\u590D\u4E60 \xB7 \u770B\u4E49\u56DE\u5FC6" : "\u590D\u4E60 \xB7 \u770B\u8BCD\u56DE\u5FC6" : (cur === null || cur === void 0 ? void 0 : cur.kind) === "quiz" ? "\u5DE9\u56FA\u6D4B\u8BD5" : (cur === null || cur === void 0 ? void 0 : cur.kind) === "check" ? "\u8BA4\u8BC6\u9A8C\u8BC1" : "\u65B0\u8BCD");
+      $: $$invalidate(44, roundLabel = browseFrom >= 0 ? "\u56DE\u770B" : (cur === null || cur === void 0 ? void 0 : cur.kind) === "review" ? cur.reverse ? "\u590D\u4E60 \xB7 \u770B\u4E49\u56DE\u5FC6" : "\u590D\u4E60 \xB7 \u770B\u8BCD\u56DE\u5FC6" : (cur === null || cur === void 0 ? void 0 : cur.kind) === "quiz" ? "\u5DE9\u56FA\u6D4B\u8BD5" : (cur === null || cur === void 0 ? void 0 : cur.kind) === "check" ? "\u65B0\u8BCD\u5FEB\u6D4B" : "\u65B0\u8BCD");
     }
     if ($$self.$$.dirty[0] & /*themeName, cur*/
     2560) {
-      $: $$invalidate(42, themeLabel = themeName ? "" : (cur === null || cur === void 0 ? void 0 : cur.doc.themes.length) ? `${cur.doc.themes.join(" / ")} \xB7 ` : "");
+      $: $$invalidate(43, themeLabel = themeName ? "" : (cur === null || cur === void 0 ? void 0 : cur.doc.themes.length) ? `${cur.doc.themes.join(" / ")} \xB7 ` : "");
     }
     if ($$self.$$.dirty[0] & /*cur*/
     2048) {
-      $: $$invalidate(41, reverseHint = (cur === null || cur === void 0 ? void 0 : cur.kind) === "review" && cur.reverse ? pickClozeHint(cur.doc) : null);
+      $: $$invalidate(42, reverseHint = (cur === null || cur === void 0 ? void 0 : cur.kind) === "review" && cur.reverse ? pickClozeHint(cur.doc) : null);
     }
     if ($$self.$$.dirty[0] & /*cur, revealed*/
     2080) {
-      $: $$invalidate(40, showFull = (cur === null || cur === void 0 ? void 0 : cur.kind) !== "restudy" || revealed);
+      $: $$invalidate(41, showFull = (cur === null || cur === void 0 ? void 0 : cur.kind) !== "restudy" || revealed);
     }
     if ($$self.$$.dirty[0] & /*cur, browseFrom*/
     2064) {
@@ -17534,6 +18119,7 @@ function instance6($$self, $$props, $$invalidate) {
     cur,
     total,
     quizCorrect,
+    peeking,
     exitedEarly,
     hardMode,
     dueTotal,
@@ -17575,6 +18161,8 @@ function instance6($$self, $$props, $$invalidate) {
     knowIt,
     checkPick,
     checkUnknown,
+    checkEasy,
+    peekFull,
     unknownWord,
     studied,
     restudy,
@@ -17628,7 +18216,7 @@ var LearnSession = class extends SvelteComponent {
 var LearnSession_default = LearnSession;
 
 // src/ui/learn-view.ts
-var LearnView = class extends import_obsidian13.ItemView {
+var LearnView = class extends import_obsidian12.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
@@ -17662,41 +18250,41 @@ var LearnView = class extends import_obsidian13.ItemView {
 };
 
 // src/ui/theme-view.ts
-var import_obsidian15 = require("obsidian");
+var import_obsidian14 = require("obsidian");
 
 // src/components/ThemePanel.svelte
-var import_obsidian14 = require("obsidian");
+var import_obsidian13 = require("obsidian");
 function get_each_context6(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[54] = list[i];
+  child_ctx[55] = list[i];
   return child_ctx;
 }
 function get_each_context_14(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[57] = list[i];
-  child_ctx[59] = i;
+  child_ctx[58] = list[i];
+  child_ctx[60] = i;
   return child_ctx;
 }
 function get_each_context_22(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[60] = list[i];
+  child_ctx[61] = list[i];
   return child_ctx;
 }
 function get_each_context_32(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[63] = list[i];
+  child_ctx[64] = list[i];
   return child_ctx;
 }
 function get_each_context_42(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[59] = list[i];
-  child_ctx[67] = i;
+  child_ctx[60] = list[i];
+  child_ctx[68] = i;
   return child_ctx;
 }
 function get_each_context_52(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[59] = list[i];
-  child_ctx[67] = i;
+  child_ctx[60] = list[i];
+  child_ctx[68] = i;
   return child_ctx;
 }
 function create_if_block_154(ctx) {
@@ -17726,7 +18314,7 @@ function create_if_block_154(ctx) {
           button,
           "click",
           /*click_handler*/
-          ctx[32]
+          ctx[33]
         );
         mounted = true;
       }
@@ -17953,7 +18541,7 @@ function create_if_block_84(ctx) {
           div3,
           "mouseleave",
           /*mouseleave_handler*/
-          ctx[36]
+          ctx[37]
         );
         mounted = true;
       }
@@ -18064,11 +18652,11 @@ function create_if_block_104(ctx) {
   let if_block1_anchor;
   let if_block0 = (
     /*d*/
-    ctx[59].new > 0 && create_if_block_124(ctx)
+    ctx[60].new > 0 && create_if_block_124(ctx)
   );
   let if_block1 = (
     /*d*/
-    ctx[59].rev > 0 && create_if_block_114(ctx)
+    ctx[60].rev > 0 && create_if_block_114(ctx)
   );
   return {
     c() {
@@ -18086,7 +18674,7 @@ function create_if_block_104(ctx) {
     p(ctx2, dirty) {
       if (
         /*d*/
-        ctx2[59].new > 0
+        ctx2[60].new > 0
       ) {
         if (if_block0) {
           if_block0.p(ctx2, dirty);
@@ -18101,7 +18689,7 @@ function create_if_block_104(ctx) {
       }
       if (
         /*d*/
-        ctx2[59].rev > 0
+        ctx2[60].rev > 0
       ) {
         if (if_block1) {
           if_block1.p(ctx2, dirty);
@@ -18137,14 +18725,14 @@ function create_if_block_124(ctx) {
         /*barH*/
         ctx[17](
           /*d*/
-          ctx[59].new
+          ctx[60].new
         ) + "px"
       );
       toggle_class(
         div,
         "seg-top",
         /*d*/
-        ctx[59].rev === 0
+        ctx[60].rev === 0
       );
     },
     m(target, anchor) {
@@ -18159,7 +18747,7 @@ function create_if_block_124(ctx) {
           /*barH*/
           ctx2[17](
             /*d*/
-            ctx2[59].new
+            ctx2[60].new
           ) + "px"
         );
       }
@@ -18169,7 +18757,7 @@ function create_if_block_124(ctx) {
           div,
           "seg-top",
           /*d*/
-          ctx2[59].rev === 0
+          ctx2[60].rev === 0
         );
       }
     },
@@ -18192,7 +18780,7 @@ function create_if_block_114(ctx) {
         /*barH*/
         ctx[17](
           /*d*/
-          ctx[59].rev
+          ctx[60].rev
         ) + "px"
       );
     },
@@ -18208,7 +18796,7 @@ function create_if_block_114(ctx) {
           /*barH*/
           ctx2[17](
             /*d*/
-            ctx2[59].rev
+            ctx2[60].rev
           ) + "px"
         );
       }
@@ -18230,8 +18818,8 @@ function create_each_block_52(ctx) {
   function select_block_type(ctx2, dirty) {
     if (
       /*d*/
-      ctx2[59].rev + /*d*/
-      ctx2[59].new > 0
+      ctx2[60].rev + /*d*/
+      ctx2[60].new > 0
     ) return create_if_block_104;
     return create_else_block_23;
   }
@@ -18240,27 +18828,27 @@ function create_each_block_52(ctx) {
   function mouseenter_handler() {
     return (
       /*mouseenter_handler*/
-      ctx[33](
+      ctx[34](
         /*i*/
-        ctx[67]
+        ctx[68]
       )
     );
   }
   function click_handler_1() {
     return (
       /*click_handler_1*/
-      ctx[34](
+      ctx[35](
         /*i*/
-        ctx[67]
+        ctx[68]
       )
     );
   }
   function keydown_handler(...args) {
     return (
       /*keydown_handler*/
-      ctx[35](
+      ctx[36](
         /*i*/
-        ctx[67],
+        ctx[68],
         ...args
       )
     );
@@ -18273,13 +18861,13 @@ function create_each_block_52(ctx) {
       attr(div, "class", "el-chart-col");
       attr(div, "role", "img");
       attr(div, "aria-label", div_aria_label_value = /*d*/
-      ctx[59].date + "\uFF1A\u65B0\u5B66 " + /*d*/
-      ctx[59].new + "\uFF0C\u590D\u4E60 " + /*d*/
-      ctx[59].rev);
+      ctx[60].date + "\uFF1A\u65B0\u5B66 " + /*d*/
+      ctx[60].new + "\uFF0C\u590D\u4E60 " + /*d*/
+      ctx[60].rev);
       attr(div, "title", div_title_value = /*d*/
-      ctx[59].date + "\uFF1A\u65B0\u5B66 " + /*d*/
-      ctx[59].new + " \xB7 \u590D\u4E60 " + /*d*/
-      ctx[59].rev);
+      ctx[60].date + "\uFF1A\u65B0\u5B66 " + /*d*/
+      ctx[60].new + " \xB7 \u590D\u4E60 " + /*d*/
+      ctx[60].rev);
       attr(div, "tabindex", "-1");
     },
     m(target, anchor) {
@@ -18309,16 +18897,16 @@ function create_each_block_52(ctx) {
       }
       if (dirty[0] & /*days*/
       4 && div_aria_label_value !== (div_aria_label_value = /*d*/
-      ctx[59].date + "\uFF1A\u65B0\u5B66 " + /*d*/
-      ctx[59].new + "\uFF0C\u590D\u4E60 " + /*d*/
-      ctx[59].rev)) {
+      ctx[60].date + "\uFF1A\u65B0\u5B66 " + /*d*/
+      ctx[60].new + "\uFF0C\u590D\u4E60 " + /*d*/
+      ctx[60].rev)) {
         attr(div, "aria-label", div_aria_label_value);
       }
       if (dirty[0] & /*days*/
       4 && div_title_value !== (div_title_value = /*d*/
-      ctx[59].date + "\uFF1A\u65B0\u5B66 " + /*d*/
-      ctx[59].new + " \xB7 \u590D\u4E60 " + /*d*/
-      ctx[59].rev)) {
+      ctx[60].date + "\uFF1A\u65B0\u5B66 " + /*d*/
+      ctx[60].new + " \xB7 \u590D\u4E60 " + /*d*/
+      ctx[60].rev)) {
         attr(div, "title", div_title_value);
       }
     },
@@ -18336,11 +18924,11 @@ function create_each_block_42(ctx) {
   let span;
   let t_1_value = (
     /*i*/
-    (ctx[67] === 0 || /*i*/
-    ctx[67] === 7 || /*i*/
-    ctx[67] === 13 ? (
+    (ctx[68] === 0 || /*i*/
+    ctx[68] === 7 || /*i*/
+    ctx[68] === 13 ? (
       /*d*/
-      ctx[59].label
+      ctx[60].label
     ) : "") + ""
   );
   let t_1;
@@ -18357,11 +18945,11 @@ function create_each_block_42(ctx) {
     p(ctx2, dirty) {
       if (dirty[0] & /*days*/
       4 && t_1_value !== (t_1_value = /*i*/
-      (ctx2[67] === 0 || /*i*/
-      ctx2[67] === 7 || /*i*/
-      ctx2[67] === 13 ? (
+      (ctx2[68] === 0 || /*i*/
+      ctx2[68] === 7 || /*i*/
+      ctx2[68] === 13 ? (
         /*d*/
-        ctx2[59].label
+        ctx2[60].label
       ) : "") + "")) set_data(t_1, t_1_value);
     },
     d(detaching) {
@@ -18461,7 +19049,7 @@ function create_else_block_14(ctx) {
   );
   const get_key = (ctx2) => (
     /*t*/
-    ctx2[60].name
+    ctx2[61].name
   );
   for (let i = 0; i < each_value_2.length; i += 1) {
     let child_ctx = get_each_context_22(ctx, each_value_2, i);
@@ -18555,20 +19143,20 @@ function create_if_block_74(ctx) {
   let t2;
   let t3_value = (
     /*t*/
-    ctx[60].count - /*t*/
-    ctx[60].fresh + ""
+    ctx[61].count - /*t*/
+    ctx[61].fresh + ""
   );
   let t3;
   let t4;
   let t5_value = (
     /*t*/
-    ctx[60].count + ""
+    ctx[61].count + ""
   );
   let t5;
   let t6;
   let t7_value = (
     /*t*/
-    ctx[60].mastered + ""
+    ctx[61].mastered + ""
   );
   let t7;
   return {
@@ -18591,27 +19179,27 @@ function create_if_block_74(ctx) {
         span0,
         "width",
         /*t*/
-        ctx[60].mastered / /*t*/
-        ctx[60].count * 100 + "%"
+        ctx[61].mastered / /*t*/
+        ctx[61].count * 100 + "%"
       );
       attr(span1, "class", "el-theme-bar-seg is-learning");
       set_style(
         span1,
         "width",
         /*t*/
-        (ctx[60].count - /*t*/
-        ctx[60].fresh - /*t*/
-        ctx[60].mastered) / /*t*/
-        ctx[60].count * 100 + "%"
+        (ctx[61].count - /*t*/
+        ctx[61].fresh - /*t*/
+        ctx[61].mastered) / /*t*/
+        ctx[61].count * 100 + "%"
       );
       attr(div0, "class", "el-theme-bar");
       attr(div0, "role", "img");
       attr(div0, "aria-label", div0_aria_label_value = "\u5DF2\u5B66 " + /*t*/
-      (ctx[60].count - /*t*/
-      ctx[60].fresh) + "/" + /*t*/
-      ctx[60].count + "\uFF0C\u5DF2\u638C\u63E1 " + /*t*/
-      ctx[60].mastered + "\uFF0C\u672A\u5B66 " + /*t*/
-      ctx[60].fresh);
+      (ctx[61].count - /*t*/
+      ctx[61].fresh) + "/" + /*t*/
+      ctx[61].count + "\uFF0C\u5DF2\u638C\u63E1 " + /*t*/
+      ctx[61].mastered + "\uFF0C\u672A\u5B66 " + /*t*/
+      ctx[61].fresh);
       attr(span2, "class", "el-theme-bar-label");
       attr(div1, "class", "el-theme-bar-row");
     },
@@ -18637,8 +19225,8 @@ function create_if_block_74(ctx) {
           span0,
           "width",
           /*t*/
-          ctx2[60].mastered / /*t*/
-          ctx2[60].count * 100 + "%"
+          ctx2[61].mastered / /*t*/
+          ctx2[61].count * 100 + "%"
         );
       }
       if (dirty[0] & /*rows*/
@@ -18647,31 +19235,31 @@ function create_if_block_74(ctx) {
           span1,
           "width",
           /*t*/
-          (ctx2[60].count - /*t*/
-          ctx2[60].fresh - /*t*/
-          ctx2[60].mastered) / /*t*/
-          ctx2[60].count * 100 + "%"
+          (ctx2[61].count - /*t*/
+          ctx2[61].fresh - /*t*/
+          ctx2[61].mastered) / /*t*/
+          ctx2[61].count * 100 + "%"
         );
       }
       if (dirty[0] & /*rows*/
       8 && div0_aria_label_value !== (div0_aria_label_value = "\u5DF2\u5B66 " + /*t*/
-      (ctx2[60].count - /*t*/
-      ctx2[60].fresh) + "/" + /*t*/
-      ctx2[60].count + "\uFF0C\u5DF2\u638C\u63E1 " + /*t*/
-      ctx2[60].mastered + "\uFF0C\u672A\u5B66 " + /*t*/
-      ctx2[60].fresh)) {
+      (ctx2[61].count - /*t*/
+      ctx2[61].fresh) + "/" + /*t*/
+      ctx2[61].count + "\uFF0C\u5DF2\u638C\u63E1 " + /*t*/
+      ctx2[61].mastered + "\uFF0C\u672A\u5B66 " + /*t*/
+      ctx2[61].fresh)) {
         attr(div0, "aria-label", div0_aria_label_value);
       }
       if (dirty[0] & /*rows*/
       8 && t3_value !== (t3_value = /*t*/
-      ctx2[60].count - /*t*/
-      ctx2[60].fresh + "")) set_data(t3, t3_value);
+      ctx2[61].count - /*t*/
+      ctx2[61].fresh + "")) set_data(t3, t3_value);
       if (dirty[0] & /*rows*/
       8 && t5_value !== (t5_value = /*t*/
-      ctx2[60].count + "")) set_data(t5, t5_value);
+      ctx2[61].count + "")) set_data(t5, t5_value);
       if (dirty[0] & /*rows*/
       8 && t7_value !== (t7_value = /*t*/
-      ctx2[60].mastered + "")) set_data(t7, t7_value);
+      ctx2[61].mastered + "")) set_data(t7, t7_value);
     },
     d(detaching) {
       if (detaching) {
@@ -18680,11 +19268,11 @@ function create_if_block_74(ctx) {
     }
   };
 }
-function create_if_block_68(ctx) {
+function create_if_block_611(ctx) {
   let t0;
   let t1_value = (
     /*t*/
-    ctx[60].learn + ""
+    ctx[61].learn + ""
   );
   let t1;
   return {
@@ -18699,7 +19287,7 @@ function create_if_block_68(ctx) {
     p(ctx2, dirty) {
       if (dirty[0] & /*rows*/
       8 && t1_value !== (t1_value = /*t*/
-      ctx2[60].learn + "")) set_data(t1, t1_value);
+      ctx2[61].learn + "")) set_data(t1, t1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -18714,7 +19302,7 @@ function create_if_block_511(ctx) {
   let t0;
   let t1_value = (
     /*t*/
-    ctx[60].hard + ""
+    ctx[61].hard + ""
   );
   let t1;
   let span_title_value;
@@ -18723,18 +19311,18 @@ function create_if_block_511(ctx) {
   function click_handler_4() {
     return (
       /*click_handler_4*/
-      ctx[39](
+      ctx[40](
         /*t*/
-        ctx[60]
+        ctx[61]
       )
     );
   }
   function keydown_handler_1(...args) {
     return (
       /*keydown_handler_1*/
-      ctx[40](
+      ctx[41](
         /*t*/
-        ctx[60],
+        ctx[61],
         ...args
       )
     );
@@ -18747,7 +19335,7 @@ function create_if_block_511(ctx) {
       set_style(span, "color", "var(--text-error)");
       set_style(span, "cursor", "pointer");
       attr(span, "title", span_title_value = "\u70B9\u51FB\u5F00\u59CB\u300C" + /*t*/
-      ctx[60].name + "\u300D\u96BE\u8BCD\u4E13\u9879");
+      ctx[61].name + "\u300D\u96BE\u8BCD\u4E13\u9879");
       attr(span, "role", "button");
       attr(span, "tabindex", "-1");
     },
@@ -18767,10 +19355,10 @@ function create_if_block_511(ctx) {
       ctx = new_ctx;
       if (dirty[0] & /*rows*/
       8 && t1_value !== (t1_value = /*t*/
-      ctx[60].hard + "")) set_data(t1, t1_value);
+      ctx[61].hard + "")) set_data(t1, t1_value);
       if (dirty[0] & /*rows*/
       8 && span_title_value !== (span_title_value = "\u70B9\u51FB\u5F00\u59CB\u300C" + /*t*/
-      ctx[60].name + "\u300D\u96BE\u8BCD\u4E13\u9879")) {
+      ctx[61].name + "\u300D\u96BE\u8BCD\u4E13\u9879")) {
         attr(span, "title", span_title_value);
       }
     },
@@ -18789,11 +19377,11 @@ function create_if_block_410(ctx) {
   let each_1_lookup = /* @__PURE__ */ new Map();
   let each_value_3 = ensure_array_like(
     /*t*/
-    ctx[60].keywords
+    ctx[61].keywords
   );
   const get_key = (ctx2) => (
     /*k*/
-    ctx2[63]
+    ctx2[64]
   );
   for (let i = 0; i < each_value_3.length; i += 1) {
     let child_ctx = get_each_context_32(ctx, each_value_3, i);
@@ -18821,7 +19409,7 @@ function create_if_block_410(ctx) {
       8) {
         each_value_3 = ensure_array_like(
           /*t*/
-          ctx2[60].keywords
+          ctx2[61].keywords
         );
         each_blocks = update_keyed_each(each_blocks, dirty, get_key, 1, ctx2, each_value_3, each_1_lookup, div, destroy_block, create_each_block_32, null, get_each_context_32);
       }
@@ -18840,7 +19428,7 @@ function create_each_block_32(key_1, ctx) {
   let span;
   let t_1_value = (
     /*k*/
-    ctx[63] + ""
+    ctx[64] + ""
   );
   let t_1;
   return {
@@ -18860,7 +19448,7 @@ function create_each_block_32(key_1, ctx) {
       ctx = new_ctx;
       if (dirty[0] & /*rows*/
       8 && t_1_value !== (t_1_value = /*k*/
-      ctx[63] + "")) set_data(t_1, t_1_value);
+      ctx[64] + "")) set_data(t_1, t_1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -18882,7 +19470,7 @@ function create_each_block_22(key_1, ctx) {
   let div1;
   let t4_value = (
     /*t*/
-    ctx[60].name + ""
+    ctx[61].name + ""
   );
   let t4;
   let t5;
@@ -18891,20 +19479,20 @@ function create_each_block_22(key_1, ctx) {
   let t7;
   let t8_value = (
     /*t*/
-    ctx[60].todayNew + ""
+    ctx[61].todayNew + ""
   );
   let t8;
   let t9;
   let t10_value = (
     /*t*/
-    ctx[60].due + ""
+    ctx[61].due + ""
   );
   let t10;
   let t11;
   let t12;
   let t13_value = (
     /*t*/
-    ctx[60].fresh + ""
+    ctx[61].fresh + ""
   );
   let t13;
   let t14;
@@ -18922,52 +19510,52 @@ function create_each_block_22(key_1, ctx) {
   function click_handler_2() {
     return (
       /*click_handler_2*/
-      ctx[37](
+      ctx[38](
         /*t*/
-        ctx[60]
+        ctx[61]
       )
     );
   }
   function click_handler_3() {
     return (
       /*click_handler_3*/
-      ctx[38](
+      ctx[39](
         /*t*/
-        ctx[60]
+        ctx[61]
       )
     );
   }
   let if_block0 = (
     /*t*/
-    ctx[60].count > 0 && create_if_block_74(ctx)
+    ctx[61].count > 0 && create_if_block_74(ctx)
   );
   let if_block1 = (
     /*t*/
-    ctx[60].learn > 0 && create_if_block_68(ctx)
+    ctx[61].learn > 0 && create_if_block_611(ctx)
   );
   let if_block2 = (
     /*t*/
-    ctx[60].hard > 0 && create_if_block_511(ctx)
+    ctx[61].hard > 0 && create_if_block_511(ctx)
   );
   let if_block3 = (
     /*t*/
-    ctx[60].keywords.length && create_if_block_410(ctx)
+    ctx[61].keywords.length && create_if_block_410(ctx)
   );
   function click_handler_5() {
     return (
       /*click_handler_5*/
-      ctx[41](
+      ctx[42](
         /*t*/
-        ctx[60]
+        ctx[61]
       )
     );
   }
   function keydown_handler_2(...args) {
     return (
       /*keydown_handler_2*/
-      ctx[42](
+      ctx[43](
         /*t*/
-        ctx[60],
+        ctx[61],
         ...args
       )
     );
@@ -18975,27 +19563,27 @@ function create_each_block_22(key_1, ctx) {
   function click_handler_6() {
     return (
       /*click_handler_6*/
-      ctx[43](
+      ctx[44](
         /*t*/
-        ctx[60]
+        ctx[61]
       )
     );
   }
   function click_handler_7() {
     return (
       /*click_handler_7*/
-      ctx[44](
+      ctx[45](
         /*t*/
-        ctx[60]
+        ctx[61]
       )
     );
   }
   function click_handler_8() {
     return (
       /*click_handler_8*/
-      ctx[45](
+      ctx[46](
         /*t*/
-        ctx[60]
+        ctx[61]
       )
     );
   }
@@ -19047,12 +19635,12 @@ function create_each_block_22(key_1, ctx) {
       attr(button1, "type", "button");
       attr(button1, "class", "el-theme-pin");
       attr(button1, "title", button1_title_value = /*t*/
-      ctx[60].pinned ? "\u53D6\u6D88\u7F6E\u9876" : "\u7F6E\u9876\uFF08\u6392\u5728\u5217\u8868\u6700\u524D\uFF09");
+      ctx[61].pinned ? "\u53D6\u6D88\u7F6E\u9876" : "\u7F6E\u9876\uFF08\u6392\u5728\u5217\u8868\u6700\u524D\uFF09");
       toggle_class(
         button1,
         "is-pinned",
         /*t*/
-        ctx[60].pinned
+        ctx[61].pinned
       );
       attr(div0, "class", "el-theme-corner");
       attr(div1, "class", "el-theme-name");
@@ -19118,7 +19706,7 @@ function create_each_block_22(key_1, ctx) {
       ctx = new_ctx;
       if (dirty[0] & /*rows*/
       8 && button1_title_value !== (button1_title_value = /*t*/
-      ctx[60].pinned ? "\u53D6\u6D88\u7F6E\u9876" : "\u7F6E\u9876\uFF08\u6392\u5728\u5217\u8868\u6700\u524D\uFF09")) {
+      ctx[61].pinned ? "\u53D6\u6D88\u7F6E\u9876" : "\u7F6E\u9876\uFF08\u6392\u5728\u5217\u8868\u6700\u524D\uFF09")) {
         attr(button1, "title", button1_title_value);
       }
       if (dirty[0] & /*rows*/
@@ -19127,15 +19715,15 @@ function create_each_block_22(key_1, ctx) {
           button1,
           "is-pinned",
           /*t*/
-          ctx[60].pinned
+          ctx[61].pinned
         );
       }
       if (dirty[0] & /*rows*/
       8 && t4_value !== (t4_value = /*t*/
-      ctx[60].name + "")) set_data(t4, t4_value);
+      ctx[61].name + "")) set_data(t4, t4_value);
       if (
         /*t*/
-        ctx[60].count > 0
+        ctx[61].count > 0
       ) {
         if (if_block0) {
           if_block0.p(ctx, dirty);
@@ -19150,18 +19738,18 @@ function create_each_block_22(key_1, ctx) {
       }
       if (dirty[0] & /*rows*/
       8 && t8_value !== (t8_value = /*t*/
-      ctx[60].todayNew + "")) set_data(t8, t8_value);
+      ctx[61].todayNew + "")) set_data(t8, t8_value);
       if (dirty[0] & /*rows*/
       8 && t10_value !== (t10_value = /*t*/
-      ctx[60].due + "")) set_data(t10, t10_value);
+      ctx[61].due + "")) set_data(t10, t10_value);
       if (
         /*t*/
-        ctx[60].learn > 0
+        ctx[61].learn > 0
       ) {
         if (if_block1) {
           if_block1.p(ctx, dirty);
         } else {
-          if_block1 = create_if_block_68(ctx);
+          if_block1 = create_if_block_611(ctx);
           if_block1.c();
           if_block1.m(div2, t12);
         }
@@ -19171,10 +19759,10 @@ function create_each_block_22(key_1, ctx) {
       }
       if (dirty[0] & /*rows*/
       8 && t13_value !== (t13_value = /*t*/
-      ctx[60].fresh + "")) set_data(t13, t13_value);
+      ctx[61].fresh + "")) set_data(t13, t13_value);
       if (
         /*t*/
-        ctx[60].hard > 0
+        ctx[61].hard > 0
       ) {
         if (if_block2) {
           if_block2.p(ctx, dirty);
@@ -19189,7 +19777,7 @@ function create_each_block_22(key_1, ctx) {
       }
       if (
         /*t*/
-        ctx[60].keywords.length
+        ctx[61].keywords.length
       ) {
         if (if_block3) {
           if_block3.p(ctx, dirty);
@@ -19238,7 +19826,7 @@ function create_if_block6(ctx) {
     var _a;
     return (
       /*w*/
-      (_a = ctx2[54].cells[0]) == null ? void 0 : _a.date
+      (_a = ctx2[55].cells[0]) == null ? void 0 : _a.date
     );
   };
   for (let i = 0; i < each_value.length; i += 1) {
@@ -19350,18 +19938,18 @@ function create_if_block_115(ctx) {
   function click_handler_9() {
     return (
       /*click_handler_9*/
-      ctx[46](
+      ctx[47](
         /*c*/
-        ctx[57]
+        ctx[58]
       )
     );
   }
   function keydown_handler_3(...args) {
     return (
       /*keydown_handler_3*/
-      ctx[47](
+      ctx[48](
         /*c*/
-        ctx[57],
+        ctx[58],
         ...args
       )
     );
@@ -19372,17 +19960,17 @@ function create_if_block_115(ctx) {
       attr(i, "class", i_class_value = "el-heat-cell h" + /*heatLevel*/
       ctx[18](
         /*c*/
-        ctx[57].n
+        ctx[58].n
       ));
       attr(i, "title", i_title_value = /*cellTip*/
       ctx[19](
         /*c*/
-        ctx[57]
+        ctx[58]
       ));
       attr(i, "aria-label", i_aria_label_value = /*cellTip*/
       ctx[19](
         /*c*/
-        ctx[57]
+        ctx[58]
       ));
       attr(i, "role", "button");
       attr(i, "tabindex", "-1");
@@ -19390,7 +19978,7 @@ function create_if_block_115(ctx) {
         i,
         "is-today",
         /*c*/
-        ctx[57].isNew
+        ctx[58].isNew
       );
     },
     m(target, anchor) {
@@ -19409,7 +19997,7 @@ function create_if_block_115(ctx) {
       1024 && i_class_value !== (i_class_value = "el-heat-cell h" + /*heatLevel*/
       ctx[18](
         /*c*/
-        ctx[57].n
+        ctx[58].n
       ))) {
         attr(i, "class", i_class_value);
       }
@@ -19417,7 +20005,7 @@ function create_if_block_115(ctx) {
       1024 && i_title_value !== (i_title_value = /*cellTip*/
       ctx[19](
         /*c*/
-        ctx[57]
+        ctx[58]
       ))) {
         attr(i, "title", i_title_value);
       }
@@ -19425,7 +20013,7 @@ function create_if_block_115(ctx) {
       1024 && i_aria_label_value !== (i_aria_label_value = /*cellTip*/
       ctx[19](
         /*c*/
-        ctx[57]
+        ctx[58]
       ))) {
         attr(i, "aria-label", i_aria_label_value);
       }
@@ -19435,7 +20023,7 @@ function create_if_block_115(ctx) {
           i,
           "is-today",
           /*c*/
-          ctx[57].isNew
+          ctx[58].isNew
         );
       }
     },
@@ -19454,7 +20042,7 @@ function create_each_block_14(key_1, ctx) {
   function select_block_type_2(ctx2, dirty) {
     if (
       /*c*/
-      ctx2[57]
+      ctx2[58]
     ) return create_if_block_115;
     return create_else_block5;
   }
@@ -19501,7 +20089,7 @@ function create_each_block6(key_1, ctx) {
   let div0;
   let t0_value = (
     /*w*/
-    ctx[54].month + ""
+    ctx[55].month + ""
   );
   let t0;
   let t1;
@@ -19510,11 +20098,11 @@ function create_each_block6(key_1, ctx) {
   let t2;
   let each_value_1 = ensure_array_like(
     /*w*/
-    ctx[54].cells
+    ctx[55].cells
   );
   const get_key = (ctx2) => (
     /*d*/
-    ctx2[59]
+    ctx2[60]
   );
   for (let i = 0; i < each_value_1.length; i += 1) {
     let child_ctx = get_each_context_14(ctx, each_value_1, i);
@@ -19553,12 +20141,12 @@ function create_each_block6(key_1, ctx) {
       ctx = new_ctx;
       if (dirty[0] & /*heat*/
       1024 && t0_value !== (t0_value = /*w*/
-      ctx[54].month + "")) set_data(t0, t0_value);
+      ctx[55].month + "")) set_data(t0, t0_value);
       if (dirty[0] & /*heatLevel, heat, cellTip*/
       787456) {
         each_value_1 = ensure_array_like(
           /*w*/
-          ctx[54].cells
+          ctx[55].cells
         );
         each_blocks = update_keyed_each(each_blocks, dirty, get_key, 1, ctx, each_value_1, each_1_lookup, div1, destroy_block, create_each_block_14, t2, get_each_context_14);
       }
@@ -19586,53 +20174,55 @@ function create_fragment7(ctx) {
   let t4;
   let button2;
   let t6;
-  let t7;
   let button3;
-  let icon_action_1;
   let t8;
   let t9;
-  let div2;
+  let button4;
+  let icon_action_1;
   let t10;
   let t11;
+  let div2;
   let t12;
   let t13;
   let t14;
   let t15;
   let t16;
-  let t17_value = (
-    /*totals*/
-    ctx[4].due + ""
-  );
   let t17;
   let t18;
   let t19_value = (
     /*totals*/
-    ctx[4].learn + ""
+    ctx[4].due + ""
   );
   let t19;
   let t20;
   let t21_value = (
     /*totals*/
-    ctx[4].mastered + ""
+    ctx[4].learn + ""
   );
   let t21;
   let t22;
   let t23_value = (
     /*totals*/
-    ctx[4].words + ""
+    ctx[4].mastered + ""
   );
   let t23;
   let t24;
+  let t25_value = (
+    /*totals*/
+    ctx[4].words + ""
+  );
   let t25;
-  let t26_value = (
+  let t26;
+  let t27;
+  let t28_value = (
     /*plugin*/
     ctx[0].db.stats.streak + ""
   );
-  let t26;
-  let t27;
   let t28;
   let t29;
   let t30;
+  let t31;
+  let t32;
   let mounted;
   let dispose;
   let if_block0 = (
@@ -19680,48 +20270,51 @@ function create_fragment7(ctx) {
       button1.textContent = "\u67E5\u8BCD";
       t4 = space();
       button2 = element("button");
-      button2.textContent = "\u65B0\u5EFA";
+      button2.textContent = "\u7FFB\u8BD1";
       t6 = space();
-      if (if_block0) if_block0.c();
-      t7 = space();
       button3 = element("button");
+      button3.textContent = "\u65B0\u5EFA";
       t8 = space();
-      if (if_block1) if_block1.c();
+      if (if_block0) if_block0.c();
       t9 = space();
+      button4 = element("button");
+      t10 = space();
+      if (if_block1) if_block1.c();
+      t11 = space();
       div2 = element("div");
-      t10 = text("\u4ECA\u65E5 \u65B0\u5B66 ");
-      t11 = text(
+      t12 = text("\u4ECA\u65E5 \u65B0\u5B66 ");
+      t13 = text(
         /*todayCount*/
         ctx[6]
       );
-      t12 = text(" \xB7 \u590D\u4E60 ");
-      t13 = text(
+      t14 = text(" \xB7 \u590D\u4E60 ");
+      t15 = text(
         /*todayRev*/
         ctx[7]
       );
-      t14 = text(" \xB7 \u5F85\u5B66 ");
-      t15 = text(
+      t16 = text(" \xB7 \u5F85\u5B66 ");
+      t17 = text(
         /*todayPending*/
         ctx[5]
       );
-      t16 = text(" \xB7 \u5F85\u590D\u4E60 ");
-      t17 = text(t17_value);
-      t18 = text(" \xB7 \u5B66\u4E60\u4E2D ");
+      t18 = text(" \xB7 \u5F85\u590D\u4E60 ");
       t19 = text(t19_value);
-      t20 = text(" \xB7 \u638C\u63E1\n    ");
+      t20 = text(" \xB7 \u5B66\u4E60\u4E2D ");
       t21 = text(t21_value);
-      t22 = text("/");
+      t22 = text(" \xB7 \u638C\u63E1\n    ");
       t23 = text(t23_value);
-      t24 = space();
+      t24 = text("/");
+      t25 = text(t25_value);
+      t26 = space();
       if (if_block2) if_block2.c();
-      t25 = text("\n    \xB7 \u8FDE\u7EED\u6253\u5361 ");
-      t26 = text(t26_value);
-      t27 = text(" \u5929");
-      t28 = space();
-      if (if_block3) if_block3.c();
-      t29 = space();
-      if_block4.c();
+      t27 = text("\n    \xB7 \u8FDE\u7EED\u6253\u5361 ");
+      t28 = text(t28_value);
+      t29 = text(" \u5929");
       t30 = space();
+      if (if_block3) if_block3.c();
+      t31 = space();
+      if_block4.c();
+      t32 = space();
       if (if_block5) if_block5.c();
       attr(button0, "class", "el-mute clickable-icon");
       attr(
@@ -19736,9 +20329,9 @@ function create_fragment7(ctx) {
         /*muteTip*/
         ctx[14]
       );
-      attr(button3, "class", "el-more clickable-icon");
-      attr(button3, "title", "\u66F4\u591A\u64CD\u4F5C\uFF1A\u96BE\u8BCD\u4E13\u9879 / \u6570\u636E\u8865\u5168");
-      attr(button3, "aria-label", "\u66F4\u591A\u64CD\u4F5C");
+      attr(button4, "class", "el-more clickable-icon");
+      attr(button4, "title", "\u66F4\u591A\u64CD\u4F5C\uFF1A\u96BE\u8BCD\u4E13\u9879 / \u6570\u636E\u8865\u5168");
+      attr(button4, "aria-label", "\u66F4\u591A\u64CD\u4F5C");
       attr(div0, "class", "el-actions");
       attr(div1, "class", "el-header");
       attr(div2, "class", "el-totals");
@@ -19756,15 +20349,15 @@ function create_fragment7(ctx) {
       append(div0, t4);
       append(div0, button2);
       append(div0, t6);
-      if (if_block0) if_block0.m(div0, null);
-      append(div0, t7);
       append(div0, button3);
-      append(div3, t8);
+      append(div0, t8);
+      if (if_block0) if_block0.m(div0, null);
+      append(div0, t9);
+      append(div0, button4);
+      append(div3, t10);
       if (if_block1) if_block1.m(div3, null);
-      append(div3, t9);
+      append(div3, t11);
       append(div3, div2);
-      append(div2, t10);
-      append(div2, t11);
       append(div2, t12);
       append(div2, t13);
       append(div2, t14);
@@ -19778,15 +20371,17 @@ function create_fragment7(ctx) {
       append(div2, t22);
       append(div2, t23);
       append(div2, t24);
-      if (if_block2) if_block2.m(div2, null);
       append(div2, t25);
       append(div2, t26);
+      if (if_block2) if_block2.m(div2, null);
       append(div2, t27);
-      append(div3, t28);
-      if (if_block3) if_block3.m(div3, null);
-      append(div3, t29);
-      if_block4.m(div3, null);
+      append(div2, t28);
+      append(div2, t29);
       append(div3, t30);
+      if (if_block3) if_block3.m(div3, null);
+      append(div3, t31);
+      if_block4.m(div3, null);
+      append(div3, t32);
       if (if_block5) if_block5.m(div3, null);
       if (!mounted) {
         dispose = [
@@ -19812,16 +20407,22 @@ function create_fragment7(ctx) {
           listen(
             button2,
             "click",
+            /*openTranslate*/
+            ctx[30]
+          ),
+          listen(
+            button3,
+            "click",
             /*openCreate*/
             ctx[25]
           ),
           action_destroyer(icon_action_1 = /*icon*/
-          ctx[15].call(null, button3, "ellipsis")),
+          ctx[15].call(null, button4, "ellipsis")),
           listen(
-            button3,
+            button4,
             "click",
             /*openMore*/
-            ctx[30]
+            ctx[31]
           )
         ];
         mounted = true;
@@ -19861,7 +20462,7 @@ function create_fragment7(ctx) {
         } else {
           if_block0 = create_if_block_154(ctx2);
           if_block0.c();
-          if_block0.m(div0, t7);
+          if_block0.m(div0, t9);
         }
       } else if (if_block0) {
         if_block0.d(1);
@@ -19876,7 +20477,7 @@ function create_fragment7(ctx) {
         } else {
           if_block1 = create_if_block_144(ctx2);
           if_block1.c();
-          if_block1.m(div3, t9);
+          if_block1.m(div3, t11);
         }
       } else if (if_block1) {
         if_block1.d(1);
@@ -19884,34 +20485,34 @@ function create_fragment7(ctx) {
       }
       if (dirty[0] & /*todayCount*/
       64) set_data(
-        t11,
+        t13,
         /*todayCount*/
         ctx2[6]
       );
       if (dirty[0] & /*todayRev*/
       128) set_data(
-        t13,
+        t15,
         /*todayRev*/
         ctx2[7]
       );
       if (dirty[0] & /*todayPending*/
       32) set_data(
-        t15,
+        t17,
         /*todayPending*/
         ctx2[5]
       );
       if (dirty[0] & /*totals*/
-      16 && t17_value !== (t17_value = /*totals*/
-      ctx2[4].due + "")) set_data(t17, t17_value);
-      if (dirty[0] & /*totals*/
       16 && t19_value !== (t19_value = /*totals*/
-      ctx2[4].learn + "")) set_data(t19, t19_value);
+      ctx2[4].due + "")) set_data(t19, t19_value);
       if (dirty[0] & /*totals*/
       16 && t21_value !== (t21_value = /*totals*/
-      ctx2[4].mastered + "")) set_data(t21, t21_value);
+      ctx2[4].learn + "")) set_data(t21, t21_value);
       if (dirty[0] & /*totals*/
       16 && t23_value !== (t23_value = /*totals*/
-      ctx2[4].words + "")) set_data(t23, t23_value);
+      ctx2[4].mastered + "")) set_data(t23, t23_value);
+      if (dirty[0] & /*totals*/
+      16 && t25_value !== (t25_value = /*totals*/
+      ctx2[4].words + "")) set_data(t25, t25_value);
       if (
         /*totals*/
         ctx2[4].hard > 0
@@ -19921,15 +20522,15 @@ function create_fragment7(ctx) {
         } else {
           if_block2 = create_if_block_134(ctx2);
           if_block2.c();
-          if_block2.m(div2, t25);
+          if_block2.m(div2, t27);
         }
       } else if (if_block2) {
         if_block2.d(1);
         if_block2 = null;
       }
       if (dirty[0] & /*plugin*/
-      1 && t26_value !== (t26_value = /*plugin*/
-      ctx2[0].db.stats.streak + "")) set_data(t26, t26_value);
+      1 && t28_value !== (t28_value = /*plugin*/
+      ctx2[0].db.stats.streak + "")) set_data(t28, t28_value);
       if (!/*loading*/
       ctx2[8] && /*chartSum*/
       ctx2[13] > 0) {
@@ -19938,7 +20539,7 @@ function create_fragment7(ctx) {
         } else {
           if_block3 = create_if_block_84(ctx2);
           if_block3.c();
-          if_block3.m(div3, t29);
+          if_block3.m(div3, t31);
         }
       } else if (if_block3) {
         if_block3.d(1);
@@ -19951,7 +20552,7 @@ function create_fragment7(ctx) {
         if_block4 = current_block_type(ctx2);
         if (if_block4) {
           if_block4.c();
-          if_block4.m(div3, t30);
+          if_block4.m(div3, t32);
         }
       }
       if (!/*loading*/
@@ -20010,8 +20611,8 @@ function instance7($$self, $$props, $$invalidate) {
   let loading = true;
   let audioMuted = plugin.muted;
   function icon(node, name) {
-    (0, import_obsidian14.setIcon)(node, name);
-    return { update: (n) => (0, import_obsidian14.setIcon)(node, n) };
+    (0, import_obsidian13.setIcon)(node, name);
+    return { update: (n) => (0, import_obsidian13.setIcon)(node, n) };
   }
   function toggleMute() {
     plugin.toggleMute();
@@ -20196,7 +20797,7 @@ function instance7($$self, $$props, $$invalidate) {
     plugin.store.touch();
     void refresh(true);
     void plugin.refreshStatusBar();
-    new import_obsidian14.Notice(`\u5DF2\u505C\u7528\u300C${name}\u300D\uFF0C\u53EF\u5728\u300C\u65B0\u5EFA\u4E3B\u9898\u300D\u5F39\u7A97\u4E2D\u91CD\u65B0\u542F\u7528`, 6e3);
+    new import_obsidian13.Notice(`\u5DF2\u505C\u7528\u300C${name}\u300D\uFF0C\u53EF\u5728\u300C\u65B0\u5EFA\u4E3B\u9898\u300D\u5F39\u7A97\u4E2D\u91CD\u65B0\u542F\u7528`, 6e3);
   }
   function openCreate() {
     new CreateThemeModal(
@@ -20227,8 +20828,11 @@ function instance7($$self, $$props, $$invalidate) {
   function openLookup() {
     new AddWordModal(plugin.app, plugin, void 0, () => void refresh()).open();
   }
+  function openTranslate() {
+    new TranslateModal(plugin.app, plugin, () => void refresh()).open();
+  }
   function openMore(ev) {
-    const menu = new import_obsidian14.Menu();
+    const menu = new import_obsidian13.Menu();
     if (totals.hard > 0) {
       menu.addItem((mi) => mi.setTitle(`\u96BE\u8BCD\u4E13\u9879 ${totals.hard}`).setIcon("target").onClick(() => start(null, true)));
     }
@@ -20249,8 +20853,8 @@ function instance7($$self, $$props, $$invalidate) {
   const click_handler_6 = (t) => start(t.name);
   const click_handler_7 = (t) => openExpand(t.name);
   const click_handler_8 = (t) => openEdit(t.name);
-  const click_handler_9 = (c) => new import_obsidian14.Notice(cellTip(c), 4e3);
-  const keydown_handler_3 = (c, e) => e.key === "Enter" && new import_obsidian14.Notice(cellTip(c), 4e3);
+  const click_handler_9 = (c) => new import_obsidian13.Notice(cellTip(c), 4e3);
+  const keydown_handler_3 = (c, e) => e.key === "Enter" && new import_obsidian13.Notice(cellTip(c), 4e3);
   $$self.$$set = ($$props2) => {
     if ("plugin" in $$props2) $$invalidate(0, plugin = $$props2.plugin);
   };
@@ -20295,6 +20899,7 @@ function instance7($$self, $$props, $$invalidate) {
     openEdit,
     start,
     openLookup,
+    openTranslate,
     openMore,
     refresh,
     click_handler,
@@ -20318,16 +20923,16 @@ function instance7($$self, $$props, $$invalidate) {
 var ThemePanel = class extends SvelteComponent {
   constructor(options) {
     super();
-    init(this, options, instance7, create_fragment7, safe_not_equal, { plugin: 0, refresh: 31 }, null, [-1, -1, -1]);
+    init(this, options, instance7, create_fragment7, safe_not_equal, { plugin: 0, refresh: 32 }, null, [-1, -1, -1]);
   }
   get refresh() {
-    return this.$$.ctx[31];
+    return this.$$.ctx[32];
   }
 };
 var ThemePanel_default = ThemePanel;
 
 // src/ui/theme-view.ts
-var ThemeView = class extends import_obsidian15.ItemView {
+var ThemeView = class extends import_obsidian14.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
@@ -20358,8 +20963,8 @@ var ThemeView = class extends import_obsidian15.ItemView {
 };
 
 // src/word-card-modal.ts
-var import_obsidian16 = require("obsidian");
-var WordCardModal = class _WordCardModal extends import_obsidian16.Modal {
+var import_obsidian15 = require("obsidian");
+var WordCardModal = class _WordCardModal extends import_obsidian15.Modal {
   constructor(app, plugin, wdoc) {
     super(app);
     this.plugin = plugin;
@@ -20413,7 +21018,7 @@ var WordCardModal = class _WordCardModal extends import_obsidian16.Modal {
     this.contentEl.empty();
   }
 };
-var ThemePickModal = class extends import_obsidian16.Modal {
+var ThemePickModal = class extends import_obsidian15.Modal {
   constructor(app, plugin, wdoc, onDone) {
     super(app);
     this.plugin = plugin;
@@ -20694,6 +21299,7 @@ var STARTER_PACKS = [
 ];
 
 // src/tts.ts
+var import_obsidian16 = require("obsidian");
 var voice = null;
 var voicePicked = false;
 var preferredVoice = null;
@@ -20727,8 +21333,25 @@ if (typeof window !== "undefined" && "speechSynthesis" in window) {
   else synth.onvoiceschanged = refresh;
 }
 var speakSeq = 0;
+var engineDeadUntil = 0;
+var deadNotified = false;
+function markEngineDead() {
+  engineDeadUntil = Date.now() + 3e4;
+  console.error("TTS \u8FDE\u7CFB\u7EDF\u9ED8\u8BA4\u58F0\u97F3\u90FD\u672A\u542F\u52A8\uFF0CspeechSynthesis \u53EF\u80FD\u5DF2\u5047\u6B7B\uFF0C\u8BF7\u91CD\u542F Obsidian");
+  if (deadNotified) return;
+  deadNotified = true;
+  new import_obsidian16.Notice(
+    "TTS \u5F15\u64CE\u5DF2\u5931\u6548\uFF08Obsidian \u8BED\u97F3\u5408\u6210\u5361\u6B7B\uFF0C\u91CD\u542F\u524D\u65E0\u6CD5\u53D1\u97F3\uFF09\u3002\u6807\u51C6\u53D1\u97F3\u4E0D\u53D7\u5F71\u54CD\uFF1B\u5B8C\u5168\u9000\u51FA Obsidian\uFF08\u2318Q \u5173\u6389\u6574\u4E2A\u5E94\u7528\uFF0C\u4E0D\u662F\u5173\u7A97\u53E3\uFF09\u540E\u91CD\u5F00\u5373\u53EF\u6062\u590D",
+    12e3
+  );
+}
+function markEngineAlive() {
+  engineDeadUntil = 0;
+  deadNotified = false;
+}
 function speak(text2, rate = 1, onEnd) {
   if (!("speechSynthesis" in window)) return;
+  if (Date.now() < engineDeadUntil) return;
   try {
     if (!voicePicked || !voice) pickVoice();
     play(text2, rate, 0, onEnd);
@@ -20742,40 +21365,49 @@ function stopSpeak() {
   window.speechSynthesis.cancel();
 }
 function play(text2, rate, attempt, onEnd) {
-  var _a;
   const synth = window.speechSynthesis;
   const gen = ++speakSeq;
-  if (synth.speaking || synth.pending) synth.cancel();
-  const u = new SpeechSynthesisUtterance(text2);
-  if (voice && attempt < 3) u.voice = voice;
-  u.lang = (_a = voice == null ? void 0 : voice.lang) != null ? _a : "en-US";
-  u.rate = rate;
-  let started = false;
-  u.onstart = () => {
-    started = true;
-  };
-  u.onend = () => {
-    if (gen === speakSeq) onEnd == null ? void 0 : onEnd();
-  };
-  u.onerror = (e) => {
-    const err = e.error;
-    if (err !== "canceled" && err !== "interrupted") console.error("TTS utterance error:", err);
-  };
-  synth.speak(u);
-  synth.resume();
+  const needCancel = synth.speaking || synth.pending;
+  if (needCancel) synth.cancel();
   setTimeout(() => {
-    if (gen !== speakSeq || started || synth.speaking) return;
-    if (attempt < 3) {
-      console.warn(
-        "TTS \u672A\u542F\u52A8\uFF0C\u91CD\u8BD5\u7B2C " + (attempt + 2) + " \u6B21" + (attempt === 2 ? "\uFF08\u6539\u7528\u7CFB\u7EDF\u9ED8\u8BA4\u58F0\u97F3\uFF09" : "")
-      );
-      setTimeout(() => {
-        if (gen === speakSeq) play(text2, rate, attempt + 1, onEnd);
-      }, 100);
-    } else {
-      console.error("TTS \u8FDE\u7CFB\u7EDF\u9ED8\u8BA4\u58F0\u97F3\u90FD\u672A\u542F\u52A8\uFF0CspeechSynthesis \u53EF\u80FD\u5DF2\u5047\u6B7B\uFF0C\u8BF7\u91CD\u542F Obsidian");
+    var _a;
+    if (gen !== speakSeq) return;
+    if (synth.speaking) {
+      markEngineDead();
+      return;
     }
-  }, 500);
+    const u = new SpeechSynthesisUtterance(text2);
+    if (voice && attempt < 3) u.voice = voice;
+    u.lang = (_a = voice == null ? void 0 : voice.lang) != null ? _a : "en-US";
+    u.rate = rate;
+    let started = false;
+    u.onstart = () => {
+      started = true;
+      markEngineAlive();
+    };
+    u.onend = () => {
+      if (gen === speakSeq) onEnd == null ? void 0 : onEnd();
+    };
+    u.onerror = (e) => {
+      const err = e.error;
+      if (err !== "canceled" && err !== "interrupted") console.error("TTS utterance error:", err);
+    };
+    synth.speak(u);
+    synth.resume();
+    setTimeout(() => {
+      if (gen !== speakSeq || started) return;
+      if (attempt < 3) {
+        console.warn(
+          `TTS \u672A\u542F\u52A8\uFF0C\u91CD\u8BD5\u7B2C ${attempt + 2} \u6B21${attempt === 2 ? "\uFF08\u6539\u7528\u7CFB\u7EDF\u9ED8\u8BA4\u58F0\u97F3\uFF09" : ""}`
+        );
+        setTimeout(() => {
+          if (gen === speakSeq) play(text2, rate, attempt + 1, onEnd);
+        }, 100);
+      } else {
+        markEngineDead();
+      }
+    }, 500);
+  }, needCancel ? 80 : 0);
 }
 
 // src/main.ts
@@ -20798,7 +21430,8 @@ var DEFAULT_DATA = {
     expandCount: 12,
     enrichOnLearn: true,
     freshByFreq: true,
-    viewportDebug: false
+    viewportDebug: false,
+    showModalTag: true
   },
   themes: {},
   progress: {},
@@ -20937,9 +21570,15 @@ var EnglishLearnPlugin = class extends import_obsidian17.Plugin {
     this.dict = new EcdictDict(this.app, DATA_ROOT);
     this.audio = new AudioCache(this.app, DATA_ROOT);
     setPreferredVoice((_a = this.db.settings.ttsVoice) != null ? _a : null);
+    setShowModalTag(this.db.settings.showModalTag !== false);
     this.registerView(THEME_VIEW_TYPE, (leaf) => new ThemeView(leaf, this));
     this.registerView(LEARN_VIEW_TYPE, (leaf) => new LearnView(leaf, this));
-    this.registerEditorExtension([vocabHighlight(this), vocabHover(this), ...vocabTapTranslate(this)]);
+    this.registerEditorExtension([
+      vocabHighlight(this),
+      vocabHover(this),
+      ...vocabTapTranslate(this),
+      ...vocabHoldTranslate(this)
+    ]);
     this.addRibbonIcon(
       "book-open",
       "English Learn",
@@ -21229,14 +21868,14 @@ var EnglishLearnPlugin = class extends import_obsidian17.Plugin {
           continue;
         }
         const src = sheet.ownerNode;
-        const from = (src == null ? void 0 : src.href) ? src.href.split("/").pop().slice(0, 24) : src instanceof HTMLStyleElement ? "inline" : "?";
+        const from = src instanceof HTMLLinkElement && src.href ? src.href.split("/").pop().slice(0, 24) : src instanceof HTMLStyleElement ? "inline" : "?";
         const walk = (list) => {
           for (const r of Array.from(list)) {
             if (r instanceof CSSStyleRule) {
               if (!el.matches(r.selectorText)) continue;
               const props = ["height", "max-height", "min-height"].map((p) => r.style[p] ? `${p}:${r.style[p]}` : "").filter(Boolean).join(" ");
               if (props) hits.push(`${from} ${r.selectorText.split(",").map((s) => s.trim()).slice(0, 2).join(",")} ${props}`);
-            } else if (r.cssRules && !(r instanceof CSSKeyframesRule)) {
+            } else if (r instanceof CSSGroupingRule && !(r instanceof CSSKeyframesRule)) {
               walk(r.cssRules);
             }
           }
@@ -21900,6 +22539,41 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
       prog == null ? void 0 : prog.hide();
     }
   }
+  /** 小批量合并补全：一次请求同时补义项+例句（收词等 ≤3 词小批省一次往返，见 enrichWordsNow）。
+   *  整体无产出时上抛，由调用方回落分步 backfill；两者都按缺口过滤，回落不会重复写 */
+  async backfillSensesExamples(only, quiet, ctx) {
+    var _a;
+    const cfg = this.llmCfg;
+    await this.words.scan();
+    const want = Math.max(1, this.db.settings.exampleCount || 3);
+    const docs = this.activeWords().filter(
+      (d) => {
+        var _a2;
+        return only.has(d.word.toLowerCase()) && (!((_a2 = d.senses) == null ? void 0 : _a2.length) || d.examples.length < want);
+      }
+    );
+    if (!docs.length) return;
+    const byTheme = /* @__PURE__ */ new Map();
+    for (const d of docs) {
+      const t = this.genTheme(d, ctx);
+      const arr = byTheme.get(t);
+      if (arr) arr.push(d);
+      else byTheme.set(t, [d]);
+    }
+    let produced = 0;
+    for (const [t, group] of byTheme) {
+      const m = await llmSensesExamples(cfg, group.map((d) => d.word), this.groupTopics(t, group), want);
+      for (const doc of group) {
+        const r = m.get(doc.word.toLowerCase());
+        if (!r) continue;
+        if (!((_a = doc.senses) == null ? void 0 : _a.length) && r.senses.length) await this.words.setSenses(doc, r.senses);
+        const added = doc.examples.length < want ? await this.appendNewExamples(doc, r.examples) : 0;
+        if (r.senses.length || added) produced++;
+      }
+    }
+    if (produced) this.store.touch();
+    else throw new Error("\u5408\u5E76\u8865\u5168\u65E0\u4EA7\u51FA");
+  }
   /** AI 批量补例句翻译：为没有中文翻译的例句回填（手工添加/导入时未带翻译的例句）。
    *  按词分批请求（一词条句一次），Notice 常驻进度；只补缺不动已有翻译。
    *  only：限定词集（新词入库后台补全用），不传 = 全库缺口；quiet：后台静默跑，不弹进度/完成提示 */
@@ -22049,8 +22723,15 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
       gaps.trans ? step(() => this.backfillTranslations(only, quiet)) : void 0,
       gaps.rel ? step(() => this.backfillRelWords(void 0, only, quiet)) : void 0
     ]);
-    if (llm && gaps.senses) await step(() => this.backfillSenses(void 0, only, quiet, opts == null ? void 0 : opts.ctx));
-    if (llm && gaps.ex) await step(() => this.backfillExamples(void 0, void 0, void 0, void 0, only, quiet, opts == null ? void 0 : opts.ctx));
+    const merged = llm && gaps.senses && gaps.ex && docs.length <= 3 ? await this.backfillSensesExamples(only, quiet, opts == null ? void 0 : opts.ctx).then(
+      () => true,
+      (e) => {
+        if (!quiet) new import_obsidian17.Notice(`\u5408\u5E76\u8865\u5168\u56DE\u843D\u5206\u6B65\uFF1A${e instanceof Error ? e.message : e}`);
+        return false;
+      }
+    ) : false;
+    if (llm && gaps.senses && !merged) await step(() => this.backfillSenses(void 0, only, quiet, opts == null ? void 0 : opts.ctx));
+    if (llm && gaps.ex && !merged) await step(() => this.backfillExamples(void 0, void 0, void 0, void 0, only, quiet, opts == null ? void 0 : opts.ctx));
     if (llm && gaps.zh) await step(() => this.backfillExampleTranslations(void 0, only, quiet));
     const mark = this.db.enriched;
     if (mark) {
@@ -22360,7 +23041,7 @@ var EnglishLearnSettingTab = class extends import_obsidian17.PluginSettingTab {
           this.plugin.store.touch();
         })
       ),
-      "\u65B0\u8BCD\u70B9\u300C\u8BA4\u8BC6\u300D\u4E0E\u590D\u4E60\u5361\uFF08\u770B\u8BCD\u9009\u4E49/\u770B\u4E49\u9009\u8BCD\uFF09\u5148\u51FA\u56DB\u9009\u4E00\u5FEB\u6D4B\u9A8C\u8BC1\uFF0C\u7B54\u5BF9\u624D\u7B97\u8BA4\u8BC6\uFF08\u9632\u81EA\u8BC4\u504F\u9AD8\uFF09\uFF1B\u5173\u95ED\u540E\u56DE\u5230\u76F4\u63A5\u63ED\u6653\u81EA\u8BC4"
+      "\u65B0\u8BCD\u76F4\u63A5\u51FA\u770B\u8BCD\u9009\u4E49\u5FEB\u6D4B\u5F53\u81EA\u6D4B\uFF08\u68C0\u7D22\u56DE\u5FC6\u6BD4\u81EA\u62A5\u300C\u8BA4\u8BC6\u300D\u66F4\u5BA2\u89C2\uFF09\uFF0C\u590D\u4E60\u5361\u4E00\u534A\u6982\u7387\u5148\u56DB\u9009\u4E00\u9A8C\u8BC1\uFF1B\u5173\u95ED\u540E\u65B0\u8BCD\u76F4\u63A5\u8FDB\u5B66\u4E60\u5361\u3001\u590D\u4E60\u76F4\u63A5\u63ED\u6653\u81EA\u8BC4"
     );
     addHelpTip(
       new import_obsidian17.Setting(containerEl).setName("\u300C\u6A21\u7CCA\u300D\u95F4\u9694\u51CF\u534A").addToggle(
@@ -22598,6 +23279,13 @@ var EnglishLearnSettingTab = class extends import_obsidian17.PluginSettingTab {
         s.viewportDebug = v;
         this.plugin.store.touch();
         this.plugin.syncViewportDebug();
+      })
+    );
+    new import_obsidian17.Setting(containerEl).setName("\u5F39\u7A97\u8C03\u8BD5\u7F16\u53F7").setDesc("\u5F39\u7A97\u5DE6\u4E0A\u89D2\u663E\u793A\u7F16\u53F7\u5C0F\u5B57\uFF08\u7C7B\u540D#\u5E8F\u53F7\uFF09\uFF0C\u6392\u67E5\u300C\u5F53\u524D\u662F\u54EA\u4E2A\u5F39\u7A97\u300D\u7528\uFF1B\u5BF9\u65B0\u6253\u5F00\u7684\u5F39\u7A97\u751F\u6548").addToggle(
+      (t) => t.setValue(s.showModalTag !== false).onChange((v) => {
+        s.showModalTag = v;
+        this.plugin.store.touch();
+        setShowModalTag(v);
       })
     );
   }
