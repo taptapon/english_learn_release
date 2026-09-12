@@ -3,11 +3,13 @@
 :root {
   /* Obsidian 移动端底部导航栏高度（含安全区）：主题面板等页面底部留白用它。
      注意导航栏自身已含安全区，再叠 env() 会重复计算；学习页已改用独立更小的让位值 */
-  --el-mobile-nav-h: calc(76px + env(safe-area-inset-bottom, 0px));
+  --el-mobile-nav-h: var(--el-bottom-nav-clearance);
 
-  /* ===== 设计令牌：样式规范唯一来源，改样式先改这里 ===== */
+  /* 设计令牌：样式规范唯一来源，改样式先改这里 ===== */
 
-  /* 圆角：xs 进度条/kbd 等微元素 · sm 提示浮层 · md 按钮/输入/列表项 · lg 卡片/磁贴 · xl 大卡片/弹窗 · full 胶囊 */
+  /* 底部间距：按钮行到 Obsidian 导航栏的净空；学习页/主题页底部留白、按需调节 */
+  --el-bottom-nav-clearance: 72px;
+
   --el-radius-xs: 4px;
   --el-radius-sm: 6px;
   --el-radius-md: 8px;
@@ -638,7 +640,7 @@ body.is-mobile .el-learn {
      Obsidian 底部导航栏覆盖在页面之上，本值即按钮浮在导航栏上的净空） */
   padding-bottom: max(
     calc(var(--el-space-3) + 3px),
-    calc(60px + env(safe-area-inset-bottom, 0px) - max(var(--keyboard-height, 0px), var(--el-kb-h, 0px)))
+    calc(var(--el-bottom-nav-clearance) + env(safe-area-inset-bottom, 0px) - max(var(--keyboard-height, 0px), var(--el-kb-h, 0px)))
   );
   transition: padding-bottom 0.3s ease;
 }
@@ -992,7 +994,7 @@ body:not(.is-mobile) .el-ex-more:hover {
   background: var(--background-secondary);
 }
 
-/* 逃生口弱化钮（其实不认识 / 不会）：纯文字态——无边框无底色的小字淡色钮，不与主路径按钮抢视觉权重 */
+/* 逃生口弱化钮（不会 / 太简单）：纯文字态——无边框无底色的小字淡色钮，不与主路径按钮抢视觉权重 */
 .el-grade-sub {
   background: none;
   border: none;
@@ -1002,6 +1004,30 @@ body:not(.is-mobile) .el-ex-more:hover {
   font-size: var(--el-font-sm);
   color: var(--text-faint);
   cursor: pointer;
+}
+
+/* 文字钮内的前置图标：尺寸跟文字走，Lucide 默认 24×24 会把按钮撑开 */
+.el-btn-ico {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.el-btn-ico svg {
+  width: var(--el-icon-md);
+  height: var(--el-icon-md);
+}
+
+/* 逃生口小字钮里的图标再小一档，跟 sm 字号相称 */
+.el-grade-sub .el-btn-ico svg {
+  width: var(--el-font-sm);
+  height: var(--el-font-sm);
+}
+
+/* 带图标的按钮：图标与文字贴紧。只针对含图标的钮覆盖——图标本身有视觉留白，
+   再用 flex 的常规 gap 会明显偏空；纯文字钮（认识/忘记/模糊等）间距保持不变 */
+.el-grade:has(.el-btn-ico) {
+  gap: var(--el-space-1);
 }
 
 body:not(.is-mobile) .el-grade-sub:hover {
@@ -1017,18 +1043,9 @@ body:not(.is-mobile) .el-grade-sub:hover {
   padding: 0 var(--el-space-1);
 }
 
-/* 主行动高亮（显示答案/认识/记住了/继续）：实心强调色，其余按钮统一默认配色 */
+/* 主行动高亮碰到的底色/边框（实心强调色）不写在这里：宿主 button 规则会盖掉。整套收口在文件末尾 */
 .el-reveal-ok,
 .el-grade-ok {
-  background: var(--interactive-accent);
-  border: 1px solid var(--interactive-accent);
-  color: var(--text-on-accent);
-}
-
-body:not(.is-mobile) .el-reveal-ok:hover,
-body:not(.is-mobile) .el-grade-ok:hover {
-  background: var(--interactive-accent-hover);
-  border-color: var(--interactive-accent-hover);
   color: var(--text-on-accent);
 }
 
@@ -1217,7 +1234,7 @@ body:not(.is-mobile) .el-spell-hint:hover {
   border: 1px solid var(--background-modifier-border);
   background: var(--background-secondary);
   cursor: pointer;
-  text-align: left;
+  text-align: center;
   font-size: var(--el-font-md);
   line-height: 1.4;
   min-width: 0; /* 允许网格轨道收缩到内容以下，长文本才能换行不撑宽 */
@@ -1243,14 +1260,15 @@ body:not(.is-mobile) .el-spell-hint:hover {
 }
 
 .el-opt-text {
+  flex: 1; /* 占满 kbd 与尾注之间的空间：文本居中（作答前后一致不跳位），尾注自然钉右缘 */
   min-width: 0; /* flex 项默认 min-width:auto 不许收缩：长释义整行顶破按钮（宿主按钮居中时两侧穿出被屏裁），归 0 才能在按钮内换行 */
   overflow-wrap: anywhere;
 }
 
-/* 作答后选项尾注（靠按钮右缘）：正确答案的 👈 指示 / 错选项所属词括注「这释义其实是哪个词的」 */
+/* 作答反馈标记：✓（按钮级 flex 项，钉右缘）；错选项括注（文本 span 内联，随文本居中不拆行） */
 .el-opt-note {
   flex-shrink: 0;
-  margin-left: auto;
+  white-space: nowrap;
   font-size: var(--el-font-sm);
   line-height: 1; /* emoji 行框陷阱：锁行框，不撑高按钮 */
   color: var(--text-faint);
@@ -2190,4 +2208,60 @@ body:not(.is-mobile) .el-vocab-tip-open:hover {
 }
 body:not(.is-mobile) .el-preview .el-zh-w:hover {
   text-decoration-color: var(--text-normal); /* hover 提线不变色：蓝色已是强调态 */
+}
+
+/* —— 翻译收词弹窗 —— */
+/* 译文区：保留换行原样呈现（长译文折叠成一行会看不清） */
+.el-trans-result {
+  white-space: pre-wrap;
+  font-size: var(--el-font-md);
+  color: var(--text-normal);
+  padding: var(--el-space-3) var(--el-space-4);
+}
+/* 关键词/短语行：勾选框 + 词 + 释义 + 已收录徽章一行排开 */
+.el-trans-term {
+  display: flex;
+  align-items: center;
+  gap: var(--el-space-3);
+  padding: var(--el-space-1) 0;
+}
+
+/* —— 主行动高亮（显示答案/认识/记住了/继续）：实心强调色 ——
+   宿主 app.css 有三条会洗掉自绘按钮底色的规则，本组逐条对位压制（SPEC = (id, class, element)）：
+     `button:not(.clickable-icon)`            SPEC (0,1,1)  ← 基态灰底【真凶】
+     `button:not(.clickable-icon).mobile-tap` SPEC (0,2,1)  ← 移动端 touchstart 按下即洗灰
+     `@media (hover:hover){ button:hover }`   SPEC (0,1,1)  ← 桌面悬停洗灰
+   注意 `:not(.clickable-icon)` 会**贡献一个类**（不是零特异性），所以宿主基态是 (0,1,1) 而非 (0,1,0)：
+   本轮「只有边框高亮」的真因就是自绘的 `.el-grade-ok` (0,1,0) 静止态就输给它、只剩自绘边框；
+   hover 那条反而靠 (0,3,1) 赢了，于是表现为「静止只有边框、悬停才变实心」。
+   三处一律靠**特异性**取胜（不赌加载顺序——styles.css 与 app.css 谁先加载无法保证）：
+     基态   `.el-learn .el-grade-ok`            (0,2,0) 压过 (0,1,1)
+     移动端 `.el-learn .el-grade-ok.mobile-tap` (0,3,0) 压过 (0,2,1)  ← 宿主给自家 .mod-cta 是同款解法
+     悬停   `body:not(.is-mobile) .el-grade-ok:hover` (0,3,1) 压过 (0,1,1)，并连带胜过上面两条
+   锚点用 `.el-learn`（学习页根容器，全部按钮都在其内）而非 `body`——`body` 是元素选择器，
+   只加 c 位，抬不到 (0,2,0)。**也不能写 `body:not(.is-mobile)` 做基态**：移动端 body.is-mobile 为真，
+   会被一并排掉、底色回落宿主灰。改锚点前先确认新锚点能命中全部高亮钮（`.el-learn` 之外还有词卡弹窗，
+   若日后那边也用高亮钮，锚点改回 `body` 并补第二个类，如 `body.el-body`）。
+   ⚠️ 依赖宿主运行时类 `.mobile-tap`（宿主私有约定，非公开 API，机制见 dev-tips §5）。若某天改名，
+      症状是「移动端按下时高亮被洗成灰」——先回 app.css 核对 `.mobile-tap` 是否还在。 */
+.el-learn .el-reveal-ok,
+.el-learn .el-grade-ok {
+  background-color: var(--interactive-accent);
+  border-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.el-learn .el-reveal-ok.mobile-tap,
+.el-learn .el-grade-ok.mobile-tap {
+  background-color: var(--interactive-accent-hover);
+  border-color: var(--interactive-accent-hover);
+  color: var(--text-on-accent);
+  box-shadow: var(--input-shadow);
+}
+
+body:not(.is-mobile) .el-reveal-ok:hover,
+body:not(.is-mobile) .el-grade-ok:hover {
+  background-color: var(--interactive-accent-hover);
+  border-color: var(--interactive-accent-hover);
+  color: var(--text-on-accent);
 }

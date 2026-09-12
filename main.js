@@ -448,15 +448,23 @@ function timedRequestUrl(p) {
     })
   ]).finally(() => clearTimeout(timer));
 }
+async function myMemoryFetch(q, toEn) {
+  var _a, _b;
+  const pair = toEn ? "zh%7Cen" : "en%7Czh";
+  const res = await timedRequestUrl(
+    (0, import_obsidian2.requestUrl)({ url: `https://api.mymemory.translated.net/get?q=${encodeURIComponent(q)}&langpair=${pair}` })
+  );
+  const data = JSON.parse(res.text.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ""));
+  return {
+    text: String((_b = (_a = data == null ? void 0 : data.responseData) == null ? void 0 : _a.translatedText) != null ? _b : "").replace(/mymemory warning.*/i, "").replace(/\(.*?\)/g, "").trim(),
+    quota: !!(data == null ? void 0 : data.quotaFinished)
+  };
+}
 async function translateZh2En(q) {
-  var _a, _b, _c;
-  const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(q)}&langpair=zh%7Cen`;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const res = await timedRequestUrl((0, import_obsidian2.requestUrl)({ url }));
-      const text2 = res.text.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "");
-      const t = String((_c = (_b = (_a = JSON.parse(text2)) == null ? void 0 : _a.responseData) == null ? void 0 : _b.translatedText) != null ? _c : "").toLowerCase().replace(/\(.*?\)/g, "").replace(/mymemory warning.*/i, "");
-      const words = [...new Set(t.split(/[^\w'-]+/).filter((w) => /^[a-z][\w'-]*$/.test(w)))].slice(0, 3);
+      const { text: text2 } = await myMemoryFetch(q, true);
+      const words = [...new Set(text2.toLowerCase().split(/[^\w'-]+/).filter((w) => /^[a-z][\w'-]*$/.test(w)))].slice(0, 3);
       if (words.length) return words;
     } catch (e) {
     }
@@ -464,16 +472,10 @@ async function translateZh2En(q) {
   return [];
 }
 async function myMemoryTranslate(q, toEn) {
-  var _a, _b;
-  const pair = toEn ? "zh%7Cen" : "en%7Czh";
   try {
-    const res = await timedRequestUrl(
-      (0, import_obsidian2.requestUrl)({ url: `https://api.mymemory.translated.net/get?q=${encodeURIComponent(q)}&langpair=${pair}` })
-    );
-    const data = JSON.parse(res.text.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ""));
-    const t = String((_b = (_a = data == null ? void 0 : data.responseData) == null ? void 0 : _a.translatedText) != null ? _b : "").replace(/mymemory warning.*/i, "").replace(/\(.*?\)/g, "").trim();
-    if ((data == null ? void 0 : data.quotaFinished) || !t) return null;
-    return t;
+    const { text: text2, quota } = await myMemoryFetch(q, toEn);
+    if (quota || !text2) return null;
+    return text2;
   } catch (e) {
     return null;
   }
@@ -3400,6 +3402,9 @@ function toExamples(list) {
     return { text: en, zh: typeof s.zh === "string" ? s.zh.trim() : void 0 };
   }).filter((e) => !!e);
 }
+function cleanSenses(s) {
+  return (Array.isArray(s) ? s : []).map(String).map((t) => t.trim()).filter(Boolean).slice(0, 6);
+}
 async function llmExpandWords(cfg, keywords, existing, count = 12) {
   const listed = existing.length > 400 ? existing.slice(0, 400) : existing;
   const spec = expandWordsPrompt(keywords, listed, count);
@@ -3477,9 +3482,8 @@ async function llmSenses(cfg, words, topics, onWords) {
     }
     for (const x of items) {
       const w = x == null ? void 0 : x.word;
-      const s = x == null ? void 0 : x.senses;
-      if (!w || !Array.isArray(s)) continue;
-      const list = s.map(String).map((t) => t.trim()).filter(Boolean).slice(0, 6);
+      if (!w) continue;
+      const list = cleanSenses(x.senses);
       if (list.length) m.set(String(w).toLowerCase(), list);
     }
     onWords == null ? void 0 : onWords(batch.map((w) => w.toLowerCase()).filter((w) => m.has(w)));
@@ -3502,9 +3506,8 @@ async function llmSensesExamples(cfg, words, topics, count = 3) {
   const m = /* @__PURE__ */ new Map();
   for (const x of parseJsonArray(out)) {
     const w = x == null ? void 0 : x.word;
-    const s = x == null ? void 0 : x.senses;
     if (!w) continue;
-    const senses = (Array.isArray(s) ? s : []).map(String).map((t) => t.trim()).filter(Boolean).slice(0, 6);
+    const senses = cleanSenses(x.senses);
     const examples = toExamples(x.sentences);
     if (senses.length || examples.length) m.set(String(w).toLowerCase(), { senses, examples });
   }
@@ -3540,6 +3543,7 @@ async function llmTranslateSentences(cfg, texts) {
   await runPool(chunk(idxs, 15), 2, translate);
   return out;
 }
+var EN_TERM_RE = /^[a-z][a-z' -]*$/;
 async function llmTranslateCollect(cfg, text2) {
   var _a;
   const spec = translateCollectPrompt(text2);
@@ -3553,7 +3557,7 @@ async function llmTranslateCollect(cfg, text2) {
       en: String((_a2 = x == null ? void 0 : x.en) != null ? _a2 : "").trim().toLowerCase(),
       zh: String((_b = x == null ? void 0 : x.zh) != null ? _b : "").trim()
     };
-  }).filter((t) => /^[a-z][a-z' -]*$/.test(t.en) && t.en.split(/\s+/).length <= 5).slice(0, 8);
+  }).filter((t) => EN_TERM_RE.test(t.en) && t.en.split(/\s+/).length <= 5).slice(0, 8);
   return { translation, terms };
 }
 async function llmTranslateZhToEn(cfg, words, per = 1) {
@@ -3564,13 +3568,17 @@ async function llmTranslateZhToEn(cfg, words, per = 1) {
     const arr = parseJsonArray(out2);
     idx.forEach((origIdx, j) => {
       const cell = arr[j];
-      const list = (Array.isArray(cell) ? cell : [cell]).map((v) => String(v).trim().toLowerCase()).filter((t) => /^[a-z][a-z' -]*$/.test(t));
+      const list = (Array.isArray(cell) ? cell : [cell]).map((v) => String(v).trim().toLowerCase()).filter((t) => EN_TERM_RE.test(t));
       if (list.length) out[origIdx] = list;
     });
   };
   const idxs = words.map((_, i) => i).filter((i) => words[i].trim());
   await runPool(chunk(idxs, 10), 2, translate);
   return out;
+}
+async function llmZhToEnPhrase(cfg, q) {
+  var _a;
+  return ((_a = (await llmTranslateZhToEn(cfg, [q]))[0]) != null ? _a : []).join(" ");
 }
 
 // src/dict/frequent-words.ts
@@ -5927,18 +5935,19 @@ function instance2($$self, $$props, $$invalidate) {
     const zhKws = kws.filter(isZh);
     const seeds = [...kws.filter((k) => !isZh(k))];
     try {
-      for (const k of zhKws) {
-        const before = seeds.length;
-        if (llmOn) {
-          $$invalidate(5, status = `\u4E2D\u6587\u5173\u952E\u8BCD\u8F6C\u82F1\u6587\u79CD\u5B50\u8BCD\u2026\uFF08${k}\uFF09`);
-          try {
-            seeds.push(...(await llmTranslateZhToEn(plugin.llmCfg, [k], 3))[0]);
-          } catch (_b2) {
-          }
+      let zhLists = zhKws.map(() => []);
+      if (llmOn && zhKws.length) {
+        $$invalidate(5, status = `\u4E2D\u6587\u5173\u952E\u8BCD\u8F6C\u82F1\u6587\u79CD\u5B50\u8BCD\u2026\uFF08${zhKws.join("\u3001")}\uFF09`);
+        try {
+          zhLists = await llmTranslateZhToEn(plugin.llmCfg, zhKws, 3);
+        } catch (_b2) {
         }
-        if (seeds.length === before) {
-          $$invalidate(5, status = `\u8BCD\u5178\u53CD\u67E5\u300C${k}\u300D\u7684\u82F1\u6587\u8BCD\u2026`);
-          seeds.push(...await plugin.dict.reverseLookup(k, 3));
+      }
+      for (let i = 0; i < zhKws.length; i++) {
+        seeds.push(...zhLists[i]);
+        if (!zhLists[i].length) {
+          $$invalidate(5, status = `\u8BCD\u5178\u53CD\u67E5\u300C${zhKws[i]}\u300D\u7684\u82F1\u6587\u8BCD\u2026`);
+          seeds.push(...await plugin.dict.reverseLookup(zhKws[i], 3));
         }
       }
       const uniqueSeeds = [...new Set(seeds)].slice(0, 6);
@@ -6404,6 +6413,15 @@ var EditThemeModal = class extends import_obsidian10.Modal {
     this.contentEl.empty();
   }
 };
+function themePicker(plugin, host, names, preferred) {
+  let theme = preferred && names.includes(preferred) ? preferred : plugin.lastAddTheme && names.includes(plugin.lastAddTheme) ? plugin.lastAddTheme : names[0];
+  new import_obsidian10.Setting(host).setName("\u52A0\u5165\u4E3B\u9898").addDropdown((d) => {
+    d.addOptions(Object.fromEntries(names.map((n) => [n, n])));
+    d.setValue(theme);
+    d.onChange((v) => theme = v);
+  });
+  return () => theme;
+}
 var AddWordModal = class _AddWordModal extends import_obsidian10.Modal {
   constructor(app, plugin, presetWord, onDone, defaultTheme, presetZh) {
     super(app);
@@ -6465,7 +6483,6 @@ var AddWordModal = class _AddWordModal extends import_obsidian10.Modal {
   buildForm(names) {
     const { contentEl } = this;
     contentEl.createEl("h3", { text: "\u67E5\u8BCD" });
-    let theme = this.defaultTheme && names.includes(this.defaultTheme) ? this.defaultTheme : this.plugin.lastAddTheme && names.includes(this.plugin.lastAddTheme) ? this.plugin.lastAddTheme : names[0];
     new import_obsidian10.Setting(contentEl).setName("\u5355\u8BCD").addText((t) => {
       this.wordInput = t;
       t.setValue(this.word);
@@ -6502,17 +6519,13 @@ var AddWordModal = class _AddWordModal extends import_obsidian10.Modal {
     this.previewEl.style.cssText = "min-height:40px;max-height:40vh;overflow-y:auto;margin:8px 0;padding:8px 12px;border-radius:8px;background:var(--background-secondary);font-size:13px;color:var(--text-muted);white-space:pre-wrap;";
     this.addArea = contentEl.createDiv();
     this.addArea.style.display = "none";
-    new import_obsidian10.Setting(this.addArea).setName("\u52A0\u5165\u4E3B\u9898").addDropdown((d) => {
-      d.addOptions(Object.fromEntries(names.map((n) => [n, n])));
-      d.setValue(theme);
-      d.onChange((v) => theme = v);
-    });
+    const pickTheme = themePicker(this.plugin, this.addArea, names, this.defaultTheme);
     new import_obsidian10.Setting(this.addArea).addButton((b) => {
       this.addBtn = b;
       return b.setButtonText("\u52A0\u5165").setCta().onClick(async () => {
         b.setDisabled(true).setButtonText("\u52A0\u5165\u4E2D\u2026");
         try {
-          await this.doAdd(theme, isPhrase(this.word) ? this.phraseZh : this.zhQuery || this.presetZh);
+          await this.doAdd(pickTheme(), isPhrase(this.word) ? this.phraseZh : this.zhQuery || this.presetZh);
         } finally {
           b.setDisabled(false).setButtonText("\u52A0\u5165");
         }
@@ -6615,7 +6628,7 @@ var AddWordModal = class _AddWordModal extends import_obsidian10.Modal {
    *  联网把中文译成英文再出候选——本地查得到的长释义行，查不到的照样列出（直加，释义用查询串）。
    *  点候选回填单词框并走正常查询（含联网词典兜底） */
   async renderZhSearch(q) {
-    var _a, _b;
+    var _a;
     this.previewEl.setText("\u672C\u5730\u8BCD\u5178\u53CD\u67E5\u4E2D\u2026");
     this.addArea.style.display = "none";
     this.zhQuery = "";
@@ -6650,7 +6663,7 @@ var AddWordModal = class _AddWordModal extends import_obsidian10.Modal {
       let cands = await collectCands(raw);
       if (!cands.length && llmReady(this.plugin.llmCfg)) {
         this.previewEl.setText("\u7FFB\u8BD1\u63A5\u53E3\u6CA1\u7ED9\u51FA\u7ED3\u679C\uFF0CAI \u7FFB\u8BD1\u6BD4\u5BF9\u4E2D\u2026");
-        const en = ((_a = (await llmTranslateZhToEn(this.plugin.llmCfg, [q]))[0]) != null ? _a : []).join(" ");
+        const en = await llmZhToEnPhrase(this.plugin.llmCfg, q);
         raw = en ? en.toLowerCase().split(/\s+/).filter(Boolean) : [];
         cands = await collectCands(raw);
       }
@@ -6661,7 +6674,7 @@ var AddWordModal = class _AddWordModal extends import_obsidian10.Modal {
       return;
     }
     this.zhBack = { q, mine, hits, raw, resolved };
-    (_b = this.backBtn) == null ? void 0 : _b.buttonEl.style.removeProperty("display");
+    (_a = this.backBtn) == null ? void 0 : _a.buttonEl.style.removeProperty("display");
     this.renderZhList();
   }
   /** 渲染中文候选列表（renderZhSearch 出结果后调用；预览页「返回重选」也走这） */
@@ -6742,10 +6755,9 @@ var AddWordModal = class _AddWordModal extends import_obsidian10.Modal {
   /** 「联网拓展」：译文 → Datamuse 语义关联词（means-like，国内直连免 Key）→ 查本地词典，
    *  返回未展示过的新候选。译文链路与自动兜底一致（MyMemory，失败且配了 AI 用大模型） */
   async expandZhCandidates(q, known) {
-    var _a;
     let en = await translateZh2En(q);
     if (!en.length && llmReady(this.plugin.llmCfg)) {
-      en = ((_a = (await llmTranslateZhToEn(this.plugin.llmCfg, [q]))[0]) != null ? _a : []).join(" ").toLowerCase().split(/\s+/).filter(Boolean);
+      en = (await llmZhToEnPhrase(this.plugin.llmCfg, q)).toLowerCase().split(/\s+/).filter(Boolean);
     }
     const related = /* @__PURE__ */ new Set();
     for (const w of en.slice(0, 2)) {
@@ -7009,8 +7021,7 @@ var TranslateModal = class extends import_obsidian10.Modal {
       }
       this.exEn = zhIn ? translation : text2;
       this.exOther = zhIn ? text2 : translation;
-      const box = resultEl.createDiv({ cls: "el-preview" });
-      box.style.cssText = "white-space:pre-wrap;font-size:14px;color:var(--text-normal);padding:8px 12px;";
+      const box = resultEl.createDiv({ cls: "el-trans-result" });
       box.setText(translation);
       new import_obsidian10.ButtonComponent(resultEl).setButtonText("\u{1F4CB} \u590D\u5236\u8BD1\u6587").onClick(async () => {
         await navigator.clipboard.writeText(translation);
@@ -7031,7 +7042,6 @@ var TranslateModal = class extends import_obsidian10.Modal {
     for (const t of terms) {
       const owned = !!this.plugin.words.resolveWord(t.en);
       const row = host.createDiv("el-trans-term");
-      row.style.cssText = "display:flex;align-items:center;gap:8px;padding:4px 0;";
       const input = row.createEl("input", { type: "checkbox" });
       input.disabled = owned;
       input.checked = !owned;
@@ -7046,12 +7056,7 @@ var TranslateModal = class extends import_obsidian10.Modal {
       addArea.createEl("p", { text: "\u8FD8\u6CA1\u6709\u4E3B\u9898\uFF1A\u5148\u5728\u4E3B\u9898\u9762\u677F\u65B0\u5EFA\u4E3B\u9898\uFF0C\u518D\u56DE\u6765\u6536\u5F55\u3002", cls: "el-muted" });
       return;
     }
-    let theme = this.plugin.lastAddTheme && names.includes(this.plugin.lastAddTheme) ? this.plugin.lastAddTheme : names[0];
-    new import_obsidian10.Setting(addArea).setName("\u52A0\u5165\u4E3B\u9898").addDropdown((d) => {
-      d.addOptions(Object.fromEntries(names.map((n) => [n, n])));
-      d.setValue(theme);
-      d.onChange((v) => theme = v);
-    });
+    const pickTheme = themePicker(this.plugin, addArea, names);
     new import_obsidian10.Setting(addArea).addButton(
       (b) => b.setButtonText("\u52A0\u5165\u6240\u9009").setCta().onClick(async () => {
         var _a;
@@ -7063,8 +7068,9 @@ var TranslateModal = class extends import_obsidian10.Modal {
         b.setDisabled(true).setButtonText("\u52A0\u5165\u4E2D\u2026");
         let created = 0;
         let merged = 0;
+        const theme = pickTheme();
         try {
-          for (const t of picked) {
+          await runPool(picked, 6, async (t) => {
             const r = await this.plugin.addWord(t.en, theme, {
               translation: t.zh || void 0,
               // 提词带的中文释义直接入库（短语词典查不到，正好补上）
@@ -7072,7 +7078,7 @@ var TranslateModal = class extends import_obsidian10.Modal {
             });
             if (r === "created") created++;
             else if (r === "merged") merged++;
-          }
+          });
         } catch (e) {
           new import_obsidian10.Notice(`\u6536\u5F55\u5931\u8D25\uFF1A${e instanceof Error ? e.message : e}`);
           return;
@@ -10869,7 +10875,8 @@ function instance4($$self, $$props, $$invalidate) {
   function exPointerDown(ev) {
     var _a2;
     lpSuppressClick = false;
-    if (ev.pointerType === "mouse" ? ev.button !== 0 : ev.pointerType !== "touch" && ev.pointerType !== "pen") return;
+    const primary = ev.pointerType === "touch" || ev.pointerType === "pen" || ev.pointerType === "mouse" && ev.button === 0;
+    if (!primary) return;
     if ((_a2 = ev.target) === null || _a2 === void 0 ? void 0 : _a2.closest("button")) return;
     lpFrom = { x: ev.clientX, y: ev.clientY };
     lpTimer = setTimeout(
@@ -11180,13 +11187,12 @@ function create_if_block4(ctx) {
   return {
     c() {
       span = element("span");
-      span.textContent = "\u{1F448}";
+      span.textContent = "\u2713";
       attr(span, "class", "el-opt-note");
     },
     m(target, anchor) {
       insert(target, span, anchor);
     },
-    p: noop,
     d(detaching) {
       if (detaching) {
         detach(span);
@@ -11195,40 +11201,34 @@ function create_if_block4(ctx) {
   };
 }
 function create_each_block4(ctx) {
+  var _a;
   let button;
-  let span0;
-  let t1;
-  let span1;
-  let t2_value = (
+  let span;
+  let t0_value = (
     /*opt*/
     ctx[6] + ""
   );
+  let t0;
+  let t1;
   let t2;
-  let t3;
-  let t4;
   let mounted;
   let dispose;
-  function select_block_type(ctx2, dirty) {
-    var _a;
-    if (
-      /*answered*/
-      ctx2[2] && /*i*/
-      ctx2[8] === /*quiz*/
-      ctx2[0].answer
-    ) return create_if_block4;
-    if (
-      /*picked*/
-      ctx2[1] === /*i*/
-      ctx2[8] && !/*correct*/
-      ctx2[3] && /*quiz*/
-      ((_a = ctx2[0].optionWords) == null ? void 0 : _a[
-        /*i*/
-        ctx2[8]
-      ])
-    ) return create_if_block_110;
-  }
-  let current_block_type = select_block_type(ctx, -1);
-  let if_block = current_block_type && current_block_type(ctx);
+  let if_block0 = (
+    /*picked*/
+    ctx[1] === /*i*/
+    ctx[8] && !/*correct*/
+    ctx[3] && /*quiz*/
+    ((_a = ctx[0].optionWords) == null ? void 0 : _a[
+      /*i*/
+      ctx[8]
+    ]) && create_if_block_110(ctx)
+  );
+  let if_block1 = (
+    /*answered*/
+    ctx[2] && /*i*/
+    ctx[8] === /*quiz*/
+    ctx[0].answer && create_if_block4(ctx)
+  );
   function click_handler() {
     return (
       /*click_handler*/
@@ -11241,17 +11241,13 @@ function create_each_block4(ctx) {
   return {
     c() {
       button = element("button");
-      span0 = element("span");
-      span0.textContent = `${/*i*/
-      ctx[8] + 1}`;
+      span = element("span");
+      t0 = text(t0_value);
+      if (if_block0) if_block0.c();
       t1 = space();
-      span1 = element("span");
-      t2 = text(t2_value);
-      t3 = space();
-      if (if_block) if_block.c();
-      t4 = space();
-      attr(span0, "class", "el-kbd");
-      attr(span1, "class", "el-opt-text");
+      if (if_block1) if_block1.c();
+      t2 = space();
+      attr(span, "class", "el-opt-text");
       attr(button, "class", "el-opt");
       button.disabled = /*answered*/
       ctx[2];
@@ -11274,32 +11270,59 @@ function create_each_block4(ctx) {
     },
     m(target, anchor) {
       insert(target, button, anchor);
-      append(button, span0);
+      append(button, span);
+      append(span, t0);
+      if (if_block0) if_block0.m(span, null);
       append(button, t1);
-      append(button, span1);
-      append(span1, t2);
-      append(button, t3);
-      if (if_block) if_block.m(button, null);
-      append(button, t4);
+      if (if_block1) if_block1.m(button, null);
+      append(button, t2);
       if (!mounted) {
         dispose = listen(button, "click", click_handler);
         mounted = true;
       }
     },
     p(new_ctx, dirty) {
+      var _a2;
       ctx = new_ctx;
       if (dirty & /*quiz*/
-      1 && t2_value !== (t2_value = /*opt*/
-      ctx[6] + "")) set_data(t2, t2_value);
-      if (current_block_type === (current_block_type = select_block_type(ctx, dirty)) && if_block) {
-        if_block.p(ctx, dirty);
-      } else {
-        if (if_block) if_block.d(1);
-        if_block = current_block_type && current_block_type(ctx);
-        if (if_block) {
-          if_block.c();
-          if_block.m(button, t4);
+      1 && t0_value !== (t0_value = /*opt*/
+      ctx[6] + "")) set_data(t0, t0_value);
+      if (
+        /*picked*/
+        ctx[1] === /*i*/
+        ctx[8] && !/*correct*/
+        ctx[3] && /*quiz*/
+        ((_a2 = ctx[0].optionWords) == null ? void 0 : _a2[
+          /*i*/
+          ctx[8]
+        ])
+      ) {
+        if (if_block0) {
+          if_block0.p(ctx, dirty);
+        } else {
+          if_block0 = create_if_block_110(ctx);
+          if_block0.c();
+          if_block0.m(span, null);
         }
+      } else if (if_block0) {
+        if_block0.d(1);
+        if_block0 = null;
+      }
+      if (
+        /*answered*/
+        ctx[2] && /*i*/
+        ctx[8] === /*quiz*/
+        ctx[0].answer
+      ) {
+        if (if_block1) {
+        } else {
+          if_block1 = create_if_block4(ctx);
+          if_block1.c();
+          if_block1.m(button, t2);
+        }
+      } else if (if_block1) {
+        if_block1.d(1);
+        if_block1 = null;
       }
       if (dirty & /*answered*/
       4) {
@@ -11333,9 +11356,8 @@ function create_each_block4(ctx) {
       if (detaching) {
         detach(button);
       }
-      if (if_block) {
-        if_block.d();
-      }
+      if (if_block0) if_block0.d();
+      if (if_block1) if_block1.d();
       mounted = false;
       dispose();
     }
@@ -11498,11 +11520,11 @@ function create_if_block_212(ctx) {
   let if_block0 = (
     /*idx*/
     ctx[3] > 0 && /*browseFrom*/
-    ctx[4] < 0 && create_if_block_69(ctx)
+    ctx[4] < 0 && create_if_block_66(ctx)
   );
   let if_block1 = (
     /*browseFrom*/
-    ctx[4] < 0 && create_if_block_68(ctx)
+    ctx[4] < 0 && create_if_block_65(ctx)
   );
   const if_block_creators = [
     create_if_block_222,
@@ -11510,7 +11532,7 @@ function create_if_block_212(ctx) {
     create_if_block_252,
     create_if_block_29,
     create_if_block_40,
-    create_if_block_49
+    create_if_block_47
   ];
   const if_blocks = [];
   function select_block_type_4(ctx2, dirty) {
@@ -11665,7 +11687,7 @@ function create_if_block_212(ctx) {
             button1,
             "click",
             /*click_handler_8*/
-            ctx[91]
+            ctx[90]
           )
         ];
         mounted = true;
@@ -11695,7 +11717,7 @@ function create_if_block_212(ctx) {
         if (if_block0) {
           if_block0.p(ctx2, dirty);
         } else {
-          if_block0 = create_if_block_69(ctx2);
+          if_block0 = create_if_block_66(ctx2);
           if_block0.c();
           if_block0.m(div1, t5);
         }
@@ -11734,7 +11756,7 @@ function create_if_block_212(ctx) {
         if (if_block1) {
           if_block1.p(ctx2, dirty);
         } else {
-          if_block1 = create_if_block_68(ctx2);
+          if_block1 = create_if_block_65(ctx2);
           if_block1.c();
           if_block1.m(div1, t7);
         }
@@ -12044,7 +12066,7 @@ function create_if_block_93(ctx) {
           button,
           "click",
           /*back*/
-          ctx[82]
+          ctx[81]
         );
         mounted = true;
       }
@@ -12250,7 +12272,7 @@ function create_if_block_43(ctx) {
   let t3;
   let show_if = (
     /*hardInThemeLive*/
-    ctx[74]() > 0
+    ctx[73]() > 0
   );
   let t4;
   let button;
@@ -12272,7 +12294,7 @@ function create_if_block_43(ctx) {
   let if_block1 = !/*hardMode*/
   ctx[16] && /*doneFresh*/
   ctx[27] > 0 && /*dailyLimit*/
-  ctx[26] > 0 && create_if_block_610(ctx);
+  ctx[26] > 0 && create_if_block_67(ctx);
   let if_block2 = show_if && create_if_block_510(ctx);
   return {
     c() {
@@ -12310,7 +12332,7 @@ function create_if_block_43(ctx) {
           button,
           "click",
           /*back*/
-          ctx[82]
+          ctx[81]
         );
         mounted = true;
       }
@@ -12333,7 +12355,7 @@ function create_if_block_43(ctx) {
         if (if_block1) {
           if_block1.p(ctx2, dirty);
         } else {
-          if_block1 = create_if_block_610(ctx2);
+          if_block1 = create_if_block_67(ctx2);
           if_block1.c();
           if_block1.m(div1, t3);
         }
@@ -12416,7 +12438,7 @@ function create_if_block_33(ctx) {
           button,
           "click",
           /*back*/
-          ctx[82]
+          ctx[81]
         );
         mounted = true;
       }
@@ -12494,7 +12516,7 @@ function create_if_block_28(ctx) {
           button,
           "click",
           /*back*/
-          ctx[82]
+          ctx[81]
         );
         mounted = true;
       }
@@ -12576,13 +12598,13 @@ function create_if_block_111(ctx) {
             button0,
             "click",
             /*click_handler*/
-            ctx[83]
+            ctx[82]
           ),
           listen(
             button1,
             "click",
             /*back*/
-            ctx[82]
+            ctx[81]
           )
         ];
         mounted = true;
@@ -12628,7 +12650,7 @@ function create_if_block5(ctx) {
     }
   };
 }
-function create_if_block_69(ctx) {
+function create_if_block_66(ctx) {
   let button;
   let mounted;
   let dispose;
@@ -12661,7 +12683,7 @@ function create_if_block_69(ctx) {
     }
   };
 }
-function create_if_block_68(ctx) {
+function create_if_block_65(ctx) {
   let button;
   let icon_action;
   let mounted;
@@ -12683,7 +12705,7 @@ function create_if_block_68(ctx) {
             button,
             "click",
             /*deleteCurrent*/
-            ctx[81]
+            ctx[80]
           )
         ];
         mounted = true;
@@ -12699,7 +12721,7 @@ function create_if_block_68(ctx) {
     }
   };
 }
-function create_if_block_49(ctx) {
+function create_if_block_47(ctx) {
   let div;
   let t0;
   let t1;
@@ -12711,20 +12733,20 @@ function create_if_block_49(ctx) {
     if (
       /*cur*/
       ctx2[11].quiz.kind === "spell"
-    ) return create_if_block_53;
+    ) return create_if_block_51;
     if (
       /*cur*/
       ctx2[11].quiz.kind === "cloze"
-    ) return create_if_block_64;
+    ) return create_if_block_61;
     if (
       /*cur*/
       ctx2[11].quiz.question === /*cur*/
       ctx2[11].doc.word
-    ) return create_if_block_65;
+    ) return create_if_block_622;
     return create_else_block_11;
   }
   function select_block_ctx(ctx2, type) {
-    if (type === create_if_block_53) return get_if_ctx(ctx2);
+    if (type === create_if_block_51) return get_if_ctx(ctx2);
     return ctx2;
   }
   let current_block_type = select_block_type_12(ctx, [-1, -1, -1, -1, -1]);
@@ -12732,7 +12754,7 @@ function create_if_block_49(ctx) {
   let if_block1 = (
     /*quizAnswered*/
     ctx[40] && !/*quizCorrect*/
-    ctx[13] && create_if_block_522(ctx)
+    ctx[13] && create_if_block_50(ctx)
   );
   quizoptions = new QuizOptions_default({
     props: {
@@ -12754,15 +12776,15 @@ function create_if_block_49(ctx) {
       ),
       onpick: (
         /*pick*/
-        ctx[72]
+        ctx[71]
       )
     }
   });
   function select_block_type_17(ctx2, dirty) {
     if (!/*quizAnswered*/
-    ctx2[40]) return create_if_block_50;
+    ctx2[40]) return create_if_block_48;
     if (!/*quizCorrect*/
-    ctx2[13]) return create_if_block_51;
+    ctx2[13]) return create_if_block_49;
   }
   let current_block_type_1 = select_block_type_17(ctx, [-1, -1, -1, -1, -1]);
   let if_block2 = current_block_type_1 && current_block_type_1(ctx);
@@ -12815,7 +12837,7 @@ function create_if_block_49(ctx) {
             transition_in(if_block1, 1);
           }
         } else {
-          if_block1 = create_if_block_522(ctx2);
+          if_block1 = create_if_block_50(ctx2);
           if_block1.c();
           transition_in(if_block1, 1);
           if_block1.m(div, null);
@@ -12887,7 +12909,7 @@ function create_if_block_40(ctx) {
   let t1;
   let if_block2_anchor;
   let current;
-  const if_block_creators = [create_if_block_45, create_else_block_7];
+  const if_block_creators = [create_if_block_432, create_else_block_7];
   const if_blocks = [];
   function select_block_type_10(ctx2, dirty) {
     if (
@@ -12899,16 +12921,10 @@ function create_if_block_40(ctx) {
   current_block_type_index = select_block_type_10(ctx, [-1, -1, -1, -1, -1]);
   if_block0 = if_blocks[current_block_type_index] = if_block_creators[current_block_type_index](ctx);
   let if_block1 = !/*peeking*/
-  ctx[14] && create_if_block_44(ctx);
+  ctx[14] && create_if_block_422(ctx);
   function select_block_type_11(ctx2, dirty) {
     if (!/*quizAnswered*/
     ctx2[40]) return create_if_block_41;
-    if (!/*quizCorrect*/
-    ctx2[13]) return create_if_block_422;
-    if (
-      /*peeking*/
-      ctx2[14]
-    ) return create_if_block_432;
     return create_else_block_6;
   }
   let current_block_type = select_block_type_11(ctx, [-1, -1, -1, -1, -1]);
@@ -12964,7 +12980,7 @@ function create_if_block_40(ctx) {
             transition_in(if_block1, 1);
           }
         } else {
-          if_block1 = create_if_block_44(ctx2);
+          if_block1 = create_if_block_422(ctx2);
           if_block1.c();
           transition_in(if_block1, 1);
           if_block1.m(t1.parentNode, t1);
@@ -13279,10 +13295,16 @@ function create_if_block_242(ctx) {
   let t0;
   let div1;
   let button0;
-  let t3;
+  let span0;
+  let icon_action;
+  let t1;
+  let t2;
   let button1;
-  let t6;
+  let t4;
   let button2;
+  let span1;
+  let icon_action_1;
+  let t5;
   let current;
   let mounted;
   let dispose;
@@ -13307,16 +13329,20 @@ function create_if_block_242(ctx) {
       t0 = space();
       div1 = element("div");
       button0 = element("button");
-      button0.innerHTML = `\u592A\u7B80\u5355<span class="el-kbd">1</span>`;
-      t3 = space();
+      span0 = element("span");
+      t1 = text("\u592A\u7B80\u5355");
+      t2 = space();
       button1 = element("button");
-      button1.innerHTML = `\u8BA4\u8BC6<span class="el-kbd">2</span>`;
-      t6 = space();
+      button1.textContent = "\u8BA4\u8BC6";
+      t4 = space();
       button2 = element("button");
-      button2.innerHTML = `\u4E0D\u8BA4\u8BC6<span class="el-kbd">3</span>`;
+      span1 = element("span");
+      t5 = text("\u4E0D\u8BA4\u8BC6");
       attr(div0, "class", "el-card");
+      attr(span0, "class", "el-btn-ico");
       attr(button0, "class", "el-grade g3");
       attr(button1, "class", "el-grade g2 el-grade-ok");
+      attr(span1, "class", "el-btn-ico");
       attr(button2, "class", "el-grade g1");
       attr(div1, "class", "el-grade-btns");
     },
@@ -13326,13 +13352,19 @@ function create_if_block_242(ctx) {
       insert(target, t0, anchor);
       insert(target, div1, anchor);
       append(div1, button0);
-      append(div1, t3);
+      append(button0, span0);
+      append(button0, t1);
+      append(div1, t2);
       append(div1, button1);
-      append(div1, t6);
+      append(div1, t4);
       append(div1, button2);
+      append(button2, span1);
+      append(button2, t5);
       current = true;
       if (!mounted) {
         dispose = [
+          action_destroyer(icon_action = /*icon*/
+          ctx[47].call(null, span0, ICON_EASY)),
           listen(
             button0,
             "click",
@@ -13345,11 +13377,13 @@ function create_if_block_242(ctx) {
             /*knowIt*/
             ctx[53]
           ),
+          action_destroyer(icon_action_1 = /*icon*/
+          ctx[47].call(null, span1, ICON_UNKNOWN)),
           listen(
             button2,
             "click",
             /*unknownWord*/
-            ctx[58]
+            ctx[57]
           )
         ];
         mounted = true;
@@ -13429,7 +13463,7 @@ function create_if_block_222(ctx) {
       if (if_block) if_block.c();
       t1 = space();
       button = element("button");
-      button.innerHTML = `\u7EE7\u7EED<span class="el-kbd">\u2192</span>`;
+      button.textContent = "\u7EE7\u7EED";
       attr(div0, "class", "el-card");
       attr(button, "class", "el-reveal el-reveal-ok");
       attr(div1, "class", "el-study-btns");
@@ -13545,7 +13579,7 @@ function create_else_block_11(ctx) {
     }
   };
 }
-function create_if_block_65(ctx) {
+function create_if_block_622(ctx) {
   let div0;
   let t1;
   let div1;
@@ -13563,10 +13597,10 @@ function create_if_block_65(ctx) {
   let if_block1_anchor;
   let mounted;
   let dispose;
-  let if_block0 = show_if && create_if_block_67(ctx);
+  let if_block0 = show_if && create_if_block_64(ctx);
   let if_block1 = (
     /*cur*/
-    ctx[11].quiz.phonetic && create_if_block_66(ctx)
+    ctx[11].quiz.phonetic && create_if_block_63(ctx)
   );
   return {
     c() {
@@ -13612,7 +13646,7 @@ function create_if_block_65(ctx) {
       if (show_if) {
         if (if_block0) {
         } else {
-          if_block0 = create_if_block_67(ctx2);
+          if_block0 = create_if_block_64(ctx2);
           if_block0.c();
           if_block0.m(div1, null);
         }
@@ -13632,7 +13666,7 @@ function create_if_block_65(ctx) {
         if (if_block1) {
           if_block1.p(ctx2, dirty);
         } else {
-          if_block1 = create_if_block_66(ctx2);
+          if_block1 = create_if_block_63(ctx2);
           if_block1.c();
           if_block1.m(if_block1_anchor.parentNode, if_block1_anchor);
         }
@@ -13656,7 +13690,7 @@ function create_if_block_65(ctx) {
     }
   };
 }
-function create_if_block_64(ctx) {
+function create_if_block_61(ctx) {
   let div0;
   let t1;
   let div1;
@@ -13695,25 +13729,25 @@ function create_if_block_64(ctx) {
     }
   };
 }
-function create_if_block_53(ctx) {
+function create_if_block_51(ctx) {
   let t;
   let if_block1_anchor;
   function select_block_type_13(ctx2, dirty) {
     if (
       /*cur*/
       ctx2[11].quiz.audioOnly
-    ) return create_if_block_61;
+    ) return create_if_block_59;
     return create_else_block_10;
   }
   let current_block_type = select_block_type_13(ctx, [-1, -1, -1, -1, -1]);
   let if_block0 = current_block_type(ctx);
   function select_block_type_15(ctx2, dirty) {
     if (!/*quizAnswered*/
-    ctx2[40]) return create_if_block_54;
+    ctx2[40]) return create_if_block_522;
     if (
       /*quizCorrect*/
       ctx2[13]
-    ) return create_if_block_60;
+    ) return create_if_block_58;
   }
   let current_block_type_1 = select_block_type_15(ctx, [-1, -1, -1, -1, -1]);
   let if_block1 = current_block_type_1 && current_block_type_1(ctx);
@@ -13764,7 +13798,7 @@ function create_if_block_53(ctx) {
     }
   };
 }
-function create_if_block_67(ctx) {
+function create_if_block_64(ctx) {
   let span;
   return {
     c() {
@@ -13782,7 +13816,7 @@ function create_if_block_67(ctx) {
     }
   };
 }
-function create_if_block_66(ctx) {
+function create_if_block_63(ctx) {
   let div;
   let t_value = (
     /*cur*/
@@ -13812,75 +13846,25 @@ function create_if_block_66(ctx) {
   };
 }
 function create_else_block_10(ctx) {
-  let div0;
-  let t1;
-  let div1;
-  let t2_value = (
-    /*cur*/
-    ctx[11].quiz.question + ""
-  );
-  let t2;
-  let t3;
-  let if_block_anchor;
-  let if_block = (
-    /*cur*/
-    ctx[11].quiz.phonetic && create_if_block_63(ctx)
-  );
+  let div;
   return {
     c() {
-      div0 = element("div");
-      div0.textContent = "\u62FC\u51FA\u8FD9\u4E2A\u5355\u8BCD\uFF08\u56DE\u8F66\u63D0\u4EA4\uFF09";
-      t1 = space();
-      div1 = element("div");
-      t2 = text(t2_value);
-      t3 = space();
-      if (if_block) if_block.c();
-      if_block_anchor = empty();
-      attr(div0, "class", "el-hint");
-      attr(div1, "class", "el-quiz-question");
+      div = element("div");
+      div.textContent = "\u62FC\u51FA\u8FD9\u4E2A\u5355\u8BCD\uFF08\u56DE\u8F66\u63D0\u4EA4\uFF09";
+      attr(div, "class", "el-hint");
     },
     m(target, anchor) {
-      insert(target, div0, anchor);
-      insert(target, t1, anchor);
-      insert(target, div1, anchor);
-      append(div1, t2);
-      insert(target, t3, anchor);
-      if (if_block) if_block.m(target, anchor);
-      insert(target, if_block_anchor, anchor);
+      insert(target, div, anchor);
     },
-    p(ctx2, dirty) {
-      if (dirty[0] & /*cur*/
-      2048 && t2_value !== (t2_value = /*cur*/
-      ctx2[11].quiz.question + "")) set_data(t2, t2_value);
-      if (
-        /*cur*/
-        ctx2[11].quiz.phonetic
-      ) {
-        if (if_block) {
-          if_block.p(ctx2, dirty);
-        } else {
-          if_block = create_if_block_63(ctx2);
-          if_block.c();
-          if_block.m(if_block_anchor.parentNode, if_block_anchor);
-        }
-      } else if (if_block) {
-        if_block.d(1);
-        if_block = null;
-      }
-    },
+    p: noop,
     d(detaching) {
       if (detaching) {
-        detach(div0);
-        detach(t1);
-        detach(div1);
-        detach(t3);
-        detach(if_block_anchor);
+        detach(div);
       }
-      if (if_block) if_block.d(detaching);
     }
   };
 }
-function create_if_block_61(ctx) {
+function create_if_block_59(ctx) {
   let div;
   let t1;
   let button;
@@ -13891,7 +13875,7 @@ function create_if_block_61(ctx) {
     if (
       /*hasAudio*/
       ctx2[36]
-    ) return create_if_block_622;
+    ) return create_if_block_60;
     return create_else_block_9;
   }
   let current_block_type = select_block_type_14(ctx, [-1, -1, -1, -1, -1]);
@@ -13899,7 +13883,7 @@ function create_if_block_61(ctx) {
   function click_handler_12() {
     return (
       /*click_handler_12*/
-      ctx[95](
+      ctx[94](
         /*word*/
         ctx[141]
       )
@@ -13955,35 +13939,6 @@ function create_if_block_61(ctx) {
     }
   };
 }
-function create_if_block_63(ctx) {
-  let div;
-  let t_value = (
-    /*cur*/
-    ctx[11].quiz.phonetic + ""
-  );
-  let t;
-  return {
-    c() {
-      div = element("div");
-      t = text(t_value);
-      attr(div, "class", "el-phonetic");
-    },
-    m(target, anchor) {
-      insert(target, div, anchor);
-      append(div, t);
-    },
-    p(ctx2, dirty) {
-      if (dirty[0] & /*cur*/
-      2048 && t_value !== (t_value = /*cur*/
-      ctx2[11].quiz.phonetic + "")) set_data(t, t_value);
-    },
-    d(detaching) {
-      if (detaching) {
-        detach(div);
-      }
-    }
-  };
-}
 function create_else_block_9(ctx) {
   let t;
   return {
@@ -14000,7 +13955,7 @@ function create_else_block_9(ctx) {
     }
   };
 }
-function create_if_block_622(ctx) {
+function create_if_block_60(ctx) {
   let span;
   return {
     c() {
@@ -14018,7 +13973,7 @@ function create_if_block_622(ctx) {
     }
   };
 }
-function create_if_block_60(ctx) {
+function create_if_block_58(ctx) {
   let div;
   let t0;
   let t1_value = (
@@ -14050,7 +14005,7 @@ function create_if_block_60(ctx) {
     }
   };
 }
-function create_if_block_54(ctx) {
+function create_if_block_522(ctx) {
   let t0;
   let t1;
   let div;
@@ -14077,13 +14032,13 @@ function create_if_block_54(ctx) {
   let if_block0 = (
     /*cur*/
     ctx[11].quiz.audioOnly && !/*spellShowQ*/
-    ctx[39] && create_if_block_59(ctx)
+    ctx[39] && create_if_block_57(ctx)
   );
   let if_block1 = (!/*cur*/
   ctx[11].quiz.audioOnly || /*spellShowQ*/
-  ctx[39]) && create_if_block_57(ctx);
+  ctx[39]) && create_if_block_55(ctx);
   let if_block2 = !/*cur*/
-  ctx[11].quiz.audioOnly && create_if_block_55(ctx);
+  ctx[11].quiz.audioOnly && create_if_block_53(ctx);
   return {
     c() {
       if (if_block0) if_block0.c();
@@ -14135,26 +14090,26 @@ function create_if_block_54(ctx) {
             input,
             "input",
             /*input_input_handler*/
-            ctx[97]
+            ctx[96]
           ),
           action_destroyer(focusOnMount_action = focusOnMount.call(null, input)),
           listen(
             input,
             "keydown",
             /*spellKeydown*/
-            ctx[70]
+            ctx[69]
           ),
           listen(
             button0,
             "click",
             /*submitSpell*/
-            ctx[71]
+            ctx[70]
           ),
           listen(
             button1,
             "click",
             /*click_handler_15*/
-            ctx[99]
+            ctx[98]
           )
         ];
         mounted = true;
@@ -14169,7 +14124,7 @@ function create_if_block_54(ctx) {
         if (if_block0) {
           if_block0.p(ctx2, dirty);
         } else {
-          if_block0 = create_if_block_59(ctx2);
+          if_block0 = create_if_block_57(ctx2);
           if_block0.c();
           if_block0.m(t0.parentNode, t0);
         }
@@ -14183,7 +14138,7 @@ function create_if_block_54(ctx) {
         if (if_block1) {
           if_block1.p(ctx2, dirty);
         } else {
-          if_block1 = create_if_block_57(ctx2);
+          if_block1 = create_if_block_55(ctx2);
           if_block1.c();
           if_block1.m(t1.parentNode, t1);
         }
@@ -14205,7 +14160,7 @@ function create_if_block_54(ctx) {
         if (if_block2) {
           if_block2.p(ctx2, dirty);
         } else {
-          if_block2 = create_if_block_55(ctx2);
+          if_block2 = create_if_block_53(ctx2);
           if_block2.c();
           if_block2.m(div, t3);
         }
@@ -14240,7 +14195,7 @@ function create_if_block_54(ctx) {
     }
   };
 }
-function create_if_block_59(ctx) {
+function create_if_block_57(ctx) {
   let button;
   let mounted;
   let dispose;
@@ -14257,7 +14212,7 @@ function create_if_block_59(ctx) {
           button,
           "click",
           /*click_handler_13*/
-          ctx[96]
+          ctx[95]
         );
         mounted = true;
       }
@@ -14272,7 +14227,7 @@ function create_if_block_59(ctx) {
     }
   };
 }
-function create_if_block_57(ctx) {
+function create_if_block_55(ctx) {
   let div;
   let t0_value = (
     /*cur*/
@@ -14283,7 +14238,7 @@ function create_if_block_57(ctx) {
   let if_block_anchor;
   let if_block = (
     /*cur*/
-    ctx[11].quiz.phonetic && create_if_block_58(ctx)
+    ctx[11].quiz.phonetic && create_if_block_56(ctx)
   );
   return {
     c() {
@@ -14312,7 +14267,7 @@ function create_if_block_57(ctx) {
         if (if_block) {
           if_block.p(ctx2, dirty);
         } else {
-          if_block = create_if_block_58(ctx2);
+          if_block = create_if_block_56(ctx2);
           if_block.c();
           if_block.m(if_block_anchor.parentNode, if_block_anchor);
         }
@@ -14331,7 +14286,7 @@ function create_if_block_57(ctx) {
     }
   };
 }
-function create_if_block_58(ctx) {
+function create_if_block_56(ctx) {
   let div;
   let t_value = (
     /*cur*/
@@ -14360,7 +14315,7 @@ function create_if_block_58(ctx) {
     }
   };
 }
-function create_if_block_55(ctx) {
+function create_if_block_53(ctx) {
   let button;
   let button_title_value;
   let mounted;
@@ -14369,7 +14324,7 @@ function create_if_block_55(ctx) {
     if (
       /*hasAudio*/
       ctx2[36]
-    ) return create_if_block_56;
+    ) return create_if_block_54;
     return create_else_block_8;
   }
   let current_block_type = select_block_type_16(ctx, [-1, -1, -1, -1, -1]);
@@ -14377,7 +14332,7 @@ function create_if_block_55(ctx) {
   function click_handler_14() {
     return (
       /*click_handler_14*/
-      ctx[98](
+      ctx[97](
         /*word*/
         ctx[141]
       )
@@ -14441,7 +14396,7 @@ function create_else_block_8(ctx) {
     }
   };
 }
-function create_if_block_56(ctx) {
+function create_if_block_54(ctx) {
   let span;
   return {
     c() {
@@ -14459,7 +14414,7 @@ function create_if_block_56(ctx) {
     }
   };
 }
-function create_if_block_522(ctx) {
+function create_if_block_50(ctx) {
   let div0;
   let t0;
   let t1_value = (
@@ -14555,7 +14510,7 @@ function create_if_block_522(ctx) {
     }
   };
 }
-function create_if_block_51(ctx) {
+function create_if_block_49(ctx) {
   let button;
   let mounted;
   let dispose;
@@ -14587,14 +14542,14 @@ function create_if_block_51(ctx) {
     }
   };
 }
-function create_if_block_50(ctx) {
+function create_if_block_48(ctx) {
   let button;
   let mounted;
   let dispose;
   return {
     c() {
       button = element("button");
-      button.innerHTML = `\u4E0D\u4F1A<span class="el-kbd">0</span>`;
+      button.textContent = "\u4E0D\u4F1A";
       attr(button, "class", "el-grade el-grade-sub");
     },
     m(target, anchor) {
@@ -14604,7 +14559,7 @@ function create_if_block_50(ctx) {
           button,
           "click",
           /*quizGiveUp*/
-          ctx[73]
+          ctx[72]
         );
         mounted = true;
       }
@@ -14638,15 +14593,15 @@ function create_else_block_7(ctx) {
   let if_block2_anchor;
   let mounted;
   let dispose;
-  let if_block0 = show_if && create_if_block_48(ctx);
+  let if_block0 = show_if && create_if_block_46(ctx);
   let if_block1 = (
     /*cur*/
-    ctx[11].quiz.phonetic && create_if_block_47(ctx)
+    ctx[11].quiz.phonetic && create_if_block_45(ctx)
   );
   let if_block2 = (
     /*quizAnswered*/
     ctx[40] && !/*quizCorrect*/
-    ctx[13] && create_if_block_46(ctx)
+    ctx[13] && create_if_block_44(ctx)
   );
   return {
     c() {
@@ -14696,7 +14651,7 @@ function create_else_block_7(ctx) {
       if (show_if) {
         if (if_block0) {
         } else {
-          if_block0 = create_if_block_48(ctx2);
+          if_block0 = create_if_block_46(ctx2);
           if_block0.c();
           if_block0.m(div1, null);
         }
@@ -14716,7 +14671,7 @@ function create_else_block_7(ctx) {
         if (if_block1) {
           if_block1.p(ctx2, dirty);
         } else {
-          if_block1 = create_if_block_47(ctx2);
+          if_block1 = create_if_block_45(ctx2);
           if_block1.c();
           if_block1.m(t4.parentNode, t4);
         }
@@ -14732,7 +14687,7 @@ function create_else_block_7(ctx) {
         if (if_block2) {
           if_block2.p(ctx2, dirty);
         } else {
-          if_block2 = create_if_block_46(ctx2);
+          if_block2 = create_if_block_44(ctx2);
           if_block2.c();
           if_block2.m(if_block2_anchor.parentNode, if_block2_anchor);
         }
@@ -14760,8 +14715,10 @@ function create_else_block_7(ctx) {
     }
   };
 }
-function create_if_block_45(ctx) {
+function create_if_block_432(ctx) {
   let wordfullcard;
+  let t0;
+  let div;
   let current;
   wordfullcard = new WordFullCard_default({
     props: {
@@ -14787,9 +14744,15 @@ function create_if_block_45(ctx) {
   return {
     c() {
       create_component(wordfullcard.$$.fragment);
+      t0 = space();
+      div = element("div");
+      div.textContent = "\u2705 \u9009\u5BF9\u4E86";
+      attr(div, "class", "el-quiz-reveal");
     },
     m(target, anchor) {
       mount_component(wordfullcard, target, anchor);
+      insert(target, t0, anchor);
+      insert(target, div, anchor);
       current = true;
     },
     p(ctx2, dirty) {
@@ -14818,11 +14781,15 @@ function create_if_block_45(ctx) {
       current = false;
     },
     d(detaching) {
+      if (detaching) {
+        detach(t0);
+        detach(div);
+      }
       destroy_component(wordfullcard, detaching);
     }
   };
 }
-function create_if_block_48(ctx) {
+function create_if_block_46(ctx) {
   let span;
   return {
     c() {
@@ -14840,7 +14807,7 @@ function create_if_block_48(ctx) {
     }
   };
 }
-function create_if_block_47(ctx) {
+function create_if_block_45(ctx) {
   let div;
   let t_value = (
     /*cur*/
@@ -14869,7 +14836,7 @@ function create_if_block_47(ctx) {
     }
   };
 }
-function create_if_block_46(ctx) {
+function create_if_block_44(ctx) {
   let div0;
   let t0;
   let t1_value = (
@@ -14912,7 +14879,7 @@ function create_if_block_46(ctx) {
     }
   };
 }
-function create_if_block_44(ctx) {
+function create_if_block_422(ctx) {
   let quizoptions;
   let current;
   quizoptions = new QuizOptions_default({
@@ -14984,72 +14951,14 @@ function create_else_block_6(ctx) {
   return {
     c() {
       button = element("button");
-      button.innerHTML = `\u770B\u8BCD\u4E49\u4F8B\u53E5<span class="el-kbd">\u2190</span>`;
-      attr(button, "class", "el-grade el-grade-sub");
-    },
-    m(target, anchor) {
-      insert(target, button, anchor);
-      if (!mounted) {
-        dispose = listen(
-          button,
-          "click",
-          /*peekFull*/
-          ctx[57]
-        );
-        mounted = true;
-      }
-    },
-    p: noop,
-    d(detaching) {
-      if (detaching) {
-        detach(button);
-      }
-      mounted = false;
-      dispose();
-    }
-  };
-}
-function create_if_block_432(ctx) {
-  let button;
-  let mounted;
-  let dispose;
-  return {
-    c() {
-      button = element("button");
-      button.textContent = "\u7EE7\u7EED\uFF08\u7A7A\u683C\uFF09";
-      attr(button, "class", "el-reveal el-reveal-ok");
-    },
-    m(target, anchor) {
-      insert(target, button, anchor);
-      if (!mounted) {
-        dispose = listen(
-          button,
-          "click",
-          /*advance*/
-          ctx[49]
-        );
-        mounted = true;
-      }
-    },
-    p: noop,
-    d(detaching) {
-      if (detaching) {
-        detach(button);
-      }
-      mounted = false;
-      dispose();
-    }
-  };
-}
-function create_if_block_422(ctx) {
-  let button;
-  let mounted;
-  let dispose;
-  return {
-    c() {
-      button = element("button");
       button.textContent = "\u7EE7\u7EED\uFF08\u7A7A\u683C\uFF09";
       attr(button, "class", "el-reveal");
+      toggle_class(
+        button,
+        "el-reveal-ok",
+        /*quizCorrect*/
+        ctx[13]
+      );
     },
     m(target, anchor) {
       insert(target, button, anchor);
@@ -15063,7 +14972,17 @@ function create_if_block_422(ctx) {
         mounted = true;
       }
     },
-    p: noop,
+    p(ctx2, dirty) {
+      if (dirty[0] & /*quizCorrect*/
+      8192) {
+        toggle_class(
+          button,
+          "el-reveal-ok",
+          /*quizCorrect*/
+          ctx2[13]
+        );
+      }
+    },
     d(detaching) {
       if (detaching) {
         detach(button);
@@ -15076,40 +14995,58 @@ function create_if_block_422(ctx) {
 function create_if_block_41(ctx) {
   let div;
   let button0;
-  let t2;
+  let span0;
+  let icon_action;
+  let t0;
+  let t1;
   let button1;
+  let span1;
+  let icon_action_1;
+  let t2;
   let mounted;
   let dispose;
   return {
     c() {
       div = element("div");
       button0 = element("button");
-      button0.innerHTML = `\u592A\u7B80\u5355<span class="el-kbd">5</span>`;
-      t2 = space();
+      span0 = element("span");
+      t0 = text("\u4E0D\u4F1A");
+      t1 = space();
       button1 = element("button");
-      button1.innerHTML = `\u5176\u5B9E\u4E0D\u8BA4\u8BC6<span class="el-kbd">0</span>`;
+      span1 = element("span");
+      t2 = text("\u592A\u7B80\u5355");
+      attr(span0, "class", "el-btn-ico");
       attr(button0, "class", "el-grade el-grade-sub");
+      attr(span1, "class", "el-btn-ico");
       attr(button1, "class", "el-grade el-grade-sub");
       attr(div, "class", "el-grade-btns");
     },
     m(target, anchor) {
       insert(target, div, anchor);
       append(div, button0);
-      append(div, t2);
+      append(button0, span0);
+      append(button0, t0);
+      append(div, t1);
       append(div, button1);
+      append(button1, span1);
+      append(button1, t2);
       if (!mounted) {
         dispose = [
+          action_destroyer(icon_action = /*icon*/
+          ctx[47].call(null, span0, ICON_UNKNOWN)),
           listen(
             button0,
             "click",
-            /*checkEasy*/
-            ctx[56]
+            /*checkUnknown*/
+            ctx[55]
           ),
+          action_destroyer(icon_action_1 = /*icon*/
+          ctx[47].call(null, span1, ICON_EASY)),
           listen(
             button1,
             "click",
-            /*checkUnknown*/
-            ctx[55]
+            /*checkEasy*/
+            ctx[56]
           )
         ];
         mounted = true;
@@ -15676,31 +15613,36 @@ function create_if_block_34(ctx) {
 function create_else_block_32(ctx) {
   let div;
   let button0;
-  let t2;
+  let t1;
   let button1;
-  let t5;
+  let t3;
   let button2;
-  let t8;
+  let t5;
   let button3;
+  let span;
+  let icon_action;
+  let t6;
   let mounted;
   let dispose;
   return {
     c() {
       div = element("div");
       button0 = element("button");
-      button0.innerHTML = `\u5FD8\u8BB0<span class="el-kbd">1</span>`;
-      t2 = space();
+      button0.textContent = "\u5FD8\u8BB0";
+      t1 = space();
       button1 = element("button");
-      button1.innerHTML = `\u6A21\u7CCA<span class="el-kbd">2</span>`;
-      t5 = space();
+      button1.textContent = "\u6A21\u7CCA";
+      t3 = space();
       button2 = element("button");
-      button2.innerHTML = `\u8BA4\u8BC6<span class="el-kbd">3</span>`;
-      t8 = space();
+      button2.textContent = "\u8BA4\u8BC6";
+      t5 = space();
       button3 = element("button");
-      button3.innerHTML = `\u592A\u7B80\u5355<span class="el-kbd">4</span>`;
+      span = element("span");
+      t6 = text("\u592A\u7B80\u5355");
       attr(button0, "class", "el-grade g1");
       attr(button1, "class", "el-grade g2");
       attr(button2, "class", "el-grade g3 el-grade-ok");
+      attr(span, "class", "el-btn-ico");
       attr(button3, "class", "el-grade g3");
       attr(button3, "title", "\u76F4\u63A5\u6807\u8BB0\u638C\u63E1\uFF0C\u8DF3\u8FC7\u5269\u4F59\u590D\u4E60\u6863\u4F4D");
       attr(div, "class", "el-grade-btns");
@@ -15708,37 +15650,41 @@ function create_else_block_32(ctx) {
     m(target, anchor) {
       insert(target, div, anchor);
       append(div, button0);
-      append(div, t2);
+      append(div, t1);
       append(div, button1);
-      append(div, t5);
+      append(div, t3);
       append(div, button2);
-      append(div, t8);
+      append(div, t5);
       append(div, button3);
+      append(button3, span);
+      append(button3, t6);
       if (!mounted) {
         dispose = [
           listen(
             button0,
             "click",
             /*click_handler_9*/
-            ctx[92]
+            ctx[91]
           ),
           listen(
             button1,
             "click",
             /*click_handler_10*/
-            ctx[93]
+            ctx[92]
           ),
           listen(
             button2,
             "click",
             /*click_handler_11*/
-            ctx[94]
+            ctx[93]
           ),
+          action_destroyer(icon_action = /*icon*/
+          ctx[47].call(null, span, ICON_EASY)),
           listen(
             button3,
             "click",
             /*reviewEasy*/
-            ctx[68]
+            ctx[67]
           )
         ];
         mounted = true;
@@ -15838,7 +15784,7 @@ function create_else_block_22(ctx) {
           button,
           "click",
           /*reveal*/
-          ctx[64]
+          ctx[63]
         );
         mounted = true;
       }
@@ -15859,6 +15805,9 @@ function create_if_block_31(ctx) {
   let quizoptions;
   let t0;
   let button;
+  let span;
+  let icon_action;
+  let t1;
   let current;
   let mounted;
   let dispose;
@@ -15882,7 +15831,7 @@ function create_if_block_31(ctx) {
       ),
       onpick: (
         /*reviewPick*/
-        ctx[65]
+        ctx[64]
       )
     }
   });
@@ -15891,21 +15840,29 @@ function create_if_block_31(ctx) {
       create_component(quizoptions.$$.fragment);
       t0 = space();
       button = element("button");
-      button.innerHTML = `\u5176\u5B9E\u4E0D\u8BA4\u8BC6<span class="el-kbd">0</span>`;
+      span = element("span");
+      t1 = text("\u4E0D\u4F1A");
+      attr(span, "class", "el-btn-ico");
       attr(button, "class", "el-grade el-grade-sub");
     },
     m(target, anchor) {
       mount_component(quizoptions, target, anchor);
       insert(target, t0, anchor);
       insert(target, button, anchor);
+      append(button, span);
+      append(button, t1);
       current = true;
       if (!mounted) {
-        dispose = listen(
-          button,
-          "click",
-          /*reviewUnknown*/
-          ctx[66]
-        );
+        dispose = [
+          action_destroyer(icon_action = /*icon*/
+          ctx[47].call(null, span, ICON_UNKNOWN)),
+          listen(
+            button,
+            "click",
+            /*reviewUnknown*/
+            ctx[65]
+          )
+        ];
         mounted = true;
       }
     },
@@ -15941,7 +15898,7 @@ function create_if_block_31(ctx) {
       }
       destroy_component(quizoptions, detaching);
       mounted = false;
-      dispose();
+      run_all(dispose);
     }
   };
 }
@@ -15966,7 +15923,7 @@ function create_if_block_282(ctx) {
           button,
           "click",
           /*reveal*/
-          ctx[64]
+          ctx[63]
         );
         mounted = true;
       }
@@ -15984,54 +15941,72 @@ function create_if_block_282(ctx) {
 function create_if_block_272(ctx) {
   let div;
   let button0;
-  let t2;
+  let span0;
+  let icon_action;
+  let t0;
+  let t1;
   let button1;
-  let t4;
+  let t3;
   let button2;
+  let span1;
+  let icon_action_1;
+  let t4;
   let mounted;
   let dispose;
   return {
     c() {
       div = element("div");
       button0 = element("button");
-      button0.innerHTML = `\u592A\u7B80\u5355<span class="el-kbd">1</span>`;
-      t2 = space();
+      span0 = element("span");
+      t0 = text("\u592A\u7B80\u5355");
+      t1 = space();
       button1 = element("button");
       button1.textContent = "\u7EE7\u7EED\uFF08\u7A7A\u683C\uFF09";
-      t4 = space();
+      t3 = space();
       button2 = element("button");
-      button2.innerHTML = `\u5176\u5B9E\u4E0D\u8BA4\u8BC6<span class="el-kbd">3</span>`;
+      span1 = element("span");
+      t4 = text("\u4E0D\u4F1A");
+      attr(span0, "class", "el-btn-ico");
       attr(button0, "class", "el-grade g3");
       attr(button1, "class", "el-grade el-grade-ok");
+      attr(span1, "class", "el-btn-ico");
       attr(button2, "class", "el-grade g1 el-grade-sub");
       attr(div, "class", "el-grade-btns");
     },
     m(target, anchor) {
       insert(target, div, anchor);
       append(div, button0);
-      append(div, t2);
+      append(button0, span0);
+      append(button0, t0);
+      append(div, t1);
       append(div, button1);
-      append(div, t4);
+      append(div, t3);
       append(div, button2);
+      append(button2, span1);
+      append(button2, t4);
       if (!mounted) {
         dispose = [
+          action_destroyer(icon_action = /*icon*/
+          ctx[47].call(null, span0, ICON_EASY)),
           listen(
             button0,
             "click",
             /*studyEasy*/
-            ctx[61]
+            ctx[60]
           ),
           listen(
             button1,
             "click",
             /*confirmContinue*/
-            ctx[62]
+            ctx[61]
           ),
+          action_destroyer(icon_action_1 = /*icon*/
+          ctx[47].call(null, span1, ICON_UNKNOWN)),
           listen(
             button2,
             "click",
             /*confirmNo*/
-            ctx[63]
+            ctx[62]
           )
         ];
         mounted = true;
@@ -16050,9 +16025,12 @@ function create_if_block_272(ctx) {
 function create_if_block_262(ctx) {
   let div;
   let button0;
-  let t2;
+  let span;
+  let icon_action;
+  let t0;
+  let t1;
   let button1;
-  let t4;
+  let t3;
   let button2;
   let mounted;
   let dispose;
@@ -16060,13 +16038,15 @@ function create_if_block_262(ctx) {
     c() {
       div = element("div");
       button0 = element("button");
-      button0.innerHTML = `\u592A\u7B80\u5355<span class="el-kbd">1</span>`;
-      t2 = space();
+      span = element("span");
+      t0 = text("\u592A\u7B80\u5355");
+      t1 = space();
       button1 = element("button");
       button1.textContent = "\u8BB0\u4F4F\u4E86\uFF08Enter\uFF09";
-      t4 = space();
+      t3 = space();
       button2 = element("button");
-      button2.innerHTML = `\u518D\u5B66\u4E00\u6B21<span class="el-kbd">4</span>`;
+      button2.textContent = "\u518D\u5B66\u4E00\u6B21";
+      attr(span, "class", "el-btn-ico");
       attr(button0, "class", "el-reveal");
       attr(button1, "class", "el-reveal el-reveal-ok");
       attr(button2, "class", "el-reveal");
@@ -16075,29 +16055,33 @@ function create_if_block_262(ctx) {
     m(target, anchor) {
       insert(target, div, anchor);
       append(div, button0);
-      append(div, t2);
+      append(button0, span);
+      append(button0, t0);
+      append(div, t1);
       append(div, button1);
-      append(div, t4);
+      append(div, t3);
       append(div, button2);
       if (!mounted) {
         dispose = [
+          action_destroyer(icon_action = /*icon*/
+          ctx[47].call(null, span, ICON_EASY)),
           listen(
             button0,
             "click",
             /*studyEasy*/
-            ctx[61]
+            ctx[60]
           ),
           listen(
             button1,
             "click",
             /*studied*/
-            ctx[59]
+            ctx[58]
           ),
           listen(
             button2,
             "click",
             /*restudy*/
-            ctx[60]
+            ctx[59]
           )
         ];
         mounted = true;
@@ -16120,7 +16104,7 @@ function create_if_block_232(ctx) {
   return {
     c() {
       button = element("button");
-      button.innerHTML = `\u4E0A\u4E00\u8BCD<span class="el-kbd">\u2190</span>`;
+      button.textContent = "\u4E0A\u4E00\u8BCD";
       attr(button, "class", "el-reveal");
     },
     m(target, anchor) {
@@ -16392,7 +16376,7 @@ function create_each_block_13(ctx) {
   function click_handler_3() {
     return (
       /*click_handler_3*/
-      ctx[86](
+      ctx[85](
         /*w*/
         ctx[136]
       )
@@ -16501,7 +16485,7 @@ function create_each_block5(ctx) {
   function click_handler_4() {
     return (
       /*click_handler_4*/
-      ctx[87](
+      ctx[86](
         /*w*/
         ctx[136]
       )
@@ -16639,7 +16623,7 @@ function create_if_block_133(ctx) {
           button,
           "click",
           /*click_handler_5*/
-          ctx[88]
+          ctx[87]
         );
         mounted = true;
       }
@@ -16692,7 +16676,7 @@ function create_if_block_123(ctx) {
           button,
           "click",
           /*resume*/
-          ctx[78]
+          ctx[77]
         );
         mounted = true;
       }
@@ -16744,7 +16728,7 @@ function create_if_block_113(ctx) {
           button,
           "click",
           /*click_handler_6*/
-          ctx[89]
+          ctx[88]
         );
         mounted = true;
       }
@@ -16795,7 +16779,7 @@ function create_if_block_103(ctx) {
           button,
           "click",
           /*click_handler_7*/
-          ctx[90]
+          ctx[89]
         );
         mounted = true;
       }
@@ -16899,11 +16883,11 @@ function create_if_block_83(ctx) {
       t3 = space();
       div0 = element("div");
       div0.textContent = `${/*themeIdleText*/
-      ctx[75]()}\u3002`;
+      ctx[74]()}\u3002`;
       t6 = space();
       div1 = element("div");
       div1.textContent = `${/*todayQuotaText*/
-      ctx[76]()}\u3002`;
+      ctx[75]()}\u3002`;
       attr(div0, "class", "el-muted");
       attr(div1, "class", "el-muted");
     },
@@ -16954,7 +16938,7 @@ function create_if_block_73(ctx) {
     }
   };
 }
-function create_if_block_610(ctx) {
+function create_if_block_67(ctx) {
   let button;
   let t0;
   let t1_value = Math.min(
@@ -16986,7 +16970,7 @@ function create_if_block_610(ctx) {
           button,
           "click",
           /*click_handler_1*/
-          ctx[84]
+          ctx[83]
         );
         mounted = true;
       }
@@ -17017,7 +17001,7 @@ function create_if_block_510(ctx) {
     c() {
       button = element("button");
       button.textContent = `\u96BE\u8BCD\u590D\u4E60\uFF08${/*hardInThemeLive*/
-      ctx[74]()}\uFF09`;
+      ctx[73]()}\uFF09`;
       attr(button, "class", "mod-warning");
     },
     m(target, anchor) {
@@ -17027,7 +17011,7 @@ function create_if_block_510(ctx) {
           button,
           "click",
           /*click_handler_2*/
-          ctx[85]
+          ctx[84]
         );
         mounted = true;
       }
@@ -17112,10 +17096,10 @@ function create_fragment6(ctx) {
             window_1,
             "keydown",
             /*onKey*/
-            ctx[80]
+            ctx[79]
           ),
           action_destroyer(fitViewport_action = /*fitViewport*/
-          ctx[69].call(null, div))
+          ctx[68].call(null, div))
         ];
         mounted = true;
       }
@@ -17171,8 +17155,10 @@ function create_fragment6(ctx) {
     }
   };
 }
+var ICON_UNKNOWN = "x";
+var ICON_EASY = "smile";
 var AUDIO_AHEAD = 5;
-var KEYS_TIP = "1~4 \u8BC4\u5206/\u9009\u9879 \xB7 0 \u5176\u5B9E\u4E0D\u8BA4\u8BC6/\u4E0D\u4F1A\n\u7A7A\u683C \u663E\u793A\u7B54\u6848\nEnter \u8BB0\u4F4F\u4E86/\u63D0\u4EA4\u62FC\u5199\nR \u91CD\u542C\u53D1\u97F3\nB \u8BB0\u52A9\u8BB0\nEsc \u7ED3\u675F\u672C\u8F6E";
+var KEYS_TIP = "1~4 \u8BC4\u5206/\u9009\u9879 \xB7 0 \u4E0D\u4F1A\n\u7A7A\u683C \u663E\u793A\u7B54\u6848\nEnter \u8BB0\u4F4F\u4E86/\u63D0\u4EA4\u62FC\u5199\nR \u91CD\u542C\u53D1\u97F3\nB \u8BB0\u52A9\u8BB0\nEsc \u7ED3\u675F\u672C\u8F6E";
 function focusOnMount(node) {
   node.focus();
   const vv = window.visualViewport;
@@ -17437,7 +17423,7 @@ function instance6($$self, $$props, $$invalidate) {
       case "quiz":
         return answered;
       case "check":
-        return false;
+        return peeking;
     }
   }
   function settleTail() {
@@ -17458,6 +17444,7 @@ function instance6($$self, $$props, $$invalidate) {
   }
   function flipPending() {
     var _a;
+    if (peeking) return false;
     const k = (_a = cards[idx]) === null || _a === void 0 ? void 0 : _a.kind;
     return (k === "quiz" || k === "check") && quizAnswered && quizCorrect;
   }
@@ -17520,7 +17507,7 @@ function instance6($$self, $$props, $$invalidate) {
   function knowIt() {
     if ((cur === null || cur === void 0 ? void 0 : cur.kind) !== "new") return;
     const doc = cur.doc;
-    studiedDocs.push(doc);
+    markStudied(doc);
     const q = plugin.db.settings.knowCheck === false ? null : buildCheckQuiz(doc, checkPool(doc));
     if (q) insertNext({ kind: "check", doc, quiz: q });
     else {
@@ -17531,7 +17518,7 @@ function instance6($$self, $$props, $$invalidate) {
   }
   function newWordCard(doc) {
     if (plugin.db.settings.knowCheck === false) {
-      studiedDocs.push(doc);
+      markStudied(doc);
       return { kind: "study", doc };
     }
     const q = buildCheckQuiz(doc, checkPool(doc));
@@ -17550,8 +17537,8 @@ function instance6($$self, $$props, $$invalidate) {
     $$invalidate(13, quizCorrect = i === cur.quiz.answer);
     if (quizCorrect) {
       finishGrade(plugin.recordGrade(cur.doc.word, 3));
-      plugin.speakWord(cur.doc.word);
-      armFlip();
+      $$invalidate(14, peeking = true);
+      autoSpeak();
     } else {
       insertNext({ kind: "study", doc: cur.doc });
     }
@@ -17565,20 +17552,11 @@ function instance6($$self, $$props, $$invalidate) {
   function checkEasy() {
     const c = cur;
     if (!c || c.kind !== "check" || quizAnswered) return;
-    studiedDocs = studiedDocs.filter((d) => d.word !== c.doc.word);
-    plugin.markMastered(c.doc.word);
-    $$invalidate(18, stats.easy++, stats);
-    masteredNow.push(c.doc.word);
-    advance();
-  }
-  function peekFull() {
-    if (peeking || !flipPending()) return;
-    cancelFlip();
-    $$invalidate(14, peeking = true);
+    masterEasy(c.doc.word);
   }
   function unknownWord() {
     if ((cur === null || cur === void 0 ? void 0 : cur.kind) !== "new") return;
-    studiedDocs.push(cur.doc);
+    markStudied(cur.doc);
     insertNext({ kind: "study", doc: cur.doc });
     advance();
   }
@@ -17601,10 +17579,13 @@ function instance6($$self, $$props, $$invalidate) {
   function studyEasy() {
     const c = cur;
     if (!c || c.kind !== "study" && c.kind !== "confirm" && c.kind !== "restudy") return;
-    studiedDocs = studiedDocs.filter((d) => d.word !== c.doc.word);
-    plugin.markMastered(c.doc.word);
+    masterEasy(c.doc.word);
+  }
+  function masterEasy(word) {
+    studiedDocs = studiedDocs.filter((d) => d.word !== word);
+    plugin.markMastered(word);
     $$invalidate(18, stats.easy++, stats);
-    masteredNow.push(c.doc.word);
+    masteredNow.push(word);
     advance();
   }
   function confirmContinue() {
@@ -17886,6 +17867,7 @@ function instance6($$self, $$props, $$invalidate) {
     $$invalidate(5, revealed = false);
     $$invalidate(6, quizPicked = -1);
     $$invalidate(7, quizGaveUp = false);
+    $$invalidate(14, peeking = false);
     $$invalidate(37, spellInput = "");
     $$invalidate(38, spellHinted = false);
     $$invalidate(39, spellShowQ = false);
@@ -17952,8 +17934,6 @@ function instance6($$self, $$props, $$invalidate) {
       } else if (cur.kind === "check" && peeking && (k === " " || k === "Enter")) {
         e.preventDefault();
         advance();
-      } else if (cur.kind === "check" && flipPending() && k === "ArrowLeft") {
-        peekFull();
       } else if (quizAnswered && !quizCorrect && k === " ") {
         e.preventDefault();
         advance();
@@ -18011,6 +17991,7 @@ function instance6($$self, $$props, $$invalidate) {
       $$invalidate(5, revealed = false);
       $$invalidate(6, quizPicked = -1);
       $$invalidate(7, quizGaveUp = false);
+      $$invalidate(14, peeking = false);
       $$invalidate(37, spellInput = "");
       $$invalidate(38, spellHinted = false);
       $$invalidate(39, spellShowQ = false);
@@ -18162,7 +18143,6 @@ function instance6($$self, $$props, $$invalidate) {
     checkPick,
     checkUnknown,
     checkEasy,
-    peekFull,
     unknownWord,
     studied,
     restudy,
@@ -19268,7 +19248,7 @@ function create_if_block_74(ctx) {
     }
   };
 }
-function create_if_block_611(ctx) {
+function create_if_block_68(ctx) {
   let t0;
   let t1_value = (
     /*t*/
@@ -19531,7 +19511,7 @@ function create_each_block_22(key_1, ctx) {
   );
   let if_block1 = (
     /*t*/
-    ctx[61].learn > 0 && create_if_block_611(ctx)
+    ctx[61].learn > 0 && create_if_block_68(ctx)
   );
   let if_block2 = (
     /*t*/
@@ -19749,7 +19729,7 @@ function create_each_block_22(key_1, ctx) {
         if (if_block1) {
           if_block1.p(ctx, dirty);
         } else {
-          if_block1 = create_if_block_611(ctx);
+          if_block1 = create_if_block_68(ctx);
           if_block1.c();
           if_block1.m(div2, t12);
         }
@@ -22236,6 +22216,17 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
     const base = this.topicOf(primary);
     return extra.size ? [base, ...extra] : [base];
   }
+  /** 按语境主题分组（补例句/补义项/合并补全共用）：同主题词进同一请求，见 docs/enrich.md「主题语境生成」 */
+  groupByTheme(docs, ctx) {
+    const byTheme = /* @__PURE__ */ new Map();
+    for (const d of docs) {
+      const t = this.genTheme(d, ctx);
+      const arr = byTheme.get(t);
+      if (arr) arr.push(d);
+      else byTheme.set(t, [d]);
+    }
+    return byTheme;
+  }
   /** 同义/反义关联词：优先读词笔记 frontmatter 缓存（离线直读），再查基础词典（v2 携带同反义词），
    *  都未命中才请求 Datamuse 并回写（单侧结果也缓存）。
    *  online：自动路径（翻卡/点词）传「学习时按需补全」开关值，关闭时只离线直读；手动补全命令不传（照常抓） */
@@ -22443,13 +22434,7 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
     const generated = /* @__PURE__ */ new Set();
     const report = (extra) => onProgress == null ? void 0 : onProgress(generated.size, missing.length, extra);
     report();
-    const byTheme = /* @__PURE__ */ new Map();
-    for (const d of missing) {
-      const t = this.genTheme(d, ctx);
-      const arr = byTheme.get(t);
-      if (arr) arr.push(d);
-      else byTheme.set(t, [d]);
-    }
+    const byTheme = this.groupByTheme(missing, ctx);
     for (const [t, docs] of byTheme) {
       const m = await llmExamples(
         cfg,
@@ -22502,13 +22487,7 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
     let done = 0;
     const prog = quiet ? null : new import_obsidian17.Notice(`\u6B63\u5728\u4E3A ${batch.length} \u4E2A\u8BCD\u751F\u6210\u4E49\u9879\u2026\uFF08\u8017\u65F6\u53D6\u51B3\u4E8E\u6240\u914D\u6A21\u578B\u901F\u5EA6\uFF09`, 0);
     try {
-      const byTheme = /* @__PURE__ */ new Map();
-      for (const d of batch) {
-        const t = this.genTheme(d, ctx);
-        const arr = byTheme.get(t);
-        if (arr) arr.push(d);
-        else byTheme.set(t, [d]);
-      }
+      const byTheme = this.groupByTheme(batch, ctx);
       let written = 0;
       for (const [t, docs] of byTheme) {
         const m = await llmSenses(
@@ -22553,13 +22532,7 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
       }
     );
     if (!docs.length) return;
-    const byTheme = /* @__PURE__ */ new Map();
-    for (const d of docs) {
-      const t = this.genTheme(d, ctx);
-      const arr = byTheme.get(t);
-      if (arr) arr.push(d);
-      else byTheme.set(t, [d]);
-    }
+    const byTheme = this.groupByTheme(docs, ctx);
     let produced = 0;
     for (const [t, group] of byTheme) {
       const m = await llmSensesExamples(cfg, group.map((d) => d.word), this.groupTopics(t, group), want);
@@ -22723,15 +22696,19 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
       gaps.trans ? step(() => this.backfillTranslations(only, quiet)) : void 0,
       gaps.rel ? step(() => this.backfillRelWords(void 0, only, quiet)) : void 0
     ]);
-    const merged = llm && gaps.senses && gaps.ex && docs.length <= 3 ? await this.backfillSensesExamples(only, quiet, opts == null ? void 0 : opts.ctx).then(
-      () => true,
-      (e) => {
+    let merged = false;
+    if (llm && gaps.senses && gaps.ex && docs.length <= 3) {
+      try {
+        await this.backfillSensesExamples(only, quiet, opts == null ? void 0 : opts.ctx);
+        merged = true;
+      } catch (e) {
         if (!quiet) new import_obsidian17.Notice(`\u5408\u5E76\u8865\u5168\u56DE\u843D\u5206\u6B65\uFF1A${e instanceof Error ? e.message : e}`);
-        return false;
       }
-    ) : false;
-    if (llm && gaps.senses && !merged) await step(() => this.backfillSenses(void 0, only, quiet, opts == null ? void 0 : opts.ctx));
-    if (llm && gaps.ex && !merged) await step(() => this.backfillExamples(void 0, void 0, void 0, void 0, only, quiet, opts == null ? void 0 : opts.ctx));
+    }
+    if (!merged) {
+      if (llm && gaps.senses) await step(() => this.backfillSenses(void 0, only, quiet, opts == null ? void 0 : opts.ctx));
+      if (llm && gaps.ex) await step(() => this.backfillExamples(void 0, void 0, void 0, void 0, only, quiet, opts == null ? void 0 : opts.ctx));
+    }
     if (llm && gaps.zh) await step(() => this.backfillExampleTranslations(void 0, only, quiet));
     const mark = this.db.enriched;
     if (mark) {
