@@ -746,12 +746,6 @@ body:not(.is-mobile) .el-word-link:hover {
   cursor: pointer;
 }
 
-/* 👤（标准音角标）在 emoji 字体里天然比 🔊 小一圈，放大补齐视觉高度 */
-.el-ico-human {
-  font-size: 1.3em;
-  line-height: 1;
-}
-
 /* 词卡上的 AI 操作按钮：图标 + 文字，便于区分动作 */
 .el-ai-btn {
   height: auto;
@@ -1018,6 +1012,24 @@ body:not(.is-mobile) .el-ex-more:hover {
   height: var(--el-icon-md);
 }
 
+/* 发音钮里的 Lucide 图标随按钮字号走（em 相对，同一规则覆盖词卡主钮/听写提示/扩词行内/词表浮层） */
+.el-tts .el-btn-ico svg {
+  width: 1.2em;
+  height: 1.2em;
+}
+
+/* 例句朗读钮（声波纹 audio-lines）：与例句正文同号，视觉协调 */
+.el-example-tts .el-btn-ico svg {
+  width: 1em;
+  height: 1em;
+}
+
+/* 词表行内小钮 */
+.el-wordlist-btn .el-btn-ico svg {
+  width: 1.1em;
+  height: 1.1em;
+}
+
 /* 逃生口小字钮里的图标再小一档，跟 sm 字号相称 */
 .el-grade-sub .el-btn-ico svg {
   width: var(--el-font-sm);
@@ -1148,8 +1160,7 @@ body:not(.is-mobile) .el-grade-sub:hover {
   outline: none;
 }
 
-/* 听写题的大喇叭：题面就是发音，要醒目可点。固定圆形热区把字形装进去——
-   👤 按 .el-ico-human 放大后 ≈57px，44px 行框装不下会溢出按钮盒 */
+/* 听写题的大喇叭：题面就是发音，要醒目可点。固定圆形热区（84px）装下大图标 */
 .el-spell-audio {
   display: inline-flex;
   align-items: center;
@@ -1157,7 +1168,6 @@ body:not(.is-mobile) .el-grade-sub:hover {
   width: 84px;
   height: 84px;
   border-radius: var(--el-radius-full);
-  font-size: 44px;
   line-height: 1;
   background: none;
   border: none;
@@ -1165,6 +1175,11 @@ body:not(.is-mobile) .el-grade-sub:hover {
   cursor: pointer;
   padding: 0;
   margin: var(--el-space-3) 0;
+}
+
+.el-spell-audio .el-btn-ico svg {
+  width: 44px;
+  height: 44px;
 }
 
 .el-spell-audio:active {

@@ -4,6 +4,9 @@ var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
 var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+var __commonJS = (cb, mod) => function __require() {
+  return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+};
 var __export = (target, all) => {
   for (var name in all)
     __defProp(target, name, { get: all[name], enumerable: true });
@@ -19,6 +22,3701 @@ var __copyProps = (to, from, except, desc) => {
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 
+// node_modules/ws/lib/constants.js
+var require_constants = __commonJS({
+  "node_modules/ws/lib/constants.js"(exports, module2) {
+    "use strict";
+    var BINARY_TYPES = ["nodebuffer", "arraybuffer", "fragments"];
+    var hasBlob = typeof Blob !== "undefined";
+    if (hasBlob) BINARY_TYPES.push("blob");
+    module2.exports = {
+      BINARY_TYPES,
+      CLOSE_TIMEOUT: 3e4,
+      EMPTY_BUFFER: Buffer.alloc(0),
+      GUID: "258EAFA5-E914-47DA-95CA-C5AB0DC85B11",
+      hasBlob,
+      kForOnEventAttribute: Symbol("kIsForOnEventAttribute"),
+      kListener: Symbol("kListener"),
+      kStatusCode: Symbol("status-code"),
+      kWebSocket: Symbol("websocket"),
+      NOOP: () => {
+      }
+    };
+  }
+});
+
+// node_modules/ws/lib/buffer-util.js
+var require_buffer_util = __commonJS({
+  "node_modules/ws/lib/buffer-util.js"(exports, module2) {
+    "use strict";
+    var { EMPTY_BUFFER } = require_constants();
+    var FastBuffer = Buffer[Symbol.species];
+    function concat(list, totalLength) {
+      if (list.length === 0) return EMPTY_BUFFER;
+      if (list.length === 1) return list[0];
+      const target = Buffer.allocUnsafe(totalLength);
+      let offset = 0;
+      for (let i = 0; i < list.length; i++) {
+        const buf = list[i];
+        target.set(buf, offset);
+        offset += buf.length;
+      }
+      if (offset < totalLength) {
+        return new FastBuffer(target.buffer, target.byteOffset, offset);
+      }
+      return target;
+    }
+    function _mask(source, mask, output, offset, length) {
+      for (let i = 0; i < length; i++) {
+        output[offset + i] = source[i] ^ mask[i & 3];
+      }
+    }
+    function _unmask(buffer, mask) {
+      for (let i = 0; i < buffer.length; i++) {
+        buffer[i] ^= mask[i & 3];
+      }
+    }
+    function toArrayBuffer(buf) {
+      if (buf.length === buf.buffer.byteLength) {
+        return buf.buffer;
+      }
+      return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.length);
+    }
+    function toBuffer(data) {
+      toBuffer.readOnly = true;
+      if (Buffer.isBuffer(data)) return data;
+      let buf;
+      if (data instanceof ArrayBuffer) {
+        buf = new FastBuffer(data);
+      } else if (ArrayBuffer.isView(data)) {
+        buf = new FastBuffer(data.buffer, data.byteOffset, data.byteLength);
+      } else {
+        buf = Buffer.from(data);
+        toBuffer.readOnly = false;
+      }
+      return buf;
+    }
+    module2.exports = {
+      concat,
+      mask: _mask,
+      toArrayBuffer,
+      toBuffer,
+      unmask: _unmask
+    };
+    if (!process.env.WS_NO_BUFFER_UTIL) {
+      try {
+        const bufferUtil = require("bufferutil");
+        module2.exports.mask = function(source, mask, output, offset, length) {
+          if (length < 48) _mask(source, mask, output, offset, length);
+          else bufferUtil.mask(source, mask, output, offset, length);
+        };
+        module2.exports.unmask = function(buffer, mask) {
+          if (buffer.length < 32) _unmask(buffer, mask);
+          else bufferUtil.unmask(buffer, mask);
+        };
+      } catch (e) {
+      }
+    }
+  }
+});
+
+// node_modules/ws/lib/limiter.js
+var require_limiter = __commonJS({
+  "node_modules/ws/lib/limiter.js"(exports, module2) {
+    "use strict";
+    var kDone = Symbol("kDone");
+    var kRun = Symbol("kRun");
+    var Limiter = class {
+      /**
+       * Creates a new `Limiter`.
+       *
+       * @param {Number} [concurrency=Infinity] The maximum number of jobs allowed
+       *     to run concurrently
+       */
+      constructor(concurrency) {
+        this[kDone] = () => {
+          this.pending--;
+          this[kRun]();
+        };
+        this.concurrency = concurrency || Infinity;
+        this.jobs = [];
+        this.pending = 0;
+      }
+      /**
+       * Adds a job to the queue.
+       *
+       * @param {Function} job The job to run
+       * @public
+       */
+      add(job) {
+        this.jobs.push(job);
+        this[kRun]();
+      }
+      /**
+       * Removes a job from the queue and runs it if possible.
+       *
+       * @private
+       */
+      [kRun]() {
+        if (this.pending === this.concurrency) return;
+        if (this.jobs.length) {
+          const job = this.jobs.shift();
+          this.pending++;
+          job(this[kDone]);
+        }
+      }
+    };
+    module2.exports = Limiter;
+  }
+});
+
+// node_modules/ws/lib/permessage-deflate.js
+var require_permessage_deflate = __commonJS({
+  "node_modules/ws/lib/permessage-deflate.js"(exports, module2) {
+    "use strict";
+    var zlib = require("zlib");
+    var bufferUtil = require_buffer_util();
+    var Limiter = require_limiter();
+    var { kStatusCode } = require_constants();
+    var FastBuffer = Buffer[Symbol.species];
+    var TRAILER = Buffer.from([0, 0, 255, 255]);
+    var kPerMessageDeflate = Symbol("permessage-deflate");
+    var kTotalLength = Symbol("total-length");
+    var kCallback = Symbol("callback");
+    var kBuffers = Symbol("buffers");
+    var kError = Symbol("error");
+    var zlibLimiter;
+    var PerMessageDeflate = class {
+      /**
+       * Creates a PerMessageDeflate instance.
+       *
+       * @param {Object} [options] Configuration options
+       * @param {(Boolean|Number)} [options.clientMaxWindowBits] Advertise support
+       *     for, or request, a custom client window size
+       * @param {Boolean} [options.clientNoContextTakeover=false] Advertise/
+       *     acknowledge disabling of client context takeover
+       * @param {Number} [options.concurrencyLimit=10] The number of concurrent
+       *     calls to zlib
+       * @param {Boolean} [options.isServer=false] Create the instance in either
+       *     server or client mode
+       * @param {Number} [options.maxPayload=0] The maximum allowed message length
+       * @param {(Boolean|Number)} [options.serverMaxWindowBits] Request/confirm the
+       *     use of a custom server window size
+       * @param {Boolean} [options.serverNoContextTakeover=false] Request/accept
+       *     disabling of server context takeover
+       * @param {Number} [options.threshold=1024] Size (in bytes) below which
+       *     messages should not be compressed if context takeover is disabled
+       * @param {Object} [options.zlibDeflateOptions] Options to pass to zlib on
+       *     deflate
+       * @param {Object} [options.zlibInflateOptions] Options to pass to zlib on
+       *     inflate
+       */
+      constructor(options) {
+        this._options = options || {};
+        this._threshold = this._options.threshold !== void 0 ? this._options.threshold : 1024;
+        this._maxPayload = this._options.maxPayload | 0;
+        this._isServer = !!this._options.isServer;
+        this._deflate = null;
+        this._inflate = null;
+        this.params = null;
+        if (!zlibLimiter) {
+          const concurrency = this._options.concurrencyLimit !== void 0 ? this._options.concurrencyLimit : 10;
+          zlibLimiter = new Limiter(concurrency);
+        }
+      }
+      /**
+       * @type {String}
+       */
+      static get extensionName() {
+        return "permessage-deflate";
+      }
+      /**
+       * Create an extension negotiation offer.
+       *
+       * @return {Object} Extension parameters
+       * @public
+       */
+      offer() {
+        const params = {};
+        if (this._options.serverNoContextTakeover) {
+          params.server_no_context_takeover = true;
+        }
+        if (this._options.clientNoContextTakeover) {
+          params.client_no_context_takeover = true;
+        }
+        if (this._options.serverMaxWindowBits) {
+          params.server_max_window_bits = this._options.serverMaxWindowBits;
+        }
+        if (this._options.clientMaxWindowBits) {
+          params.client_max_window_bits = this._options.clientMaxWindowBits;
+        } else if (this._options.clientMaxWindowBits == null) {
+          params.client_max_window_bits = true;
+        }
+        return params;
+      }
+      /**
+       * Accept an extension negotiation offer/response.
+       *
+       * @param {Array} configurations The extension negotiation offers/reponse
+       * @return {Object} Accepted configuration
+       * @public
+       */
+      accept(configurations) {
+        configurations = this.normalizeParams(configurations);
+        this.params = this._isServer ? this.acceptAsServer(configurations) : this.acceptAsClient(configurations);
+        return this.params;
+      }
+      /**
+       * Releases all resources used by the extension.
+       *
+       * @public
+       */
+      cleanup() {
+        if (this._inflate) {
+          this._inflate.close();
+          this._inflate = null;
+        }
+        if (this._deflate) {
+          const callback = this._deflate[kCallback];
+          this._deflate.close();
+          this._deflate = null;
+          if (callback) {
+            callback(
+              new Error(
+                "The deflate stream was closed while data was being processed"
+              )
+            );
+          }
+        }
+      }
+      /**
+       *  Accept an extension negotiation offer.
+       *
+       * @param {Array} offers The extension negotiation offers
+       * @return {Object} Accepted configuration
+       * @private
+       */
+      acceptAsServer(offers) {
+        const opts = this._options;
+        const accepted = offers.find((params) => {
+          if (opts.serverNoContextTakeover === false && params.server_no_context_takeover || params.server_max_window_bits && (opts.serverMaxWindowBits === false || typeof opts.serverMaxWindowBits === "number" && opts.serverMaxWindowBits > params.server_max_window_bits) || typeof opts.clientMaxWindowBits === "number" && (typeof params.client_max_window_bits === "number" ? opts.clientMaxWindowBits > params.client_max_window_bits : !params.client_max_window_bits)) {
+            return false;
+          }
+          return true;
+        });
+        if (!accepted) {
+          throw new Error("None of the extension offers can be accepted");
+        }
+        if (opts.serverNoContextTakeover) {
+          accepted.server_no_context_takeover = true;
+        }
+        if (opts.clientNoContextTakeover) {
+          accepted.client_no_context_takeover = true;
+        }
+        if (typeof opts.serverMaxWindowBits === "number") {
+          accepted.server_max_window_bits = opts.serverMaxWindowBits;
+        }
+        if (typeof opts.clientMaxWindowBits === "number") {
+          accepted.client_max_window_bits = opts.clientMaxWindowBits;
+        } else if (accepted.client_max_window_bits === true || opts.clientMaxWindowBits === false) {
+          delete accepted.client_max_window_bits;
+        }
+        return accepted;
+      }
+      /**
+       * Accept the extension negotiation response.
+       *
+       * @param {Array} response The extension negotiation response
+       * @return {Object} Accepted configuration
+       * @private
+       */
+      acceptAsClient(response) {
+        const params = response[0];
+        if (this._options.clientNoContextTakeover === false && params.client_no_context_takeover) {
+          throw new Error('Unexpected parameter "client_no_context_takeover"');
+        }
+        if (!params.client_max_window_bits) {
+          if (typeof this._options.clientMaxWindowBits === "number") {
+            params.client_max_window_bits = this._options.clientMaxWindowBits;
+          }
+        } else if (this._options.clientMaxWindowBits === false || typeof this._options.clientMaxWindowBits === "number" && params.client_max_window_bits > this._options.clientMaxWindowBits) {
+          throw new Error(
+            'Unexpected or invalid parameter "client_max_window_bits"'
+          );
+        }
+        return params;
+      }
+      /**
+       * Normalize parameters.
+       *
+       * @param {Array} configurations The extension negotiation offers/reponse
+       * @return {Array} The offers/response with normalized parameters
+       * @private
+       */
+      normalizeParams(configurations) {
+        configurations.forEach((params) => {
+          Object.keys(params).forEach((key) => {
+            let value = params[key];
+            if (value.length > 1) {
+              throw new Error(`Parameter "${key}" must have only a single value`);
+            }
+            value = value[0];
+            if (key === "client_max_window_bits") {
+              if (value !== true) {
+                const num = +value;
+                if (!Number.isInteger(num) || num < 8 || num > 15) {
+                  throw new TypeError(
+                    `Invalid value for parameter "${key}": ${value}`
+                  );
+                }
+                value = num;
+              } else if (!this._isServer) {
+                throw new TypeError(
+                  `Invalid value for parameter "${key}": ${value}`
+                );
+              }
+            } else if (key === "server_max_window_bits") {
+              const num = +value;
+              if (!Number.isInteger(num) || num < 8 || num > 15) {
+                throw new TypeError(
+                  `Invalid value for parameter "${key}": ${value}`
+                );
+              }
+              value = num;
+            } else if (key === "client_no_context_takeover" || key === "server_no_context_takeover") {
+              if (value !== true) {
+                throw new TypeError(
+                  `Invalid value for parameter "${key}": ${value}`
+                );
+              }
+            } else {
+              throw new Error(`Unknown parameter "${key}"`);
+            }
+            params[key] = value;
+          });
+        });
+        return configurations;
+      }
+      /**
+       * Decompress data. Concurrency limited.
+       *
+       * @param {Buffer} data Compressed data
+       * @param {Boolean} fin Specifies whether or not this is the last fragment
+       * @param {Function} callback Callback
+       * @public
+       */
+      decompress(data, fin, callback) {
+        zlibLimiter.add((done) => {
+          this._decompress(data, fin, (err, result) => {
+            done();
+            callback(err, result);
+          });
+        });
+      }
+      /**
+       * Compress data. Concurrency limited.
+       *
+       * @param {(Buffer|String)} data Data to compress
+       * @param {Boolean} fin Specifies whether or not this is the last fragment
+       * @param {Function} callback Callback
+       * @public
+       */
+      compress(data, fin, callback) {
+        zlibLimiter.add((done) => {
+          this._compress(data, fin, (err, result) => {
+            done();
+            callback(err, result);
+          });
+        });
+      }
+      /**
+       * Decompress data.
+       *
+       * @param {Buffer} data Compressed data
+       * @param {Boolean} fin Specifies whether or not this is the last fragment
+       * @param {Function} callback Callback
+       * @private
+       */
+      _decompress(data, fin, callback) {
+        const endpoint = this._isServer ? "client" : "server";
+        if (!this._inflate) {
+          const key = `${endpoint}_max_window_bits`;
+          const windowBits = typeof this.params[key] !== "number" ? zlib.Z_DEFAULT_WINDOWBITS : this.params[key];
+          this._inflate = zlib.createInflateRaw({
+            ...this._options.zlibInflateOptions,
+            windowBits
+          });
+          this._inflate[kPerMessageDeflate] = this;
+          this._inflate[kTotalLength] = 0;
+          this._inflate[kBuffers] = [];
+          this._inflate.on("error", inflateOnError);
+          this._inflate.on("data", inflateOnData);
+        }
+        this._inflate[kCallback] = callback;
+        this._inflate.write(data);
+        if (fin) this._inflate.write(TRAILER);
+        this._inflate.flush(() => {
+          const err = this._inflate[kError];
+          if (err) {
+            this._inflate.close();
+            this._inflate = null;
+            callback(err);
+            return;
+          }
+          const data2 = bufferUtil.concat(
+            this._inflate[kBuffers],
+            this._inflate[kTotalLength]
+          );
+          if (this._inflate._readableState.endEmitted) {
+            this._inflate.close();
+            this._inflate = null;
+          } else {
+            this._inflate[kTotalLength] = 0;
+            this._inflate[kBuffers] = [];
+            if (fin && this.params[`${endpoint}_no_context_takeover`]) {
+              this._inflate.reset();
+            }
+          }
+          callback(null, data2);
+        });
+      }
+      /**
+       * Compress data.
+       *
+       * @param {(Buffer|String)} data Data to compress
+       * @param {Boolean} fin Specifies whether or not this is the last fragment
+       * @param {Function} callback Callback
+       * @private
+       */
+      _compress(data, fin, callback) {
+        const endpoint = this._isServer ? "server" : "client";
+        if (!this._deflate) {
+          const key = `${endpoint}_max_window_bits`;
+          const windowBits = typeof this.params[key] !== "number" ? zlib.Z_DEFAULT_WINDOWBITS : this.params[key];
+          this._deflate = zlib.createDeflateRaw({
+            ...this._options.zlibDeflateOptions,
+            windowBits
+          });
+          this._deflate[kTotalLength] = 0;
+          this._deflate[kBuffers] = [];
+          this._deflate.on("data", deflateOnData);
+        }
+        this._deflate[kCallback] = callback;
+        this._deflate.write(data);
+        this._deflate.flush(zlib.Z_SYNC_FLUSH, () => {
+          if (!this._deflate) {
+            return;
+          }
+          let data2 = bufferUtil.concat(
+            this._deflate[kBuffers],
+            this._deflate[kTotalLength]
+          );
+          if (fin) {
+            data2 = new FastBuffer(data2.buffer, data2.byteOffset, data2.length - 4);
+          }
+          this._deflate[kCallback] = null;
+          this._deflate[kTotalLength] = 0;
+          this._deflate[kBuffers] = [];
+          if (fin && this.params[`${endpoint}_no_context_takeover`]) {
+            this._deflate.reset();
+          }
+          callback(null, data2);
+        });
+      }
+    };
+    module2.exports = PerMessageDeflate;
+    function deflateOnData(chunk2) {
+      this[kBuffers].push(chunk2);
+      this[kTotalLength] += chunk2.length;
+    }
+    function inflateOnData(chunk2) {
+      this[kTotalLength] += chunk2.length;
+      if (this[kPerMessageDeflate]._maxPayload < 1 || this[kTotalLength] <= this[kPerMessageDeflate]._maxPayload) {
+        this[kBuffers].push(chunk2);
+        return;
+      }
+      this[kError] = new RangeError("Max payload size exceeded");
+      this[kError].code = "WS_ERR_UNSUPPORTED_MESSAGE_LENGTH";
+      this[kError][kStatusCode] = 1009;
+      this.removeListener("data", inflateOnData);
+      this.reset();
+    }
+    function inflateOnError(err) {
+      this[kPerMessageDeflate]._inflate = null;
+      if (this[kError]) {
+        this[kCallback](this[kError]);
+        return;
+      }
+      err[kStatusCode] = 1007;
+      this[kCallback](err);
+    }
+  }
+});
+
+// node_modules/ws/lib/validation.js
+var require_validation = __commonJS({
+  "node_modules/ws/lib/validation.js"(exports, module2) {
+    "use strict";
+    var { isUtf8 } = require("buffer");
+    var { hasBlob } = require_constants();
+    var tokenChars = [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      // 0 - 15
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      // 16 - 31
+      0,
+      1,
+      0,
+      1,
+      1,
+      1,
+      1,
+      1,
+      0,
+      0,
+      1,
+      1,
+      0,
+      1,
+      1,
+      0,
+      // 32 - 47
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      // 48 - 63
+      0,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      // 64 - 79
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      0,
+      0,
+      0,
+      1,
+      1,
+      // 80 - 95
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      // 96 - 111
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      0,
+      1,
+      0,
+      1,
+      0
+      // 112 - 127
+    ];
+    function isValidStatusCode(code) {
+      return code >= 1e3 && code <= 1014 && code !== 1004 && code !== 1005 && code !== 1006 || code >= 3e3 && code <= 4999;
+    }
+    function _isValidUTF8(buf) {
+      const len = buf.length;
+      let i = 0;
+      while (i < len) {
+        if ((buf[i] & 128) === 0) {
+          i++;
+        } else if ((buf[i] & 224) === 192) {
+          if (i + 1 === len || (buf[i + 1] & 192) !== 128 || (buf[i] & 254) === 192) {
+            return false;
+          }
+          i += 2;
+        } else if ((buf[i] & 240) === 224) {
+          if (i + 2 >= len || (buf[i + 1] & 192) !== 128 || (buf[i + 2] & 192) !== 128 || buf[i] === 224 && (buf[i + 1] & 224) === 128 || // Overlong
+          buf[i] === 237 && (buf[i + 1] & 224) === 160) {
+            return false;
+          }
+          i += 3;
+        } else if ((buf[i] & 248) === 240) {
+          if (i + 3 >= len || (buf[i + 1] & 192) !== 128 || (buf[i + 2] & 192) !== 128 || (buf[i + 3] & 192) !== 128 || buf[i] === 240 && (buf[i + 1] & 240) === 128 || // Overlong
+          buf[i] === 244 && buf[i + 1] > 143 || buf[i] > 244) {
+            return false;
+          }
+          i += 4;
+        } else {
+          return false;
+        }
+      }
+      return true;
+    }
+    function isBlob(value) {
+      return hasBlob && typeof value === "object" && typeof value.arrayBuffer === "function" && typeof value.type === "string" && typeof value.stream === "function" && (value[Symbol.toStringTag] === "Blob" || value[Symbol.toStringTag] === "File");
+    }
+    module2.exports = {
+      isBlob,
+      isValidStatusCode,
+      isValidUTF8: _isValidUTF8,
+      tokenChars
+    };
+    if (isUtf8) {
+      module2.exports.isValidUTF8 = function(buf) {
+        return buf.length < 24 ? _isValidUTF8(buf) : isUtf8(buf);
+      };
+    } else if (!process.env.WS_NO_UTF_8_VALIDATE) {
+      try {
+        const isValidUTF8 = require("utf-8-validate");
+        module2.exports.isValidUTF8 = function(buf) {
+          return buf.length < 32 ? _isValidUTF8(buf) : isValidUTF8(buf);
+        };
+      } catch (e) {
+      }
+    }
+  }
+});
+
+// node_modules/ws/lib/receiver.js
+var require_receiver = __commonJS({
+  "node_modules/ws/lib/receiver.js"(exports, module2) {
+    "use strict";
+    var { Writable } = require("stream");
+    var PerMessageDeflate = require_permessage_deflate();
+    var {
+      BINARY_TYPES,
+      EMPTY_BUFFER,
+      kStatusCode,
+      kWebSocket
+    } = require_constants();
+    var { concat, toArrayBuffer, unmask } = require_buffer_util();
+    var { isValidStatusCode, isValidUTF8 } = require_validation();
+    var FastBuffer = Buffer[Symbol.species];
+    var GET_INFO = 0;
+    var GET_PAYLOAD_LENGTH_16 = 1;
+    var GET_PAYLOAD_LENGTH_64 = 2;
+    var GET_MASK = 3;
+    var GET_DATA = 4;
+    var INFLATING = 5;
+    var DEFER_EVENT = 6;
+    var Receiver = class extends Writable {
+      /**
+       * Creates a Receiver instance.
+       *
+       * @param {Object} [options] Options object
+       * @param {Boolean} [options.allowSynchronousEvents=true] Specifies whether
+       *     any of the `'message'`, `'ping'`, and `'pong'` events can be emitted
+       *     multiple times in the same tick
+       * @param {String} [options.binaryType=nodebuffer] The type for binary data
+       * @param {Object} [options.extensions] An object containing the negotiated
+       *     extensions
+       * @param {Boolean} [options.isServer=false] Specifies whether to operate in
+       *     client or server mode
+       * @param {Number} [options.maxBufferedChunks=0] The maximum number of
+       *     buffered data chunks
+       * @param {Number} [options.maxFragments=0] The maximum number of message
+       *     fragments
+       * @param {Number} [options.maxPayload=0] The maximum allowed message length
+       * @param {Boolean} [options.skipUTF8Validation=false] Specifies whether or
+       *     not to skip UTF-8 validation for text and close messages
+       */
+      constructor(options = {}) {
+        super();
+        this._allowSynchronousEvents = options.allowSynchronousEvents !== void 0 ? options.allowSynchronousEvents : true;
+        this._binaryType = options.binaryType || BINARY_TYPES[0];
+        this._extensions = options.extensions || {};
+        this._isServer = !!options.isServer;
+        this._maxBufferedChunks = options.maxBufferedChunks | 0;
+        this._maxFragments = options.maxFragments | 0;
+        this._maxPayload = options.maxPayload | 0;
+        this._skipUTF8Validation = !!options.skipUTF8Validation;
+        this[kWebSocket] = void 0;
+        this._bufferedBytes = 0;
+        this._buffers = [];
+        this._compressed = false;
+        this._payloadLength = 0;
+        this._mask = void 0;
+        this._fragmented = 0;
+        this._masked = false;
+        this._fin = false;
+        this._opcode = 0;
+        this._totalPayloadLength = 0;
+        this._messageLength = 0;
+        this._numFragments = 0;
+        this._fragments = [];
+        this._errored = false;
+        this._loop = false;
+        this._state = GET_INFO;
+      }
+      /**
+       * Implements `Writable.prototype._write()`.
+       *
+       * @param {Buffer} chunk The chunk of data to write
+       * @param {String} encoding The character encoding of `chunk`
+       * @param {Function} cb Callback
+       * @private
+       */
+      _write(chunk2, encoding, cb) {
+        if (this._opcode === 8 && this._state == GET_INFO) return cb();
+        if (this._maxBufferedChunks > 0 && this._buffers.length >= this._maxBufferedChunks) {
+          cb(
+            this.createError(
+              RangeError,
+              "Too many buffered chunks",
+              false,
+              1008,
+              "WS_ERR_TOO_MANY_BUFFERED_PARTS"
+            )
+          );
+          return;
+        }
+        this._bufferedBytes += chunk2.length;
+        this._buffers.push(chunk2);
+        this.startLoop(cb);
+      }
+      /**
+       * Consumes `n` bytes from the buffered data.
+       *
+       * @param {Number} n The number of bytes to consume
+       * @return {Buffer} The consumed bytes
+       * @private
+       */
+      consume(n) {
+        this._bufferedBytes -= n;
+        if (n === this._buffers[0].length) return this._buffers.shift();
+        if (n < this._buffers[0].length) {
+          const buf = this._buffers[0];
+          this._buffers[0] = new FastBuffer(
+            buf.buffer,
+            buf.byteOffset + n,
+            buf.length - n
+          );
+          return new FastBuffer(buf.buffer, buf.byteOffset, n);
+        }
+        const dst = Buffer.allocUnsafe(n);
+        do {
+          const buf = this._buffers[0];
+          const offset = dst.length - n;
+          if (n >= buf.length) {
+            dst.set(this._buffers.shift(), offset);
+          } else {
+            dst.set(new Uint8Array(buf.buffer, buf.byteOffset, n), offset);
+            this._buffers[0] = new FastBuffer(
+              buf.buffer,
+              buf.byteOffset + n,
+              buf.length - n
+            );
+          }
+          n -= buf.length;
+        } while (n > 0);
+        return dst;
+      }
+      /**
+       * Starts the parsing loop.
+       *
+       * @param {Function} cb Callback
+       * @private
+       */
+      startLoop(cb) {
+        this._loop = true;
+        do {
+          switch (this._state) {
+            case GET_INFO:
+              this.getInfo(cb);
+              break;
+            case GET_PAYLOAD_LENGTH_16:
+              this.getPayloadLength16(cb);
+              break;
+            case GET_PAYLOAD_LENGTH_64:
+              this.getPayloadLength64(cb);
+              break;
+            case GET_MASK:
+              this.getMask();
+              break;
+            case GET_DATA:
+              this.getData(cb);
+              break;
+            case INFLATING:
+            case DEFER_EVENT:
+              this._loop = false;
+              return;
+          }
+        } while (this._loop);
+        if (!this._errored) cb();
+      }
+      /**
+       * Reads the first two bytes of a frame.
+       *
+       * @param {Function} cb Callback
+       * @private
+       */
+      getInfo(cb) {
+        if (this._bufferedBytes < 2) {
+          this._loop = false;
+          return;
+        }
+        const buf = this.consume(2);
+        if ((buf[0] & 48) !== 0) {
+          const error = this.createError(
+            RangeError,
+            "RSV2 and RSV3 must be clear",
+            true,
+            1002,
+            "WS_ERR_UNEXPECTED_RSV_2_3"
+          );
+          cb(error);
+          return;
+        }
+        const compressed = (buf[0] & 64) === 64;
+        if (compressed && !this._extensions[PerMessageDeflate.extensionName]) {
+          const error = this.createError(
+            RangeError,
+            "RSV1 must be clear",
+            true,
+            1002,
+            "WS_ERR_UNEXPECTED_RSV_1"
+          );
+          cb(error);
+          return;
+        }
+        this._fin = (buf[0] & 128) === 128;
+        this._opcode = buf[0] & 15;
+        this._payloadLength = buf[1] & 127;
+        if (this._opcode === 0) {
+          if (compressed) {
+            const error = this.createError(
+              RangeError,
+              "RSV1 must be clear",
+              true,
+              1002,
+              "WS_ERR_UNEXPECTED_RSV_1"
+            );
+            cb(error);
+            return;
+          }
+          if (!this._fragmented) {
+            const error = this.createError(
+              RangeError,
+              "invalid opcode 0",
+              true,
+              1002,
+              "WS_ERR_INVALID_OPCODE"
+            );
+            cb(error);
+            return;
+          }
+          this._opcode = this._fragmented;
+        } else if (this._opcode === 1 || this._opcode === 2) {
+          if (this._fragmented) {
+            const error = this.createError(
+              RangeError,
+              `invalid opcode ${this._opcode}`,
+              true,
+              1002,
+              "WS_ERR_INVALID_OPCODE"
+            );
+            cb(error);
+            return;
+          }
+          this._compressed = compressed;
+        } else if (this._opcode > 7 && this._opcode < 11) {
+          if (!this._fin) {
+            const error = this.createError(
+              RangeError,
+              "FIN must be set",
+              true,
+              1002,
+              "WS_ERR_EXPECTED_FIN"
+            );
+            cb(error);
+            return;
+          }
+          if (compressed) {
+            const error = this.createError(
+              RangeError,
+              "RSV1 must be clear",
+              true,
+              1002,
+              "WS_ERR_UNEXPECTED_RSV_1"
+            );
+            cb(error);
+            return;
+          }
+          if (this._payloadLength > 125 || this._opcode === 8 && this._payloadLength === 1) {
+            const error = this.createError(
+              RangeError,
+              `invalid payload length ${this._payloadLength}`,
+              true,
+              1002,
+              "WS_ERR_INVALID_CONTROL_PAYLOAD_LENGTH"
+            );
+            cb(error);
+            return;
+          }
+        } else {
+          const error = this.createError(
+            RangeError,
+            `invalid opcode ${this._opcode}`,
+            true,
+            1002,
+            "WS_ERR_INVALID_OPCODE"
+          );
+          cb(error);
+          return;
+        }
+        if (!this._fin && !this._fragmented) this._fragmented = this._opcode;
+        this._masked = (buf[1] & 128) === 128;
+        if (this._isServer) {
+          if (!this._masked) {
+            const error = this.createError(
+              RangeError,
+              "MASK must be set",
+              true,
+              1002,
+              "WS_ERR_EXPECTED_MASK"
+            );
+            cb(error);
+            return;
+          }
+        } else if (this._masked) {
+          const error = this.createError(
+            RangeError,
+            "MASK must be clear",
+            true,
+            1002,
+            "WS_ERR_UNEXPECTED_MASK"
+          );
+          cb(error);
+          return;
+        }
+        if (this._payloadLength === 126) this._state = GET_PAYLOAD_LENGTH_16;
+        else if (this._payloadLength === 127) this._state = GET_PAYLOAD_LENGTH_64;
+        else this.haveLength(cb);
+      }
+      /**
+       * Gets extended payload length (7+16).
+       *
+       * @param {Function} cb Callback
+       * @private
+       */
+      getPayloadLength16(cb) {
+        if (this._bufferedBytes < 2) {
+          this._loop = false;
+          return;
+        }
+        this._payloadLength = this.consume(2).readUInt16BE(0);
+        this.haveLength(cb);
+      }
+      /**
+       * Gets extended payload length (7+64).
+       *
+       * @param {Function} cb Callback
+       * @private
+       */
+      getPayloadLength64(cb) {
+        if (this._bufferedBytes < 8) {
+          this._loop = false;
+          return;
+        }
+        const buf = this.consume(8);
+        const num = buf.readUInt32BE(0);
+        if (num > Math.pow(2, 53 - 32) - 1) {
+          const error = this.createError(
+            RangeError,
+            "Unsupported WebSocket frame: payload length > 2^53 - 1",
+            false,
+            1009,
+            "WS_ERR_UNSUPPORTED_DATA_PAYLOAD_LENGTH"
+          );
+          cb(error);
+          return;
+        }
+        this._payloadLength = num * Math.pow(2, 32) + buf.readUInt32BE(4);
+        this.haveLength(cb);
+      }
+      /**
+       * Payload length has been read.
+       *
+       * @param {Function} cb Callback
+       * @private
+       */
+      haveLength(cb) {
+        if (this._payloadLength && this._opcode < 8) {
+          this._totalPayloadLength += this._payloadLength;
+          if (this._totalPayloadLength > this._maxPayload && this._maxPayload > 0) {
+            const error = this.createError(
+              RangeError,
+              "Max payload size exceeded",
+              false,
+              1009,
+              "WS_ERR_UNSUPPORTED_MESSAGE_LENGTH"
+            );
+            cb(error);
+            return;
+          }
+        }
+        if (this._masked) this._state = GET_MASK;
+        else this._state = GET_DATA;
+      }
+      /**
+       * Reads mask bytes.
+       *
+       * @private
+       */
+      getMask() {
+        if (this._bufferedBytes < 4) {
+          this._loop = false;
+          return;
+        }
+        this._mask = this.consume(4);
+        this._state = GET_DATA;
+      }
+      /**
+       * Reads data bytes.
+       *
+       * @param {Function} cb Callback
+       * @private
+       */
+      getData(cb) {
+        let data = EMPTY_BUFFER;
+        if (this._payloadLength) {
+          if (this._bufferedBytes < this._payloadLength) {
+            this._loop = false;
+            return;
+          }
+          data = this.consume(this._payloadLength);
+          if (this._masked && (this._mask[0] | this._mask[1] | this._mask[2] | this._mask[3]) !== 0) {
+            unmask(data, this._mask);
+          }
+        }
+        if (this._opcode > 7) {
+          this.controlMessage(data, cb);
+          return;
+        }
+        if (this._maxFragments > 0 && ++this._numFragments > this._maxFragments) {
+          const error = this.createError(
+            RangeError,
+            "Too many message fragments",
+            false,
+            1008,
+            "WS_ERR_TOO_MANY_BUFFERED_PARTS"
+          );
+          cb(error);
+          return;
+        }
+        if (this._compressed) {
+          this._state = INFLATING;
+          this.decompress(data, cb);
+          return;
+        }
+        if (data.length) {
+          this._messageLength = this._totalPayloadLength;
+          this._fragments.push(data);
+        }
+        this.dataMessage(cb);
+      }
+      /**
+       * Decompresses data.
+       *
+       * @param {Buffer} data Compressed data
+       * @param {Function} cb Callback
+       * @private
+       */
+      decompress(data, cb) {
+        const perMessageDeflate = this._extensions[PerMessageDeflate.extensionName];
+        perMessageDeflate.decompress(data, this._fin, (err, buf) => {
+          if (err) return cb(err);
+          if (buf.length) {
+            this._messageLength += buf.length;
+            if (this._messageLength > this._maxPayload && this._maxPayload > 0) {
+              const error = this.createError(
+                RangeError,
+                "Max payload size exceeded",
+                false,
+                1009,
+                "WS_ERR_UNSUPPORTED_MESSAGE_LENGTH"
+              );
+              cb(error);
+              return;
+            }
+            this._fragments.push(buf);
+          }
+          this.dataMessage(cb);
+          if (this._state === GET_INFO) this.startLoop(cb);
+        });
+      }
+      /**
+       * Handles a data message.
+       *
+       * @param {Function} cb Callback
+       * @private
+       */
+      dataMessage(cb) {
+        if (!this._fin) {
+          this._state = GET_INFO;
+          return;
+        }
+        const messageLength = this._messageLength;
+        const fragments = this._fragments;
+        this._totalPayloadLength = 0;
+        this._messageLength = 0;
+        this._fragmented = 0;
+        this._numFragments = 0;
+        this._fragments = [];
+        if (this._opcode === 2) {
+          let data;
+          if (this._binaryType === "nodebuffer") {
+            data = concat(fragments, messageLength);
+          } else if (this._binaryType === "arraybuffer") {
+            data = toArrayBuffer(concat(fragments, messageLength));
+          } else if (this._binaryType === "blob") {
+            data = new Blob(fragments);
+          } else {
+            data = fragments;
+          }
+          if (this._allowSynchronousEvents) {
+            this.emit("message", data, true);
+            this._state = GET_INFO;
+          } else {
+            this._state = DEFER_EVENT;
+            setImmediate(() => {
+              this.emit("message", data, true);
+              this._state = GET_INFO;
+              this.startLoop(cb);
+            });
+          }
+        } else {
+          const buf = concat(fragments, messageLength);
+          if (!this._skipUTF8Validation && !isValidUTF8(buf)) {
+            const error = this.createError(
+              Error,
+              "invalid UTF-8 sequence",
+              true,
+              1007,
+              "WS_ERR_INVALID_UTF8"
+            );
+            cb(error);
+            return;
+          }
+          if (this._state === INFLATING || this._allowSynchronousEvents) {
+            this.emit("message", buf, false);
+            this._state = GET_INFO;
+          } else {
+            this._state = DEFER_EVENT;
+            setImmediate(() => {
+              this.emit("message", buf, false);
+              this._state = GET_INFO;
+              this.startLoop(cb);
+            });
+          }
+        }
+      }
+      /**
+       * Handles a control message.
+       *
+       * @param {Buffer} data Data to handle
+       * @return {(Error|RangeError|undefined)} A possible error
+       * @private
+       */
+      controlMessage(data, cb) {
+        if (this._opcode === 8) {
+          if (data.length === 0) {
+            this._loop = false;
+            this.emit("conclude", 1005, EMPTY_BUFFER);
+            this.end();
+          } else {
+            const code = data.readUInt16BE(0);
+            if (!isValidStatusCode(code)) {
+              const error = this.createError(
+                RangeError,
+                `invalid status code ${code}`,
+                true,
+                1002,
+                "WS_ERR_INVALID_CLOSE_CODE"
+              );
+              cb(error);
+              return;
+            }
+            const buf = new FastBuffer(
+              data.buffer,
+              data.byteOffset + 2,
+              data.length - 2
+            );
+            if (!this._skipUTF8Validation && !isValidUTF8(buf)) {
+              const error = this.createError(
+                Error,
+                "invalid UTF-8 sequence",
+                true,
+                1007,
+                "WS_ERR_INVALID_UTF8"
+              );
+              cb(error);
+              return;
+            }
+            this._loop = false;
+            this.emit("conclude", code, buf);
+            this.end();
+          }
+          this._state = GET_INFO;
+          return;
+        }
+        if (this._allowSynchronousEvents) {
+          this.emit(this._opcode === 9 ? "ping" : "pong", data);
+          this._state = GET_INFO;
+        } else {
+          this._state = DEFER_EVENT;
+          setImmediate(() => {
+            this.emit(this._opcode === 9 ? "ping" : "pong", data);
+            this._state = GET_INFO;
+            this.startLoop(cb);
+          });
+        }
+      }
+      /**
+       * Builds an error object.
+       *
+       * @param {function(new:Error|RangeError)} ErrorCtor The error constructor
+       * @param {String} message The error message
+       * @param {Boolean} prefix Specifies whether or not to add a default prefix to
+       *     `message`
+       * @param {Number} statusCode The status code
+       * @param {String} errorCode The exposed error code
+       * @return {(Error|RangeError)} The error
+       * @private
+       */
+      createError(ErrorCtor, message, prefix, statusCode, errorCode) {
+        this._loop = false;
+        this._errored = true;
+        const err = new ErrorCtor(
+          prefix ? `Invalid WebSocket frame: ${message}` : message
+        );
+        Error.captureStackTrace(err, this.createError);
+        err.code = errorCode;
+        err[kStatusCode] = statusCode;
+        return err;
+      }
+    };
+    module2.exports = Receiver;
+  }
+});
+
+// node_modules/ws/lib/sender.js
+var require_sender = __commonJS({
+  "node_modules/ws/lib/sender.js"(exports, module2) {
+    "use strict";
+    var { Duplex } = require("stream");
+    var { randomFillSync } = require("crypto");
+    var {
+      types: { isUint8Array }
+    } = require("util");
+    var PerMessageDeflate = require_permessage_deflate();
+    var { EMPTY_BUFFER, kWebSocket, NOOP } = require_constants();
+    var { isBlob, isValidStatusCode } = require_validation();
+    var { mask: applyMask, toBuffer } = require_buffer_util();
+    var kByteLength = Symbol("kByteLength");
+    var maskBuffer = Buffer.alloc(4);
+    var RANDOM_POOL_SIZE = 8 * 1024;
+    var randomPool;
+    var randomPoolPointer = RANDOM_POOL_SIZE;
+    var DEFAULT = 0;
+    var DEFLATING = 1;
+    var GET_BLOB_DATA = 2;
+    var Sender = class _Sender {
+      /**
+       * Creates a Sender instance.
+       *
+       * @param {Duplex} socket The connection socket
+       * @param {Object} [extensions] An object containing the negotiated extensions
+       * @param {Function} [generateMask] The function used to generate the masking
+       *     key
+       */
+      constructor(socket, extensions, generateMask) {
+        this._extensions = extensions || {};
+        if (generateMask) {
+          this._generateMask = generateMask;
+          this._maskBuffer = Buffer.alloc(4);
+        }
+        this._socket = socket;
+        this._firstFragment = true;
+        this._compress = false;
+        this._bufferedBytes = 0;
+        this._queue = [];
+        this._state = DEFAULT;
+        this.onerror = NOOP;
+        this[kWebSocket] = void 0;
+      }
+      /**
+       * Frames a piece of data according to the HyBi WebSocket protocol.
+       *
+       * @param {(Buffer|String)} data The data to frame
+       * @param {Object} options Options object
+       * @param {Boolean} [options.fin=false] Specifies whether or not to set the
+       *     FIN bit
+       * @param {Function} [options.generateMask] The function used to generate the
+       *     masking key
+       * @param {Boolean} [options.mask=false] Specifies whether or not to mask
+       *     `data`
+       * @param {Buffer} [options.maskBuffer] The buffer used to store the masking
+       *     key
+       * @param {Number} options.opcode The opcode
+       * @param {Boolean} [options.readOnly=false] Specifies whether `data` can be
+       *     modified
+       * @param {Boolean} [options.rsv1=false] Specifies whether or not to set the
+       *     RSV1 bit
+       * @return {(Buffer|String)[]} The framed data
+       * @public
+       */
+      static frame(data, options) {
+        let mask;
+        let merge = false;
+        let offset = 2;
+        let skipMasking = false;
+        if (options.mask) {
+          mask = options.maskBuffer || maskBuffer;
+          if (options.generateMask) {
+            options.generateMask(mask);
+          } else {
+            if (randomPoolPointer === RANDOM_POOL_SIZE) {
+              if (randomPool === void 0) {
+                randomPool = Buffer.alloc(RANDOM_POOL_SIZE);
+              }
+              randomFillSync(randomPool, 0, RANDOM_POOL_SIZE);
+              randomPoolPointer = 0;
+            }
+            mask[0] = randomPool[randomPoolPointer++];
+            mask[1] = randomPool[randomPoolPointer++];
+            mask[2] = randomPool[randomPoolPointer++];
+            mask[3] = randomPool[randomPoolPointer++];
+          }
+          skipMasking = (mask[0] | mask[1] | mask[2] | mask[3]) === 0;
+          offset = 6;
+        }
+        let dataLength;
+        if (typeof data === "string") {
+          if ((!options.mask || skipMasking) && options[kByteLength] !== void 0) {
+            dataLength = options[kByteLength];
+          } else {
+            data = Buffer.from(data);
+            dataLength = data.length;
+          }
+        } else {
+          dataLength = data.length;
+          merge = options.mask && options.readOnly && !skipMasking;
+        }
+        let payloadLength = dataLength;
+        if (dataLength >= 65536) {
+          offset += 8;
+          payloadLength = 127;
+        } else if (dataLength > 125) {
+          offset += 2;
+          payloadLength = 126;
+        }
+        const target = Buffer.allocUnsafe(merge ? dataLength + offset : offset);
+        target[0] = options.fin ? options.opcode | 128 : options.opcode;
+        if (options.rsv1) target[0] |= 64;
+        target[1] = payloadLength;
+        if (payloadLength === 126) {
+          target.writeUInt16BE(dataLength, 2);
+        } else if (payloadLength === 127) {
+          target[2] = target[3] = 0;
+          target.writeUIntBE(dataLength, 4, 6);
+        }
+        if (!options.mask) return [target, data];
+        target[1] |= 128;
+        target[offset - 4] = mask[0];
+        target[offset - 3] = mask[1];
+        target[offset - 2] = mask[2];
+        target[offset - 1] = mask[3];
+        if (skipMasking) return [target, data];
+        if (merge) {
+          applyMask(data, mask, target, offset, dataLength);
+          return [target];
+        }
+        applyMask(data, mask, data, 0, dataLength);
+        return [target, data];
+      }
+      /**
+       * Sends a close message to the other peer.
+       *
+       * @param {Number} [code] The status code component of the body
+       * @param {(String|Buffer)} [data] The message component of the body
+       * @param {Boolean} [mask=false] Specifies whether or not to mask the message
+       * @param {Function} [cb] Callback
+       * @public
+       */
+      close(code, data, mask, cb) {
+        let buf;
+        if (code === void 0) {
+          buf = EMPTY_BUFFER;
+        } else if (typeof code !== "number" || !isValidStatusCode(code)) {
+          throw new TypeError("First argument must be a valid error code number");
+        } else if (data === void 0 || !data.length) {
+          buf = Buffer.allocUnsafe(2);
+          buf.writeUInt16BE(code, 0);
+        } else {
+          const length = Buffer.byteLength(data);
+          if (length > 123) {
+            throw new RangeError("The message must not be greater than 123 bytes");
+          }
+          buf = Buffer.allocUnsafe(2 + length);
+          buf.writeUInt16BE(code, 0);
+          if (typeof data === "string") {
+            buf.write(data, 2);
+          } else if (isUint8Array(data)) {
+            buf.set(data, 2);
+          } else {
+            throw new TypeError("Second argument must be a string or a Uint8Array");
+          }
+        }
+        const options = {
+          [kByteLength]: buf.length,
+          fin: true,
+          generateMask: this._generateMask,
+          mask,
+          maskBuffer: this._maskBuffer,
+          opcode: 8,
+          readOnly: false,
+          rsv1: false
+        };
+        if (this._state !== DEFAULT) {
+          this.enqueue([this.dispatch, buf, false, options, cb]);
+        } else {
+          this.sendFrame(_Sender.frame(buf, options), cb);
+        }
+      }
+      /**
+       * Sends a ping message to the other peer.
+       *
+       * @param {*} data The message to send
+       * @param {Boolean} [mask=false] Specifies whether or not to mask `data`
+       * @param {Function} [cb] Callback
+       * @public
+       */
+      ping(data, mask, cb) {
+        let byteLength;
+        let readOnly;
+        if (typeof data === "string") {
+          byteLength = Buffer.byteLength(data);
+          readOnly = false;
+        } else if (isBlob(data)) {
+          byteLength = data.size;
+          readOnly = false;
+        } else {
+          data = toBuffer(data);
+          byteLength = data.length;
+          readOnly = toBuffer.readOnly;
+        }
+        if (byteLength > 125) {
+          throw new RangeError("The data size must not be greater than 125 bytes");
+        }
+        const options = {
+          [kByteLength]: byteLength,
+          fin: true,
+          generateMask: this._generateMask,
+          mask,
+          maskBuffer: this._maskBuffer,
+          opcode: 9,
+          readOnly,
+          rsv1: false
+        };
+        if (isBlob(data)) {
+          if (this._state !== DEFAULT) {
+            this.enqueue([this.getBlobData, data, false, options, cb]);
+          } else {
+            this.getBlobData(data, false, options, cb);
+          }
+        } else if (this._state !== DEFAULT) {
+          this.enqueue([this.dispatch, data, false, options, cb]);
+        } else {
+          this.sendFrame(_Sender.frame(data, options), cb);
+        }
+      }
+      /**
+       * Sends a pong message to the other peer.
+       *
+       * @param {*} data The message to send
+       * @param {Boolean} [mask=false] Specifies whether or not to mask `data`
+       * @param {Function} [cb] Callback
+       * @public
+       */
+      pong(data, mask, cb) {
+        let byteLength;
+        let readOnly;
+        if (typeof data === "string") {
+          byteLength = Buffer.byteLength(data);
+          readOnly = false;
+        } else if (isBlob(data)) {
+          byteLength = data.size;
+          readOnly = false;
+        } else {
+          data = toBuffer(data);
+          byteLength = data.length;
+          readOnly = toBuffer.readOnly;
+        }
+        if (byteLength > 125) {
+          throw new RangeError("The data size must not be greater than 125 bytes");
+        }
+        const options = {
+          [kByteLength]: byteLength,
+          fin: true,
+          generateMask: this._generateMask,
+          mask,
+          maskBuffer: this._maskBuffer,
+          opcode: 10,
+          readOnly,
+          rsv1: false
+        };
+        if (isBlob(data)) {
+          if (this._state !== DEFAULT) {
+            this.enqueue([this.getBlobData, data, false, options, cb]);
+          } else {
+            this.getBlobData(data, false, options, cb);
+          }
+        } else if (this._state !== DEFAULT) {
+          this.enqueue([this.dispatch, data, false, options, cb]);
+        } else {
+          this.sendFrame(_Sender.frame(data, options), cb);
+        }
+      }
+      /**
+       * Sends a data message to the other peer.
+       *
+       * @param {*} data The message to send
+       * @param {Object} options Options object
+       * @param {Boolean} [options.binary=false] Specifies whether `data` is binary
+       *     or text
+       * @param {Boolean} [options.compress=false] Specifies whether or not to
+       *     compress `data`
+       * @param {Boolean} [options.fin=false] Specifies whether the fragment is the
+       *     last one
+       * @param {Boolean} [options.mask=false] Specifies whether or not to mask
+       *     `data`
+       * @param {Function} [cb] Callback
+       * @public
+       */
+      send(data, options, cb) {
+        const perMessageDeflate = this._extensions[PerMessageDeflate.extensionName];
+        let opcode = options.binary ? 2 : 1;
+        let rsv1 = options.compress;
+        let byteLength;
+        let readOnly;
+        if (typeof data === "string") {
+          byteLength = Buffer.byteLength(data);
+          readOnly = false;
+        } else if (isBlob(data)) {
+          byteLength = data.size;
+          readOnly = false;
+        } else {
+          data = toBuffer(data);
+          byteLength = data.length;
+          readOnly = toBuffer.readOnly;
+        }
+        if (this._firstFragment) {
+          this._firstFragment = false;
+          if (rsv1 && perMessageDeflate && perMessageDeflate.params[perMessageDeflate._isServer ? "server_no_context_takeover" : "client_no_context_takeover"]) {
+            rsv1 = byteLength >= perMessageDeflate._threshold;
+          }
+          this._compress = rsv1;
+        } else {
+          rsv1 = false;
+          opcode = 0;
+        }
+        if (options.fin) this._firstFragment = true;
+        const opts = {
+          [kByteLength]: byteLength,
+          fin: options.fin,
+          generateMask: this._generateMask,
+          mask: options.mask,
+          maskBuffer: this._maskBuffer,
+          opcode,
+          readOnly,
+          rsv1
+        };
+        if (isBlob(data)) {
+          if (this._state !== DEFAULT) {
+            this.enqueue([this.getBlobData, data, this._compress, opts, cb]);
+          } else {
+            this.getBlobData(data, this._compress, opts, cb);
+          }
+        } else if (this._state !== DEFAULT) {
+          this.enqueue([this.dispatch, data, this._compress, opts, cb]);
+        } else {
+          this.dispatch(data, this._compress, opts, cb);
+        }
+      }
+      /**
+       * Gets the contents of a blob as binary data.
+       *
+       * @param {Blob} blob The blob
+       * @param {Boolean} [compress=false] Specifies whether or not to compress
+       *     the data
+       * @param {Object} options Options object
+       * @param {Boolean} [options.fin=false] Specifies whether or not to set the
+       *     FIN bit
+       * @param {Function} [options.generateMask] The function used to generate the
+       *     masking key
+       * @param {Boolean} [options.mask=false] Specifies whether or not to mask
+       *     `data`
+       * @param {Buffer} [options.maskBuffer] The buffer used to store the masking
+       *     key
+       * @param {Number} options.opcode The opcode
+       * @param {Boolean} [options.readOnly=false] Specifies whether `data` can be
+       *     modified
+       * @param {Boolean} [options.rsv1=false] Specifies whether or not to set the
+       *     RSV1 bit
+       * @param {Function} [cb] Callback
+       * @private
+       */
+      getBlobData(blob, compress, options, cb) {
+        this._bufferedBytes += options[kByteLength];
+        this._state = GET_BLOB_DATA;
+        blob.arrayBuffer().then((arrayBuffer) => {
+          if (this._socket.destroyed) {
+            const err = new Error(
+              "The socket was closed while the blob was being read"
+            );
+            process.nextTick(callCallbacks, this, err, cb);
+            return;
+          }
+          this._bufferedBytes -= options[kByteLength];
+          const data = toBuffer(arrayBuffer);
+          if (!compress) {
+            this._state = DEFAULT;
+            this.sendFrame(_Sender.frame(data, options), cb);
+            this.dequeue();
+          } else {
+            this.dispatch(data, compress, options, cb);
+          }
+        }).catch((err) => {
+          process.nextTick(onError, this, err, cb);
+        });
+      }
+      /**
+       * Dispatches a message.
+       *
+       * @param {(Buffer|String)} data The message to send
+       * @param {Boolean} [compress=false] Specifies whether or not to compress
+       *     `data`
+       * @param {Object} options Options object
+       * @param {Boolean} [options.fin=false] Specifies whether or not to set the
+       *     FIN bit
+       * @param {Function} [options.generateMask] The function used to generate the
+       *     masking key
+       * @param {Boolean} [options.mask=false] Specifies whether or not to mask
+       *     `data`
+       * @param {Buffer} [options.maskBuffer] The buffer used to store the masking
+       *     key
+       * @param {Number} options.opcode The opcode
+       * @param {Boolean} [options.readOnly=false] Specifies whether `data` can be
+       *     modified
+       * @param {Boolean} [options.rsv1=false] Specifies whether or not to set the
+       *     RSV1 bit
+       * @param {Function} [cb] Callback
+       * @private
+       */
+      dispatch(data, compress, options, cb) {
+        if (!compress) {
+          this.sendFrame(_Sender.frame(data, options), cb);
+          return;
+        }
+        const perMessageDeflate = this._extensions[PerMessageDeflate.extensionName];
+        this._bufferedBytes += options[kByteLength];
+        this._state = DEFLATING;
+        perMessageDeflate.compress(data, options.fin, (_, buf) => {
+          if (this._socket.destroyed) {
+            const err = new Error(
+              "The socket was closed while data was being compressed"
+            );
+            callCallbacks(this, err, cb);
+            return;
+          }
+          this._bufferedBytes -= options[kByteLength];
+          this._state = DEFAULT;
+          options.readOnly = false;
+          this.sendFrame(_Sender.frame(buf, options), cb);
+          this.dequeue();
+        });
+      }
+      /**
+       * Executes queued send operations.
+       *
+       * @private
+       */
+      dequeue() {
+        while (this._state === DEFAULT && this._queue.length) {
+          const params = this._queue.shift();
+          this._bufferedBytes -= params[3][kByteLength];
+          Reflect.apply(params[0], this, params.slice(1));
+        }
+      }
+      /**
+       * Enqueues a send operation.
+       *
+       * @param {Array} params Send operation parameters.
+       * @private
+       */
+      enqueue(params) {
+        this._bufferedBytes += params[3][kByteLength];
+        this._queue.push(params);
+      }
+      /**
+       * Sends a frame.
+       *
+       * @param {(Buffer | String)[]} list The frame to send
+       * @param {Function} [cb] Callback
+       * @private
+       */
+      sendFrame(list, cb) {
+        if (list.length === 2) {
+          this._socket.cork();
+          this._socket.write(list[0]);
+          this._socket.write(list[1], cb);
+          this._socket.uncork();
+        } else {
+          this._socket.write(list[0], cb);
+        }
+      }
+    };
+    module2.exports = Sender;
+    function callCallbacks(sender, err, cb) {
+      if (typeof cb === "function") cb(err);
+      for (let i = 0; i < sender._queue.length; i++) {
+        const params = sender._queue[i];
+        const callback = params[params.length - 1];
+        if (typeof callback === "function") callback(err);
+      }
+    }
+    function onError(sender, err, cb) {
+      callCallbacks(sender, err, cb);
+      sender.onerror(err);
+    }
+  }
+});
+
+// node_modules/ws/lib/event-target.js
+var require_event_target = __commonJS({
+  "node_modules/ws/lib/event-target.js"(exports, module2) {
+    "use strict";
+    var { kForOnEventAttribute, kListener } = require_constants();
+    var kCode = Symbol("kCode");
+    var kData = Symbol("kData");
+    var kError = Symbol("kError");
+    var kMessage = Symbol("kMessage");
+    var kReason = Symbol("kReason");
+    var kTarget = Symbol("kTarget");
+    var kType = Symbol("kType");
+    var kWasClean = Symbol("kWasClean");
+    var Event = class {
+      /**
+       * Create a new `Event`.
+       *
+       * @param {String} type The name of the event
+       * @throws {TypeError} If the `type` argument is not specified
+       */
+      constructor(type) {
+        this[kTarget] = null;
+        this[kType] = type;
+      }
+      /**
+       * @type {*}
+       */
+      get target() {
+        return this[kTarget];
+      }
+      /**
+       * @type {String}
+       */
+      get type() {
+        return this[kType];
+      }
+    };
+    Object.defineProperty(Event.prototype, "target", { enumerable: true });
+    Object.defineProperty(Event.prototype, "type", { enumerable: true });
+    var CloseEvent = class extends Event {
+      /**
+       * Create a new `CloseEvent`.
+       *
+       * @param {String} type The name of the event
+       * @param {Object} [options] A dictionary object that allows for setting
+       *     attributes via object members of the same name
+       * @param {Number} [options.code=0] The status code explaining why the
+       *     connection was closed
+       * @param {String} [options.reason=''] A human-readable string explaining why
+       *     the connection was closed
+       * @param {Boolean} [options.wasClean=false] Indicates whether or not the
+       *     connection was cleanly closed
+       */
+      constructor(type, options = {}) {
+        super(type);
+        this[kCode] = options.code === void 0 ? 0 : options.code;
+        this[kReason] = options.reason === void 0 ? "" : options.reason;
+        this[kWasClean] = options.wasClean === void 0 ? false : options.wasClean;
+      }
+      /**
+       * @type {Number}
+       */
+      get code() {
+        return this[kCode];
+      }
+      /**
+       * @type {String}
+       */
+      get reason() {
+        return this[kReason];
+      }
+      /**
+       * @type {Boolean}
+       */
+      get wasClean() {
+        return this[kWasClean];
+      }
+    };
+    Object.defineProperty(CloseEvent.prototype, "code", { enumerable: true });
+    Object.defineProperty(CloseEvent.prototype, "reason", { enumerable: true });
+    Object.defineProperty(CloseEvent.prototype, "wasClean", { enumerable: true });
+    var ErrorEvent = class extends Event {
+      /**
+       * Create a new `ErrorEvent`.
+       *
+       * @param {String} type The name of the event
+       * @param {Object} [options] A dictionary object that allows for setting
+       *     attributes via object members of the same name
+       * @param {*} [options.error=null] The error that generated this event
+       * @param {String} [options.message=''] The error message
+       */
+      constructor(type, options = {}) {
+        super(type);
+        this[kError] = options.error === void 0 ? null : options.error;
+        this[kMessage] = options.message === void 0 ? "" : options.message;
+      }
+      /**
+       * @type {*}
+       */
+      get error() {
+        return this[kError];
+      }
+      /**
+       * @type {String}
+       */
+      get message() {
+        return this[kMessage];
+      }
+    };
+    Object.defineProperty(ErrorEvent.prototype, "error", { enumerable: true });
+    Object.defineProperty(ErrorEvent.prototype, "message", { enumerable: true });
+    var MessageEvent = class extends Event {
+      /**
+       * Create a new `MessageEvent`.
+       *
+       * @param {String} type The name of the event
+       * @param {Object} [options] A dictionary object that allows for setting
+       *     attributes via object members of the same name
+       * @param {*} [options.data=null] The message content
+       */
+      constructor(type, options = {}) {
+        super(type);
+        this[kData] = options.data === void 0 ? null : options.data;
+      }
+      /**
+       * @type {*}
+       */
+      get data() {
+        return this[kData];
+      }
+    };
+    Object.defineProperty(MessageEvent.prototype, "data", { enumerable: true });
+    var EventTarget = {
+      /**
+       * Register an event listener.
+       *
+       * @param {String} type A string representing the event type to listen for
+       * @param {(Function|Object)} handler The listener to add
+       * @param {Object} [options] An options object specifies characteristics about
+       *     the event listener
+       * @param {Boolean} [options.once=false] A `Boolean` indicating that the
+       *     listener should be invoked at most once after being added. If `true`,
+       *     the listener would be automatically removed when invoked.
+       * @public
+       */
+      addEventListener(type, handler, options = {}) {
+        for (const listener of this.listeners(type)) {
+          if (!options[kForOnEventAttribute] && listener[kListener] === handler && !listener[kForOnEventAttribute]) {
+            return;
+          }
+        }
+        let wrapper;
+        if (type === "message") {
+          wrapper = function onMessage(data, isBinary) {
+            const event = new MessageEvent("message", {
+              data: isBinary ? data : data.toString()
+            });
+            event[kTarget] = this;
+            callListener(handler, this, event);
+          };
+        } else if (type === "close") {
+          wrapper = function onClose(code, message) {
+            const event = new CloseEvent("close", {
+              code,
+              reason: message.toString(),
+              wasClean: this._closeFrameReceived && this._closeFrameSent
+            });
+            event[kTarget] = this;
+            callListener(handler, this, event);
+          };
+        } else if (type === "error") {
+          wrapper = function onError(error) {
+            const event = new ErrorEvent("error", {
+              error,
+              message: error.message
+            });
+            event[kTarget] = this;
+            callListener(handler, this, event);
+          };
+        } else if (type === "open") {
+          wrapper = function onOpen() {
+            const event = new Event("open");
+            event[kTarget] = this;
+            callListener(handler, this, event);
+          };
+        } else {
+          return;
+        }
+        wrapper[kForOnEventAttribute] = !!options[kForOnEventAttribute];
+        wrapper[kListener] = handler;
+        if (options.once) {
+          this.once(type, wrapper);
+        } else {
+          this.on(type, wrapper);
+        }
+      },
+      /**
+       * Remove an event listener.
+       *
+       * @param {String} type A string representing the event type to remove
+       * @param {(Function|Object)} handler The listener to remove
+       * @public
+       */
+      removeEventListener(type, handler) {
+        for (const listener of this.listeners(type)) {
+          if (listener[kListener] === handler && !listener[kForOnEventAttribute]) {
+            this.removeListener(type, listener);
+            break;
+          }
+        }
+      }
+    };
+    module2.exports = {
+      CloseEvent,
+      ErrorEvent,
+      Event,
+      EventTarget,
+      MessageEvent
+    };
+    function callListener(listener, thisArg, event) {
+      if (typeof listener === "object" && listener.handleEvent) {
+        listener.handleEvent.call(listener, event);
+      } else {
+        listener.call(thisArg, event);
+      }
+    }
+  }
+});
+
+// node_modules/ws/lib/extension.js
+var require_extension = __commonJS({
+  "node_modules/ws/lib/extension.js"(exports, module2) {
+    "use strict";
+    var { tokenChars } = require_validation();
+    function push(dest, name, elem) {
+      if (dest[name] === void 0) dest[name] = [elem];
+      else dest[name].push(elem);
+    }
+    function parse(header) {
+      const offers = /* @__PURE__ */ Object.create(null);
+      let params = /* @__PURE__ */ Object.create(null);
+      let mustUnescape = false;
+      let isEscaping = false;
+      let inQuotes = false;
+      let extensionName;
+      let paramName;
+      let start = -1;
+      let code = -1;
+      let end = -1;
+      let i = 0;
+      for (; i < header.length; i++) {
+        code = header.charCodeAt(i);
+        if (extensionName === void 0) {
+          if (end === -1 && tokenChars[code] === 1) {
+            if (start === -1) start = i;
+          } else if (i !== 0 && (code === 32 || code === 9)) {
+            if (end === -1 && start !== -1) end = i;
+          } else if (code === 59 || code === 44) {
+            if (start === -1) {
+              throw new SyntaxError(`Unexpected character at index ${i}`);
+            }
+            if (end === -1) end = i;
+            const name = header.slice(start, end);
+            if (code === 44) {
+              push(offers, name, params);
+              params = /* @__PURE__ */ Object.create(null);
+            } else {
+              extensionName = name;
+            }
+            start = end = -1;
+          } else {
+            throw new SyntaxError(`Unexpected character at index ${i}`);
+          }
+        } else if (paramName === void 0) {
+          if (end === -1 && tokenChars[code] === 1) {
+            if (start === -1) start = i;
+          } else if (code === 32 || code === 9) {
+            if (end === -1 && start !== -1) end = i;
+          } else if (code === 59 || code === 44) {
+            if (start === -1) {
+              throw new SyntaxError(`Unexpected character at index ${i}`);
+            }
+            if (end === -1) end = i;
+            push(params, header.slice(start, end), true);
+            if (code === 44) {
+              push(offers, extensionName, params);
+              params = /* @__PURE__ */ Object.create(null);
+              extensionName = void 0;
+            }
+            start = end = -1;
+          } else if (code === 61 && start !== -1 && end === -1) {
+            paramName = header.slice(start, i);
+            start = end = -1;
+          } else {
+            throw new SyntaxError(`Unexpected character at index ${i}`);
+          }
+        } else {
+          if (isEscaping) {
+            if (tokenChars[code] !== 1) {
+              throw new SyntaxError(`Unexpected character at index ${i}`);
+            }
+            if (start === -1) start = i;
+            else if (!mustUnescape) mustUnescape = true;
+            isEscaping = false;
+          } else if (inQuotes) {
+            if (tokenChars[code] === 1) {
+              if (start === -1) start = i;
+            } else if (code === 34 && start !== -1) {
+              inQuotes = false;
+              end = i;
+            } else if (code === 92) {
+              isEscaping = true;
+            } else {
+              throw new SyntaxError(`Unexpected character at index ${i}`);
+            }
+          } else if (code === 34 && header.charCodeAt(i - 1) === 61) {
+            inQuotes = true;
+          } else if (end === -1 && tokenChars[code] === 1) {
+            if (start === -1) start = i;
+          } else if (start !== -1 && (code === 32 || code === 9)) {
+            if (end === -1) end = i;
+          } else if (code === 59 || code === 44) {
+            if (start === -1) {
+              throw new SyntaxError(`Unexpected character at index ${i}`);
+            }
+            if (end === -1) end = i;
+            let value = header.slice(start, end);
+            if (mustUnescape) {
+              value = value.replace(/\\/g, "");
+              mustUnescape = false;
+            }
+            push(params, paramName, value);
+            if (code === 44) {
+              push(offers, extensionName, params);
+              params = /* @__PURE__ */ Object.create(null);
+              extensionName = void 0;
+            }
+            paramName = void 0;
+            start = end = -1;
+          } else {
+            throw new SyntaxError(`Unexpected character at index ${i}`);
+          }
+        }
+      }
+      if (start === -1 || inQuotes || code === 32 || code === 9) {
+        throw new SyntaxError("Unexpected end of input");
+      }
+      if (end === -1) end = i;
+      const token = header.slice(start, end);
+      if (extensionName === void 0) {
+        push(offers, token, params);
+      } else {
+        if (paramName === void 0) {
+          push(params, token, true);
+        } else if (mustUnescape) {
+          push(params, paramName, token.replace(/\\/g, ""));
+        } else {
+          push(params, paramName, token);
+        }
+        push(offers, extensionName, params);
+      }
+      return offers;
+    }
+    function format(extensions) {
+      return Object.keys(extensions).map((extension) => {
+        let configurations = extensions[extension];
+        if (!Array.isArray(configurations)) configurations = [configurations];
+        return configurations.map((params) => {
+          return [extension].concat(
+            Object.keys(params).map((k) => {
+              let values = params[k];
+              if (!Array.isArray(values)) values = [values];
+              return values.map((v) => v === true ? k : `${k}=${v}`).join("; ");
+            })
+          ).join("; ");
+        }).join(", ");
+      }).join(", ");
+    }
+    module2.exports = { format, parse };
+  }
+});
+
+// node_modules/ws/lib/websocket.js
+var require_websocket = __commonJS({
+  "node_modules/ws/lib/websocket.js"(exports, module2) {
+    "use strict";
+    var EventEmitter = require("events");
+    var https = require("https");
+    var http = require("http");
+    var net = require("net");
+    var tls = require("tls");
+    var { randomBytes, createHash } = require("crypto");
+    var { Duplex, Readable } = require("stream");
+    var { URL: URL2 } = require("url");
+    var PerMessageDeflate = require_permessage_deflate();
+    var Receiver = require_receiver();
+    var Sender = require_sender();
+    var { isBlob } = require_validation();
+    var {
+      BINARY_TYPES,
+      CLOSE_TIMEOUT,
+      EMPTY_BUFFER,
+      GUID,
+      kForOnEventAttribute,
+      kListener,
+      kStatusCode,
+      kWebSocket,
+      NOOP
+    } = require_constants();
+    var {
+      EventTarget: { addEventListener, removeEventListener }
+    } = require_event_target();
+    var { format, parse } = require_extension();
+    var { toBuffer } = require_buffer_util();
+    var kAborted = Symbol("kAborted");
+    var protocolVersions = [8, 13];
+    var readyStates = ["CONNECTING", "OPEN", "CLOSING", "CLOSED"];
+    var subprotocolRegex = /^[!#$%&'*+\-.0-9A-Z^_`|a-z~]+$/;
+    var WebSocket = class _WebSocket extends EventEmitter {
+      /**
+       * Create a new `WebSocket`.
+       *
+       * @param {(String|URL)} address The URL to which to connect
+       * @param {(String|String[])} [protocols] The subprotocols
+       * @param {Object} [options] Connection options
+       */
+      constructor(address, protocols, options) {
+        super();
+        this._binaryType = BINARY_TYPES[0];
+        this._closeCode = 1006;
+        this._closeFrameReceived = false;
+        this._closeFrameSent = false;
+        this._closeMessage = EMPTY_BUFFER;
+        this._closeTimer = null;
+        this._errorEmitted = false;
+        this._extensions = {};
+        this._paused = false;
+        this._protocol = "";
+        this._readyState = _WebSocket.CONNECTING;
+        this._receiver = null;
+        this._sender = null;
+        this._socket = null;
+        if (address !== null) {
+          this._bufferedAmount = 0;
+          this._isServer = false;
+          this._redirects = 0;
+          if (protocols === void 0) {
+            protocols = [];
+          } else if (!Array.isArray(protocols)) {
+            if (typeof protocols === "object" && protocols !== null) {
+              options = protocols;
+              protocols = [];
+            } else {
+              protocols = [protocols];
+            }
+          }
+          initAsClient(this, address, protocols, options);
+        } else {
+          this._autoPong = options.autoPong;
+          this._closeTimeout = options.closeTimeout;
+          this._isServer = true;
+        }
+      }
+      /**
+       * For historical reasons, the custom "nodebuffer" type is used by the default
+       * instead of "blob".
+       *
+       * @type {String}
+       */
+      get binaryType() {
+        return this._binaryType;
+      }
+      set binaryType(type) {
+        if (!BINARY_TYPES.includes(type)) return;
+        this._binaryType = type;
+        if (this._receiver) this._receiver._binaryType = type;
+      }
+      /**
+       * @type {Number}
+       */
+      get bufferedAmount() {
+        if (!this._socket) return this._bufferedAmount;
+        return this._socket._writableState.length + this._sender._bufferedBytes;
+      }
+      /**
+       * @type {String}
+       */
+      get extensions() {
+        return Object.keys(this._extensions).join();
+      }
+      /**
+       * @type {Boolean}
+       */
+      get isPaused() {
+        return this._paused;
+      }
+      /**
+       * @type {Function}
+       */
+      /* istanbul ignore next */
+      get onclose() {
+        return null;
+      }
+      /**
+       * @type {Function}
+       */
+      /* istanbul ignore next */
+      get onerror() {
+        return null;
+      }
+      /**
+       * @type {Function}
+       */
+      /* istanbul ignore next */
+      get onopen() {
+        return null;
+      }
+      /**
+       * @type {Function}
+       */
+      /* istanbul ignore next */
+      get onmessage() {
+        return null;
+      }
+      /**
+       * @type {String}
+       */
+      get protocol() {
+        return this._protocol;
+      }
+      /**
+       * @type {Number}
+       */
+      get readyState() {
+        return this._readyState;
+      }
+      /**
+       * @type {String}
+       */
+      get url() {
+        return this._url;
+      }
+      /**
+       * Set up the socket and the internal resources.
+       *
+       * @param {Duplex} socket The network socket between the server and client
+       * @param {Buffer} head The first packet of the upgraded stream
+       * @param {Object} options Options object
+       * @param {Boolean} [options.allowSynchronousEvents=false] Specifies whether
+       *     any of the `'message'`, `'ping'`, and `'pong'` events can be emitted
+       *     multiple times in the same tick
+       * @param {Function} [options.generateMask] The function used to generate the
+       *     masking key
+       * @param {Number} [options.maxBufferedChunks=0] The maximum number of
+       *     buffered data chunks
+       * @param {Number} [options.maxFragments=0] The maximum number of message
+       *     fragments
+       * @param {Number} [options.maxPayload=0] The maximum allowed message size
+       * @param {Boolean} [options.skipUTF8Validation=false] Specifies whether or
+       *     not to skip UTF-8 validation for text and close messages
+       * @private
+       */
+      setSocket(socket, head, options) {
+        const receiver = new Receiver({
+          allowSynchronousEvents: options.allowSynchronousEvents,
+          binaryType: this.binaryType,
+          extensions: this._extensions,
+          isServer: this._isServer,
+          maxBufferedChunks: options.maxBufferedChunks,
+          maxFragments: options.maxFragments,
+          maxPayload: options.maxPayload,
+          skipUTF8Validation: options.skipUTF8Validation
+        });
+        const sender = new Sender(socket, this._extensions, options.generateMask);
+        this._receiver = receiver;
+        this._sender = sender;
+        this._socket = socket;
+        receiver[kWebSocket] = this;
+        sender[kWebSocket] = this;
+        socket[kWebSocket] = this;
+        receiver.on("conclude", receiverOnConclude);
+        receiver.on("drain", receiverOnDrain);
+        receiver.on("error", receiverOnError);
+        receiver.on("message", receiverOnMessage);
+        receiver.on("ping", receiverOnPing);
+        receiver.on("pong", receiverOnPong);
+        sender.onerror = senderOnError;
+        if (socket.setTimeout) socket.setTimeout(0);
+        if (socket.setNoDelay) socket.setNoDelay();
+        if (head.length > 0) socket.unshift(head);
+        socket.on("close", socketOnClose);
+        socket.on("data", socketOnData);
+        socket.on("end", socketOnEnd);
+        socket.on("error", socketOnError);
+        this._readyState = _WebSocket.OPEN;
+        this.emit("open");
+      }
+      /**
+       * Emit the `'close'` event.
+       *
+       * @private
+       */
+      emitClose() {
+        if (!this._socket) {
+          this._readyState = _WebSocket.CLOSED;
+          this.emit("close", this._closeCode, this._closeMessage);
+          return;
+        }
+        if (this._extensions[PerMessageDeflate.extensionName]) {
+          this._extensions[PerMessageDeflate.extensionName].cleanup();
+        }
+        this._receiver.removeAllListeners();
+        this._readyState = _WebSocket.CLOSED;
+        this.emit("close", this._closeCode, this._closeMessage);
+      }
+      /**
+       * Start a closing handshake.
+       *
+       *          +----------+   +-----------+   +----------+
+       *     - - -|ws.close()|-->|close frame|-->|ws.close()|- - -
+       *    |     +----------+   +-----------+   +----------+     |
+       *          +----------+   +-----------+         |
+       * CLOSING  |ws.close()|<--|close frame|<--+-----+       CLOSING
+       *          +----------+   +-----------+   |
+       *    |           |                        |   +---+        |
+       *                +------------------------+-->|fin| - - - -
+       *    |         +---+                      |   +---+
+       *     - - - - -|fin|<---------------------+
+       *              +---+
+       *
+       * @param {Number} [code] Status code explaining why the connection is closing
+       * @param {(String|Buffer)} [data] The reason why the connection is
+       *     closing
+       * @public
+       */
+      close(code, data) {
+        if (this.readyState === _WebSocket.CLOSED) return;
+        if (this.readyState === _WebSocket.CONNECTING) {
+          const msg = "WebSocket was closed before the connection was established";
+          abortHandshake(this, this._req, msg);
+          return;
+        }
+        if (this.readyState === _WebSocket.CLOSING) {
+          if (this._closeFrameSent && (this._closeFrameReceived || this._receiver._writableState.errorEmitted)) {
+            this._socket.end();
+          }
+          return;
+        }
+        this._readyState = _WebSocket.CLOSING;
+        this._sender.close(code, data, !this._isServer, (err) => {
+          if (err) return;
+          this._closeFrameSent = true;
+          if (this._closeFrameReceived || this._receiver._writableState.errorEmitted) {
+            this._socket.end();
+          }
+        });
+        setCloseTimer(this);
+      }
+      /**
+       * Pause the socket.
+       *
+       * @public
+       */
+      pause() {
+        if (this.readyState === _WebSocket.CONNECTING || this.readyState === _WebSocket.CLOSED) {
+          return;
+        }
+        this._paused = true;
+        this._socket.pause();
+      }
+      /**
+       * Send a ping.
+       *
+       * @param {*} [data] The data to send
+       * @param {Boolean} [mask] Indicates whether or not to mask `data`
+       * @param {Function} [cb] Callback which is executed when the ping is sent
+       * @public
+       */
+      ping(data, mask, cb) {
+        if (this.readyState === _WebSocket.CONNECTING) {
+          throw new Error("WebSocket is not open: readyState 0 (CONNECTING)");
+        }
+        if (typeof data === "function") {
+          cb = data;
+          data = mask = void 0;
+        } else if (typeof mask === "function") {
+          cb = mask;
+          mask = void 0;
+        }
+        if (typeof data === "number") data = data.toString();
+        if (this.readyState !== _WebSocket.OPEN) {
+          sendAfterClose(this, data, cb);
+          return;
+        }
+        if (mask === void 0) mask = !this._isServer;
+        this._sender.ping(data || EMPTY_BUFFER, mask, cb);
+      }
+      /**
+       * Send a pong.
+       *
+       * @param {*} [data] The data to send
+       * @param {Boolean} [mask] Indicates whether or not to mask `data`
+       * @param {Function} [cb] Callback which is executed when the pong is sent
+       * @public
+       */
+      pong(data, mask, cb) {
+        if (this.readyState === _WebSocket.CONNECTING) {
+          throw new Error("WebSocket is not open: readyState 0 (CONNECTING)");
+        }
+        if (typeof data === "function") {
+          cb = data;
+          data = mask = void 0;
+        } else if (typeof mask === "function") {
+          cb = mask;
+          mask = void 0;
+        }
+        if (typeof data === "number") data = data.toString();
+        if (this.readyState !== _WebSocket.OPEN) {
+          sendAfterClose(this, data, cb);
+          return;
+        }
+        if (mask === void 0) mask = !this._isServer;
+        this._sender.pong(data || EMPTY_BUFFER, mask, cb);
+      }
+      /**
+       * Resume the socket.
+       *
+       * @public
+       */
+      resume() {
+        if (this.readyState === _WebSocket.CONNECTING || this.readyState === _WebSocket.CLOSED) {
+          return;
+        }
+        this._paused = false;
+        if (!this._receiver._writableState.needDrain) this._socket.resume();
+      }
+      /**
+       * Send a data message.
+       *
+       * @param {*} data The message to send
+       * @param {Object} [options] Options object
+       * @param {Boolean} [options.binary] Specifies whether `data` is binary or
+       *     text
+       * @param {Boolean} [options.compress] Specifies whether or not to compress
+       *     `data`
+       * @param {Boolean} [options.fin=true] Specifies whether the fragment is the
+       *     last one
+       * @param {Boolean} [options.mask] Specifies whether or not to mask `data`
+       * @param {Function} [cb] Callback which is executed when data is written out
+       * @public
+       */
+      send(data, options, cb) {
+        if (this.readyState === _WebSocket.CONNECTING) {
+          throw new Error("WebSocket is not open: readyState 0 (CONNECTING)");
+        }
+        if (typeof options === "function") {
+          cb = options;
+          options = {};
+        }
+        if (typeof data === "number") data = data.toString();
+        if (this.readyState !== _WebSocket.OPEN) {
+          sendAfterClose(this, data, cb);
+          return;
+        }
+        const opts = {
+          binary: typeof data !== "string",
+          mask: !this._isServer,
+          compress: true,
+          fin: true,
+          ...options
+        };
+        if (!this._extensions[PerMessageDeflate.extensionName]) {
+          opts.compress = false;
+        }
+        this._sender.send(data || EMPTY_BUFFER, opts, cb);
+      }
+      /**
+       * Forcibly close the connection.
+       *
+       * @public
+       */
+      terminate() {
+        if (this.readyState === _WebSocket.CLOSED) return;
+        if (this.readyState === _WebSocket.CONNECTING) {
+          const msg = "WebSocket was closed before the connection was established";
+          abortHandshake(this, this._req, msg);
+          return;
+        }
+        if (this._socket) {
+          this._readyState = _WebSocket.CLOSING;
+          this._socket.destroy();
+        }
+      }
+    };
+    Object.defineProperty(WebSocket, "CONNECTING", {
+      enumerable: true,
+      value: readyStates.indexOf("CONNECTING")
+    });
+    Object.defineProperty(WebSocket.prototype, "CONNECTING", {
+      enumerable: true,
+      value: readyStates.indexOf("CONNECTING")
+    });
+    Object.defineProperty(WebSocket, "OPEN", {
+      enumerable: true,
+      value: readyStates.indexOf("OPEN")
+    });
+    Object.defineProperty(WebSocket.prototype, "OPEN", {
+      enumerable: true,
+      value: readyStates.indexOf("OPEN")
+    });
+    Object.defineProperty(WebSocket, "CLOSING", {
+      enumerable: true,
+      value: readyStates.indexOf("CLOSING")
+    });
+    Object.defineProperty(WebSocket.prototype, "CLOSING", {
+      enumerable: true,
+      value: readyStates.indexOf("CLOSING")
+    });
+    Object.defineProperty(WebSocket, "CLOSED", {
+      enumerable: true,
+      value: readyStates.indexOf("CLOSED")
+    });
+    Object.defineProperty(WebSocket.prototype, "CLOSED", {
+      enumerable: true,
+      value: readyStates.indexOf("CLOSED")
+    });
+    [
+      "binaryType",
+      "bufferedAmount",
+      "extensions",
+      "isPaused",
+      "protocol",
+      "readyState",
+      "url"
+    ].forEach((property) => {
+      Object.defineProperty(WebSocket.prototype, property, { enumerable: true });
+    });
+    ["open", "error", "close", "message"].forEach((method) => {
+      Object.defineProperty(WebSocket.prototype, `on${method}`, {
+        enumerable: true,
+        get() {
+          for (const listener of this.listeners(method)) {
+            if (listener[kForOnEventAttribute]) return listener[kListener];
+          }
+          return null;
+        },
+        set(handler) {
+          for (const listener of this.listeners(method)) {
+            if (listener[kForOnEventAttribute]) {
+              this.removeListener(method, listener);
+              break;
+            }
+          }
+          if (typeof handler !== "function") return;
+          this.addEventListener(method, handler, {
+            [kForOnEventAttribute]: true
+          });
+        }
+      });
+    });
+    WebSocket.prototype.addEventListener = addEventListener;
+    WebSocket.prototype.removeEventListener = removeEventListener;
+    module2.exports = WebSocket;
+    function initAsClient(websocket, address, protocols, options) {
+      const opts = {
+        allowSynchronousEvents: true,
+        autoPong: true,
+        closeTimeout: CLOSE_TIMEOUT,
+        protocolVersion: protocolVersions[1],
+        maxBufferedChunks: 256 * 1024,
+        maxFragments: 16 * 1024,
+        maxPayload: 100 * 1024 * 1024,
+        skipUTF8Validation: false,
+        perMessageDeflate: true,
+        followRedirects: false,
+        maxRedirects: 10,
+        ...options,
+        socketPath: void 0,
+        hostname: void 0,
+        protocol: void 0,
+        timeout: void 0,
+        method: "GET",
+        host: void 0,
+        path: void 0,
+        port: void 0
+      };
+      websocket._autoPong = opts.autoPong;
+      websocket._closeTimeout = opts.closeTimeout;
+      if (!protocolVersions.includes(opts.protocolVersion)) {
+        throw new RangeError(
+          `Unsupported protocol version: ${opts.protocolVersion} (supported versions: ${protocolVersions.join(", ")})`
+        );
+      }
+      let parsedUrl;
+      if (address instanceof URL2) {
+        parsedUrl = address;
+      } else {
+        try {
+          parsedUrl = new URL2(address);
+        } catch {
+          throw new SyntaxError(`Invalid URL: ${address}`);
+        }
+      }
+      if (parsedUrl.protocol === "http:") {
+        parsedUrl.protocol = "ws:";
+      } else if (parsedUrl.protocol === "https:") {
+        parsedUrl.protocol = "wss:";
+      }
+      websocket._url = parsedUrl.href;
+      const isSecure = parsedUrl.protocol === "wss:";
+      const isIpcUrl = parsedUrl.protocol === "ws+unix:";
+      let invalidUrlMessage;
+      if (parsedUrl.protocol !== "ws:" && !isSecure && !isIpcUrl) {
+        invalidUrlMessage = `The URL's protocol must be one of "ws:", "wss:", "http:", "https:", or "ws+unix:"`;
+      } else if (isIpcUrl && !parsedUrl.pathname) {
+        invalidUrlMessage = "The URL's pathname is empty";
+      } else if (parsedUrl.hash) {
+        invalidUrlMessage = "The URL contains a fragment identifier";
+      }
+      if (invalidUrlMessage) {
+        const err = new SyntaxError(invalidUrlMessage);
+        if (websocket._redirects === 0) {
+          throw err;
+        } else {
+          emitErrorAndClose(websocket, err);
+          return;
+        }
+      }
+      const defaultPort = isSecure ? 443 : 80;
+      const key = randomBytes(16).toString("base64");
+      const request = isSecure ? https.request : http.request;
+      const protocolSet = /* @__PURE__ */ new Set();
+      let perMessageDeflate;
+      opts.createConnection = opts.createConnection || (isSecure ? tlsConnect : netConnect);
+      opts.defaultPort = opts.defaultPort || defaultPort;
+      opts.port = parsedUrl.port || defaultPort;
+      opts.host = parsedUrl.hostname.startsWith("[") ? parsedUrl.hostname.slice(1, -1) : parsedUrl.hostname;
+      opts.headers = {
+        ...opts.headers,
+        "Sec-WebSocket-Version": opts.protocolVersion,
+        "Sec-WebSocket-Key": key,
+        Connection: "Upgrade",
+        Upgrade: "websocket"
+      };
+      opts.path = parsedUrl.pathname + parsedUrl.search;
+      opts.timeout = opts.handshakeTimeout;
+      if (opts.perMessageDeflate) {
+        perMessageDeflate = new PerMessageDeflate({
+          ...opts.perMessageDeflate,
+          isServer: false,
+          maxPayload: opts.maxPayload
+        });
+        opts.headers["Sec-WebSocket-Extensions"] = format({
+          [PerMessageDeflate.extensionName]: perMessageDeflate.offer()
+        });
+      }
+      if (protocols.length) {
+        for (const protocol of protocols) {
+          if (typeof protocol !== "string" || !subprotocolRegex.test(protocol) || protocolSet.has(protocol)) {
+            throw new SyntaxError(
+              "An invalid or duplicated subprotocol was specified"
+            );
+          }
+          protocolSet.add(protocol);
+        }
+        opts.headers["Sec-WebSocket-Protocol"] = protocols.join(",");
+      }
+      if (opts.origin) {
+        if (opts.protocolVersion < 13) {
+          opts.headers["Sec-WebSocket-Origin"] = opts.origin;
+        } else {
+          opts.headers.Origin = opts.origin;
+        }
+      }
+      if (parsedUrl.username || parsedUrl.password) {
+        opts.auth = `${parsedUrl.username}:${parsedUrl.password}`;
+      }
+      if (isIpcUrl) {
+        const parts = opts.path.split(":");
+        opts.socketPath = parts[0];
+        opts.path = parts[1];
+      }
+      let req;
+      if (opts.followRedirects) {
+        if (websocket._redirects === 0) {
+          websocket._originalIpc = isIpcUrl;
+          websocket._originalSecure = isSecure;
+          websocket._originalHostOrSocketPath = isIpcUrl ? opts.socketPath : parsedUrl.host;
+          const headers = options && options.headers;
+          options = { ...options, headers: {} };
+          if (headers) {
+            for (const [key2, value] of Object.entries(headers)) {
+              options.headers[key2.toLowerCase()] = value;
+            }
+          }
+        } else if (websocket.listenerCount("redirect") === 0) {
+          const isSameHost = isIpcUrl ? websocket._originalIpc ? opts.socketPath === websocket._originalHostOrSocketPath : false : websocket._originalIpc ? false : parsedUrl.host === websocket._originalHostOrSocketPath;
+          if (!isSameHost || websocket._originalSecure && !isSecure) {
+            delete opts.headers.authorization;
+            delete opts.headers.cookie;
+            if (!isSameHost) delete opts.headers.host;
+            opts.auth = void 0;
+          }
+        }
+        if (opts.auth && !options.headers.authorization) {
+          options.headers.authorization = "Basic " + Buffer.from(opts.auth).toString("base64");
+        }
+        req = websocket._req = request(opts);
+        if (websocket._redirects) {
+          websocket.emit("redirect", websocket.url, req);
+        }
+      } else {
+        req = websocket._req = request(opts);
+      }
+      if (opts.timeout) {
+        req.on("timeout", () => {
+          abortHandshake(websocket, req, "Opening handshake has timed out");
+        });
+      }
+      req.on("error", (err) => {
+        if (req === null || req[kAborted]) return;
+        req = websocket._req = null;
+        emitErrorAndClose(websocket, err);
+      });
+      req.on("response", (res) => {
+        const location2 = res.headers.location;
+        const statusCode = res.statusCode;
+        if (location2 && opts.followRedirects && statusCode >= 300 && statusCode < 400) {
+          if (++websocket._redirects > opts.maxRedirects) {
+            abortHandshake(websocket, req, "Maximum redirects exceeded");
+            return;
+          }
+          req.abort();
+          let addr;
+          try {
+            addr = new URL2(location2, address);
+          } catch (e) {
+            const err = new SyntaxError(`Invalid URL: ${location2}`);
+            emitErrorAndClose(websocket, err);
+            return;
+          }
+          initAsClient(websocket, addr, protocols, options);
+        } else if (!websocket.emit("unexpected-response", req, res)) {
+          abortHandshake(
+            websocket,
+            req,
+            `Unexpected server response: ${res.statusCode}`
+          );
+        }
+      });
+      req.on("upgrade", (res, socket, head) => {
+        websocket.emit("upgrade", res);
+        if (websocket.readyState !== WebSocket.CONNECTING) return;
+        req = websocket._req = null;
+        const upgrade = res.headers.upgrade;
+        if (upgrade === void 0 || upgrade.toLowerCase() !== "websocket") {
+          abortHandshake(websocket, socket, "Invalid Upgrade header");
+          return;
+        }
+        const digest = createHash("sha1").update(key + GUID).digest("base64");
+        if (res.headers["sec-websocket-accept"] !== digest) {
+          abortHandshake(websocket, socket, "Invalid Sec-WebSocket-Accept header");
+          return;
+        }
+        const serverProt = res.headers["sec-websocket-protocol"];
+        let protError;
+        if (serverProt !== void 0) {
+          if (!protocolSet.size) {
+            protError = "Server sent a subprotocol but none was requested";
+          } else if (!protocolSet.has(serverProt)) {
+            protError = "Server sent an invalid subprotocol";
+          }
+        } else if (protocolSet.size) {
+          protError = "Server sent no subprotocol";
+        }
+        if (protError) {
+          abortHandshake(websocket, socket, protError);
+          return;
+        }
+        if (serverProt) websocket._protocol = serverProt;
+        const secWebSocketExtensions = res.headers["sec-websocket-extensions"];
+        if (secWebSocketExtensions !== void 0) {
+          if (!perMessageDeflate) {
+            const message = "Server sent a Sec-WebSocket-Extensions header but no extension was requested";
+            abortHandshake(websocket, socket, message);
+            return;
+          }
+          let extensions;
+          try {
+            extensions = parse(secWebSocketExtensions);
+          } catch (err) {
+            const message = "Invalid Sec-WebSocket-Extensions header";
+            abortHandshake(websocket, socket, message);
+            return;
+          }
+          const extensionNames = Object.keys(extensions);
+          if (extensionNames.length !== 1 || extensionNames[0] !== PerMessageDeflate.extensionName) {
+            const message = "Server indicated an extension that was not requested";
+            abortHandshake(websocket, socket, message);
+            return;
+          }
+          try {
+            perMessageDeflate.accept(extensions[PerMessageDeflate.extensionName]);
+          } catch (err) {
+            const message = "Invalid Sec-WebSocket-Extensions header";
+            abortHandshake(websocket, socket, message);
+            return;
+          }
+          websocket._extensions[PerMessageDeflate.extensionName] = perMessageDeflate;
+        }
+        websocket.setSocket(socket, head, {
+          allowSynchronousEvents: opts.allowSynchronousEvents,
+          generateMask: opts.generateMask,
+          maxBufferedChunks: opts.maxBufferedChunks,
+          maxFragments: opts.maxFragments,
+          maxPayload: opts.maxPayload,
+          skipUTF8Validation: opts.skipUTF8Validation
+        });
+      });
+      if (opts.finishRequest) {
+        opts.finishRequest(req, websocket);
+      } else {
+        req.end();
+      }
+    }
+    function emitErrorAndClose(websocket, err) {
+      websocket._readyState = WebSocket.CLOSING;
+      websocket._errorEmitted = true;
+      websocket.emit("error", err);
+      websocket.emitClose();
+    }
+    function netConnect(options) {
+      options.path = options.socketPath;
+      return net.connect(options);
+    }
+    function tlsConnect(options) {
+      options.path = void 0;
+      if (!options.servername && options.servername !== "") {
+        options.servername = net.isIP(options.host) ? "" : options.host;
+      }
+      return tls.connect(options);
+    }
+    function abortHandshake(websocket, stream, message) {
+      websocket._readyState = WebSocket.CLOSING;
+      const err = new Error(message);
+      Error.captureStackTrace(err, abortHandshake);
+      if (stream.setHeader) {
+        stream[kAborted] = true;
+        stream.abort();
+        if (stream.socket && !stream.socket.destroyed) {
+          stream.socket.destroy();
+        }
+        process.nextTick(emitErrorAndClose, websocket, err);
+      } else {
+        stream.destroy(err);
+        stream.once("error", websocket.emit.bind(websocket, "error"));
+        stream.once("close", websocket.emitClose.bind(websocket));
+      }
+    }
+    function sendAfterClose(websocket, data, cb) {
+      if (data) {
+        const length = isBlob(data) ? data.size : toBuffer(data).length;
+        if (websocket._socket) websocket._sender._bufferedBytes += length;
+        else websocket._bufferedAmount += length;
+      }
+      if (cb) {
+        const err = new Error(
+          `WebSocket is not open: readyState ${websocket.readyState} (${readyStates[websocket.readyState]})`
+        );
+        process.nextTick(cb, err);
+      }
+    }
+    function receiverOnConclude(code, reason) {
+      const websocket = this[kWebSocket];
+      websocket._closeFrameReceived = true;
+      websocket._closeMessage = reason;
+      websocket._closeCode = code;
+      if (websocket._socket[kWebSocket] === void 0) return;
+      websocket._socket.removeListener("data", socketOnData);
+      process.nextTick(resume, websocket._socket);
+      if (code === 1005) websocket.close();
+      else websocket.close(code, reason);
+    }
+    function receiverOnDrain() {
+      const websocket = this[kWebSocket];
+      if (!websocket.isPaused) websocket._socket.resume();
+    }
+    function receiverOnError(err) {
+      const websocket = this[kWebSocket];
+      if (websocket._socket[kWebSocket] !== void 0) {
+        websocket._socket.removeListener("data", socketOnData);
+        process.nextTick(resume, websocket._socket);
+        websocket.close(err[kStatusCode]);
+      }
+      if (!websocket._errorEmitted) {
+        websocket._errorEmitted = true;
+        websocket.emit("error", err);
+      }
+    }
+    function receiverOnFinish() {
+      this[kWebSocket].emitClose();
+    }
+    function receiverOnMessage(data, isBinary) {
+      this[kWebSocket].emit("message", data, isBinary);
+    }
+    function receiverOnPing(data) {
+      const websocket = this[kWebSocket];
+      if (websocket._autoPong) websocket.pong(data, !this._isServer, NOOP);
+      websocket.emit("ping", data);
+    }
+    function receiverOnPong(data) {
+      this[kWebSocket].emit("pong", data);
+    }
+    function resume(stream) {
+      stream.resume();
+    }
+    function senderOnError(err) {
+      const websocket = this[kWebSocket];
+      if (websocket.readyState === WebSocket.CLOSED) return;
+      if (websocket.readyState === WebSocket.OPEN) {
+        websocket._readyState = WebSocket.CLOSING;
+        setCloseTimer(websocket);
+      }
+      this._socket.end();
+      if (!websocket._errorEmitted) {
+        websocket._errorEmitted = true;
+        websocket.emit("error", err);
+      }
+    }
+    function setCloseTimer(websocket) {
+      websocket._closeTimer = setTimeout(
+        websocket._socket.destroy.bind(websocket._socket),
+        websocket._closeTimeout
+      );
+    }
+    function socketOnClose() {
+      const websocket = this[kWebSocket];
+      this.removeListener("close", socketOnClose);
+      this.removeListener("data", socketOnData);
+      this.removeListener("end", socketOnEnd);
+      websocket._readyState = WebSocket.CLOSING;
+      if (!this._readableState.endEmitted && !websocket._closeFrameReceived && !websocket._receiver._writableState.errorEmitted && this._readableState.length !== 0) {
+        const chunk2 = this.read(this._readableState.length);
+        websocket._receiver.write(chunk2);
+      }
+      websocket._receiver.end();
+      this[kWebSocket] = void 0;
+      clearTimeout(websocket._closeTimer);
+      if (websocket._receiver._writableState.finished || websocket._receiver._writableState.errorEmitted) {
+        websocket.emitClose();
+      } else {
+        websocket._receiver.on("error", receiverOnFinish);
+        websocket._receiver.on("finish", receiverOnFinish);
+      }
+    }
+    function socketOnData(chunk2) {
+      if (!this[kWebSocket]._receiver.write(chunk2)) {
+        this.pause();
+      }
+    }
+    function socketOnEnd() {
+      const websocket = this[kWebSocket];
+      websocket._readyState = WebSocket.CLOSING;
+      websocket._receiver.end();
+      this.end();
+    }
+    function socketOnError() {
+      const websocket = this[kWebSocket];
+      this.removeListener("error", socketOnError);
+      this.on("error", NOOP);
+      if (websocket) {
+        websocket._readyState = WebSocket.CLOSING;
+        this.destroy();
+      }
+    }
+  }
+});
+
+// node_modules/ws/lib/stream.js
+var require_stream = __commonJS({
+  "node_modules/ws/lib/stream.js"(exports, module2) {
+    "use strict";
+    var WebSocket = require_websocket();
+    var { Duplex } = require("stream");
+    function emitClose(stream) {
+      stream.emit("close");
+    }
+    function duplexOnEnd() {
+      if (!this.destroyed && this._writableState.finished) {
+        this.destroy();
+      }
+    }
+    function duplexOnError(err) {
+      this.removeListener("error", duplexOnError);
+      this.destroy();
+      if (this.listenerCount("error") === 0) {
+        this.emit("error", err);
+      }
+    }
+    function createWebSocketStream(ws, options) {
+      let terminateOnDestroy = true;
+      const duplex = new Duplex({
+        ...options,
+        autoDestroy: false,
+        emitClose: false,
+        objectMode: false,
+        writableObjectMode: false
+      });
+      ws.on("message", function message(msg, isBinary) {
+        const data = !isBinary && duplex._readableState.objectMode ? msg.toString() : msg;
+        if (!duplex.push(data)) ws.pause();
+      });
+      ws.once("error", function error(err) {
+        if (duplex.destroyed) return;
+        terminateOnDestroy = false;
+        duplex.destroy(err);
+      });
+      ws.once("close", function close() {
+        if (duplex.destroyed) return;
+        duplex.push(null);
+      });
+      duplex._destroy = function(err, callback) {
+        if (ws.readyState === ws.CLOSED) {
+          callback(err);
+          process.nextTick(emitClose, duplex);
+          return;
+        }
+        let called = false;
+        ws.once("error", function error(err2) {
+          called = true;
+          callback(err2);
+        });
+        ws.once("close", function close() {
+          if (!called) callback(err);
+          process.nextTick(emitClose, duplex);
+        });
+        if (terminateOnDestroy) ws.terminate();
+      };
+      duplex._final = function(callback) {
+        if (ws.readyState === ws.CONNECTING) {
+          ws.once("open", function open() {
+            duplex._final(callback);
+          });
+          return;
+        }
+        if (ws._socket === null) return;
+        if (ws._socket._writableState.finished) {
+          callback();
+          if (duplex._readableState.endEmitted) duplex.destroy();
+        } else {
+          ws._socket.once("finish", function finish() {
+            callback();
+          });
+          ws.close();
+        }
+      };
+      duplex._read = function() {
+        if (ws.isPaused) ws.resume();
+      };
+      duplex._write = function(chunk2, encoding, callback) {
+        if (ws.readyState === ws.CONNECTING) {
+          ws.once("open", function open() {
+            duplex._write(chunk2, encoding, callback);
+          });
+          return;
+        }
+        ws.send(chunk2, callback);
+      };
+      duplex.on("end", duplexOnEnd);
+      duplex.on("error", duplexOnError);
+      return duplex;
+    }
+    module2.exports = createWebSocketStream;
+  }
+});
+
+// node_modules/ws/lib/subprotocol.js
+var require_subprotocol = __commonJS({
+  "node_modules/ws/lib/subprotocol.js"(exports, module2) {
+    "use strict";
+    var { tokenChars } = require_validation();
+    function parse(header) {
+      const protocols = /* @__PURE__ */ new Set();
+      let start = -1;
+      let end = -1;
+      let i = 0;
+      for (i; i < header.length; i++) {
+        const code = header.charCodeAt(i);
+        if (end === -1 && tokenChars[code] === 1) {
+          if (start === -1) start = i;
+        } else if (i !== 0 && (code === 32 || code === 9)) {
+          if (end === -1 && start !== -1) end = i;
+        } else if (code === 44) {
+          if (start === -1) {
+            throw new SyntaxError(`Unexpected character at index ${i}`);
+          }
+          if (end === -1) end = i;
+          const protocol2 = header.slice(start, end);
+          if (protocols.has(protocol2)) {
+            throw new SyntaxError(`The "${protocol2}" subprotocol is duplicated`);
+          }
+          protocols.add(protocol2);
+          start = end = -1;
+        } else {
+          throw new SyntaxError(`Unexpected character at index ${i}`);
+        }
+      }
+      if (start === -1 || end !== -1) {
+        throw new SyntaxError("Unexpected end of input");
+      }
+      const protocol = header.slice(start, i);
+      if (protocols.has(protocol)) {
+        throw new SyntaxError(`The "${protocol}" subprotocol is duplicated`);
+      }
+      protocols.add(protocol);
+      return protocols;
+    }
+    module2.exports = { parse };
+  }
+});
+
+// node_modules/ws/lib/websocket-server.js
+var require_websocket_server = __commonJS({
+  "node_modules/ws/lib/websocket-server.js"(exports, module2) {
+    "use strict";
+    var EventEmitter = require("events");
+    var http = require("http");
+    var { Duplex } = require("stream");
+    var { createHash } = require("crypto");
+    var extension = require_extension();
+    var PerMessageDeflate = require_permessage_deflate();
+    var subprotocol = require_subprotocol();
+    var WebSocket = require_websocket();
+    var { CLOSE_TIMEOUT, GUID, kWebSocket } = require_constants();
+    var keyRegex = /^[+/0-9A-Za-z]{22}==$/;
+    var RUNNING = 0;
+    var CLOSING = 1;
+    var CLOSED = 2;
+    var WebSocketServer = class extends EventEmitter {
+      /**
+       * Create a `WebSocketServer` instance.
+       *
+       * @param {Object} options Configuration options
+       * @param {Boolean} [options.allowSynchronousEvents=true] Specifies whether
+       *     any of the `'message'`, `'ping'`, and `'pong'` events can be emitted
+       *     multiple times in the same tick
+       * @param {Boolean} [options.autoPong=true] Specifies whether or not to
+       *     automatically send a pong in response to a ping
+       * @param {Number} [options.backlog=511] The maximum length of the queue of
+       *     pending connections
+       * @param {Boolean} [options.clientTracking=true] Specifies whether or not to
+       *     track clients
+       * @param {Number} [options.closeTimeout=30000] Duration in milliseconds to
+       *     wait for the closing handshake to finish after `websocket.close()` is
+       *     called
+       * @param {Function} [options.handleProtocols] A hook to handle protocols
+       * @param {String} [options.host] The hostname where to bind the server
+       * @param {Number} [options.maxBufferedChunks=262144] The maximum number of
+       *     buffered data chunks
+       * @param {Number} [options.maxFragments=16384] The maximum number of message
+       *     fragments
+       * @param {Number} [options.maxPayload=104857600] The maximum allowed message
+       *     size
+       * @param {Boolean} [options.noServer=false] Enable no server mode
+       * @param {String} [options.path] Accept only connections matching this path
+       * @param {(Boolean|Object)} [options.perMessageDeflate=false] Enable/disable
+       *     permessage-deflate
+       * @param {Number} [options.port] The port where to bind the server
+       * @param {(http.Server|https.Server)} [options.server] A pre-created HTTP/S
+       *     server to use
+       * @param {Boolean} [options.skipUTF8Validation=false] Specifies whether or
+       *     not to skip UTF-8 validation for text and close messages
+       * @param {Function} [options.verifyClient] A hook to reject connections
+       * @param {Function} [options.WebSocket=WebSocket] Specifies the `WebSocket`
+       *     class to use. It must be the `WebSocket` class or class that extends it
+       * @param {Function} [callback] A listener for the `listening` event
+       */
+      constructor(options, callback) {
+        super();
+        options = {
+          allowSynchronousEvents: true,
+          autoPong: true,
+          maxBufferedChunks: 256 * 1024,
+          maxFragments: 16 * 1024,
+          maxPayload: 100 * 1024 * 1024,
+          skipUTF8Validation: false,
+          perMessageDeflate: false,
+          handleProtocols: null,
+          clientTracking: true,
+          closeTimeout: CLOSE_TIMEOUT,
+          verifyClient: null,
+          noServer: false,
+          backlog: null,
+          // use default (511 as implemented in net.js)
+          server: null,
+          host: null,
+          path: null,
+          port: null,
+          WebSocket,
+          ...options
+        };
+        if (options.port == null && !options.server && !options.noServer || options.port != null && (options.server || options.noServer) || options.server && options.noServer) {
+          throw new TypeError(
+            'One and only one of the "port", "server", or "noServer" options must be specified'
+          );
+        }
+        if (options.port != null) {
+          this._server = http.createServer((req, res) => {
+            const body = http.STATUS_CODES[426];
+            res.writeHead(426, {
+              "Content-Length": body.length,
+              "Content-Type": "text/plain"
+            });
+            res.end(body);
+          });
+          this._server.listen(
+            options.port,
+            options.host,
+            options.backlog,
+            callback
+          );
+        } else if (options.server) {
+          this._server = options.server;
+        }
+        if (this._server) {
+          const emitConnection = this.emit.bind(this, "connection");
+          this._removeListeners = addListeners(this._server, {
+            listening: this.emit.bind(this, "listening"),
+            error: this.emit.bind(this, "error"),
+            upgrade: (req, socket, head) => {
+              this.handleUpgrade(req, socket, head, emitConnection);
+            }
+          });
+        }
+        if (options.perMessageDeflate === true) options.perMessageDeflate = {};
+        if (options.clientTracking) {
+          this.clients = /* @__PURE__ */ new Set();
+          this._shouldEmitClose = false;
+        }
+        this.options = options;
+        this._state = RUNNING;
+      }
+      /**
+       * Returns the bound address, the address family name, and port of the server
+       * as reported by the operating system if listening on an IP socket.
+       * If the server is listening on a pipe or UNIX domain socket, the name is
+       * returned as a string.
+       *
+       * @return {(Object|String|null)} The address of the server
+       * @public
+       */
+      address() {
+        if (this.options.noServer) {
+          throw new Error('The server is operating in "noServer" mode');
+        }
+        if (!this._server) return null;
+        return this._server.address();
+      }
+      /**
+       * Stop the server from accepting new connections and emit the `'close'` event
+       * when all existing connections are closed.
+       *
+       * @param {Function} [cb] A one-time listener for the `'close'` event
+       * @public
+       */
+      close(cb) {
+        if (this._state === CLOSED) {
+          if (cb) {
+            this.once("close", () => {
+              cb(new Error("The server is not running"));
+            });
+          }
+          process.nextTick(emitClose, this);
+          return;
+        }
+        if (cb) this.once("close", cb);
+        if (this._state === CLOSING) return;
+        this._state = CLOSING;
+        if (this.options.noServer || this.options.server) {
+          if (this._server) {
+            this._removeListeners();
+            this._removeListeners = this._server = null;
+          }
+          if (this.clients) {
+            if (!this.clients.size) {
+              process.nextTick(emitClose, this);
+            } else {
+              this._shouldEmitClose = true;
+            }
+          } else {
+            process.nextTick(emitClose, this);
+          }
+        } else {
+          const server = this._server;
+          this._removeListeners();
+          this._removeListeners = this._server = null;
+          server.close(() => {
+            emitClose(this);
+          });
+        }
+      }
+      /**
+       * See if a given request should be handled by this server instance.
+       *
+       * @param {http.IncomingMessage} req Request object to inspect
+       * @return {Boolean} `true` if the request is valid, else `false`
+       * @public
+       */
+      shouldHandle(req) {
+        if (this.options.path) {
+          const index = req.url.indexOf("?");
+          const pathname = index !== -1 ? req.url.slice(0, index) : req.url;
+          if (pathname !== this.options.path) return false;
+        }
+        return true;
+      }
+      /**
+       * Handle a HTTP Upgrade request.
+       *
+       * @param {http.IncomingMessage} req The request object
+       * @param {Duplex} socket The network socket between the server and client
+       * @param {Buffer} head The first packet of the upgraded stream
+       * @param {Function} cb Callback
+       * @public
+       */
+      handleUpgrade(req, socket, head, cb) {
+        socket.on("error", socketOnError);
+        const key = req.headers["sec-websocket-key"];
+        const upgrade = req.headers.upgrade;
+        const version = +req.headers["sec-websocket-version"];
+        if (req.method !== "GET") {
+          const message = "Invalid HTTP method";
+          abortHandshakeOrEmitwsClientError(this, req, socket, 405, message);
+          return;
+        }
+        if (upgrade === void 0 || upgrade.toLowerCase() !== "websocket") {
+          const message = "Invalid Upgrade header";
+          abortHandshakeOrEmitwsClientError(this, req, socket, 400, message);
+          return;
+        }
+        if (key === void 0 || !keyRegex.test(key)) {
+          const message = "Missing or invalid Sec-WebSocket-Key header";
+          abortHandshakeOrEmitwsClientError(this, req, socket, 400, message);
+          return;
+        }
+        if (version !== 13 && version !== 8) {
+          const message = "Missing or invalid Sec-WebSocket-Version header";
+          abortHandshakeOrEmitwsClientError(this, req, socket, 400, message, {
+            "Sec-WebSocket-Version": "13, 8"
+          });
+          return;
+        }
+        if (!this.shouldHandle(req)) {
+          abortHandshake(socket, 400);
+          return;
+        }
+        const secWebSocketProtocol = req.headers["sec-websocket-protocol"];
+        let protocols = /* @__PURE__ */ new Set();
+        if (secWebSocketProtocol !== void 0) {
+          try {
+            protocols = subprotocol.parse(secWebSocketProtocol);
+          } catch (err) {
+            const message = "Invalid Sec-WebSocket-Protocol header";
+            abortHandshakeOrEmitwsClientError(this, req, socket, 400, message);
+            return;
+          }
+        }
+        const secWebSocketExtensions = req.headers["sec-websocket-extensions"];
+        const extensions = {};
+        if (this.options.perMessageDeflate && secWebSocketExtensions !== void 0) {
+          const perMessageDeflate = new PerMessageDeflate({
+            ...this.options.perMessageDeflate,
+            isServer: true,
+            maxPayload: this.options.maxPayload
+          });
+          try {
+            const offers = extension.parse(secWebSocketExtensions);
+            if (offers[PerMessageDeflate.extensionName]) {
+              perMessageDeflate.accept(offers[PerMessageDeflate.extensionName]);
+              extensions[PerMessageDeflate.extensionName] = perMessageDeflate;
+            }
+          } catch (err) {
+            const message = "Invalid or unacceptable Sec-WebSocket-Extensions header";
+            abortHandshakeOrEmitwsClientError(this, req, socket, 400, message);
+            return;
+          }
+        }
+        if (this.options.verifyClient) {
+          const info = {
+            origin: req.headers[`${version === 8 ? "sec-websocket-origin" : "origin"}`],
+            secure: !!(req.socket.authorized || req.socket.encrypted),
+            req
+          };
+          if (this.options.verifyClient.length === 2) {
+            this.options.verifyClient(info, (verified, code, message, headers) => {
+              if (!verified) {
+                return abortHandshake(socket, code || 401, message, headers);
+              }
+              this.completeUpgrade(
+                extensions,
+                key,
+                protocols,
+                req,
+                socket,
+                head,
+                cb
+              );
+            });
+            return;
+          }
+          if (!this.options.verifyClient(info)) return abortHandshake(socket, 401);
+        }
+        this.completeUpgrade(extensions, key, protocols, req, socket, head, cb);
+      }
+      /**
+       * Upgrade the connection to WebSocket.
+       *
+       * @param {Object} extensions The accepted extensions
+       * @param {String} key The value of the `Sec-WebSocket-Key` header
+       * @param {Set} protocols The subprotocols
+       * @param {http.IncomingMessage} req The request object
+       * @param {Duplex} socket The network socket between the server and client
+       * @param {Buffer} head The first packet of the upgraded stream
+       * @param {Function} cb Callback
+       * @throws {Error} If called more than once with the same socket
+       * @private
+       */
+      completeUpgrade(extensions, key, protocols, req, socket, head, cb) {
+        if (!socket.readable || !socket.writable) return socket.destroy();
+        if (socket[kWebSocket]) {
+          throw new Error(
+            "server.handleUpgrade() was called more than once with the same socket, possibly due to a misconfiguration"
+          );
+        }
+        if (this._state > RUNNING) return abortHandshake(socket, 503);
+        const digest = createHash("sha1").update(key + GUID).digest("base64");
+        const headers = [
+          "HTTP/1.1 101 Switching Protocols",
+          "Upgrade: websocket",
+          "Connection: Upgrade",
+          `Sec-WebSocket-Accept: ${digest}`
+        ];
+        const ws = new this.options.WebSocket(null, void 0, this.options);
+        if (protocols.size) {
+          const protocol = this.options.handleProtocols ? this.options.handleProtocols(protocols, req) : protocols.values().next().value;
+          if (protocol) {
+            headers.push(`Sec-WebSocket-Protocol: ${protocol}`);
+            ws._protocol = protocol;
+          }
+        }
+        if (extensions[PerMessageDeflate.extensionName]) {
+          const params = extensions[PerMessageDeflate.extensionName].params;
+          const value = extension.format({
+            [PerMessageDeflate.extensionName]: [params]
+          });
+          headers.push(`Sec-WebSocket-Extensions: ${value}`);
+          ws._extensions = extensions;
+        }
+        this.emit("headers", headers, req);
+        socket.write(headers.concat("\r\n").join("\r\n"));
+        socket.removeListener("error", socketOnError);
+        ws.setSocket(socket, head, {
+          allowSynchronousEvents: this.options.allowSynchronousEvents,
+          maxBufferedChunks: this.options.maxBufferedChunks,
+          maxFragments: this.options.maxFragments,
+          maxPayload: this.options.maxPayload,
+          skipUTF8Validation: this.options.skipUTF8Validation
+        });
+        if (this.clients) {
+          this.clients.add(ws);
+          ws.on("close", () => {
+            this.clients.delete(ws);
+            if (this._shouldEmitClose && !this.clients.size) {
+              process.nextTick(emitClose, this);
+            }
+          });
+        }
+        cb(ws, req);
+      }
+    };
+    module2.exports = WebSocketServer;
+    function addListeners(server, map) {
+      for (const event of Object.keys(map)) server.on(event, map[event]);
+      return function removeListeners() {
+        for (const event of Object.keys(map)) {
+          server.removeListener(event, map[event]);
+        }
+      };
+    }
+    function emitClose(server) {
+      server._state = CLOSED;
+      server.emit("close");
+    }
+    function socketOnError() {
+      this.destroy();
+    }
+    function abortHandshake(socket, code, message, headers) {
+      message = message || http.STATUS_CODES[code];
+      headers = {
+        Connection: "close",
+        "Content-Type": "text/html",
+        "Content-Length": Buffer.byteLength(message),
+        ...headers
+      };
+      socket.once("finish", socket.destroy);
+      socket.end(
+        `HTTP/1.1 ${code} ${http.STATUS_CODES[code]}\r
+` + Object.keys(headers).map((h) => `${h}: ${headers[h]}`).join("\r\n") + "\r\n\r\n" + message
+      );
+    }
+    function abortHandshakeOrEmitwsClientError(server, req, socket, code, message, headers) {
+      if (server.listenerCount("wsClientError")) {
+        const err = new Error(message);
+        Error.captureStackTrace(err, abortHandshakeOrEmitwsClientError);
+        server.emit("wsClientError", err, socket, req);
+      } else {
+        abortHandshake(socket, code, message, headers);
+      }
+    }
+  }
+});
+
+// node_modules/ws/index.js
+var require_ws = __commonJS({
+  "node_modules/ws/index.js"(exports, module2) {
+    "use strict";
+    var createWebSocketStream = require_stream();
+    var extension = require_extension();
+    var PerMessageDeflate = require_permessage_deflate();
+    var Receiver = require_receiver();
+    var Sender = require_sender();
+    var subprotocol = require_subprotocol();
+    var WebSocket = require_websocket();
+    var WebSocketServer = require_websocket_server();
+    WebSocket.createWebSocketStream = createWebSocketStream;
+    WebSocket.extension = extension;
+    WebSocket.PerMessageDeflate = PerMessageDeflate;
+    WebSocket.Receiver = Receiver;
+    WebSocket.Sender = Sender;
+    WebSocket.Server = WebSocketServer;
+    WebSocket.subprotocol = subprotocol;
+    WebSocket.WebSocket = WebSocket;
+    WebSocket.WebSocketServer = WebSocketServer;
+    module2.exports = WebSocket;
+  }
+});
+
 // src/main.ts
 var main_exports = {};
 __export(main_exports, {
@@ -26,7 +3724,7 @@ __export(main_exports, {
   default: () => EnglishLearnPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian17 = require("obsidian");
+var import_obsidian19 = require("obsidian");
 
 // src/editor/vocab-hover.ts
 var import_view = require("@codemirror/view");
@@ -58,20 +3756,19 @@ var INTERVALS_MIN = [
 ];
 var MASTERED_STAGE = INTERVALS_MIN.length;
 function applyGrade(prev, grade, now2, opts) {
-  var _a, _b, _c, _d, _e;
-  let stage = (_a = prev == null ? void 0 : prev.stage) != null ? _a : 0;
+  let stage = prev?.stage ?? 0;
   if (grade === 1) stage = 0;
   else if (grade === 3) stage += 1;
-  const hist = [...(_b = prev == null ? void 0 : prev.hist) != null ? _b : [], [now2, grade]].slice(-30);
+  const hist = [...prev?.hist ?? [], [now2, grade]].slice(-30);
   if (stage >= MASTERED_STAGE) {
-    return { stage, next: Number.MAX_SAFE_INTEGER, count: ((_c = prev == null ? void 0 : prev.count) != null ? _c : 0) + 1, hist };
+    return { stage, next: Number.MAX_SAFE_INTEGER, count: (prev?.count ?? 0) + 1, hist };
   }
-  const halve = grade === 2 && ((_d = opts == null ? void 0 : opts.fuzzyHalve) != null ? _d : true);
+  const halve = grade === 2 && (opts?.fuzzyHalve ?? true);
   const intervalMin = INTERVALS_MIN[stage] * (halve ? 0.5 : 1);
   return {
     stage,
     next: now2 + intervalMin * 6e4,
-    count: ((_e = prev == null ? void 0 : prev.count) != null ? _e : 0) + 1,
+    count: (prev?.count ?? 0) + 1,
     hist
   };
 }
@@ -100,7 +3797,7 @@ var STATUS_LABEL = {
   ignored: "\u5DF2\u5FFD\u7565"
 };
 function wordStatus(word, progress, ignored) {
-  if (ignored == null ? void 0 : ignored[word]) return "ignored";
+  if (ignored?.[word]) return "ignored";
   const p = progress[word];
   if (!p) return "fresh";
   if (isMastered(p)) return "mastered";
@@ -111,12 +3808,11 @@ function sortWordsByStatus(list, progress, ignored) {
   return list.map((w) => ({ w, s: STATUS_ORDER[wordStatus(w.word, progress, ignored)] })).sort((a, b) => a.s - b.s || a.w.word.localeCompare(b.w.word)).map((x) => x.w);
 }
 function masteredProgress(prev, now2) {
-  var _a, _b;
   return {
     stage: MASTERED_STAGE,
     next: Number.MAX_SAFE_INTEGER,
-    count: ((_a = prev == null ? void 0 : prev.count) != null ? _a : 0) + 1,
-    hist: [...(_b = prev == null ? void 0 : prev.hist) != null ? _b : [], [now2, 3]].slice(-30)
+    count: (prev?.count ?? 0) + 1,
+    hist: [...prev?.hist ?? [], [now2, 3]].slice(-30)
   };
 }
 
@@ -126,6 +3822,11 @@ function fmtDate(ms) {
   const p = (n) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
+function fmtBytes(n) {
+  if (n < 1024) return `${n} B`;
+  if (n < 1048576) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1048576).toFixed(1)} MB`;
+}
 function fmtDue(next, now2 = Date.now()) {
   if (next >= Number.MAX_SAFE_INTEGER) return "\u5DF2\u638C\u63E1";
   const ms = next - now2;
@@ -134,8 +3835,8 @@ function fmtDue(next, now2 = Date.now()) {
   const m = Math.ceil(min);
   if (m < 60) return `${m} \u5206\u949F\u540E`;
   const h = min / 60;
-  const hr = Math.ceil(h);
-  if (hr < 24) return `${hr} \u5C0F\u65F6\u540E`;
+  const hr2 = Math.ceil(h);
+  if (hr2 < 24) return `${hr2} \u5C0F\u65F6\u540E`;
   return `${Math.ceil(h / 24)} \u5929\u540E`;
 }
 function buildVocabRegex(words) {
@@ -193,12 +3894,11 @@ function shuffle(arr) {
 }
 function sortFreshByFreq(words, frq) {
   words.sort((a, b) => {
-    var _a, _b, _c, _d;
-    const fa = (_a = frq.get(a.word)) != null ? _a : Infinity;
-    const fb = (_b = frq.get(b.word)) != null ? _b : Infinity;
-    if (fa !== fb) return fa - fb;
-    if (fa !== Infinity) return 0;
-    return ((_c = b.added) != null ? _c : 0) - ((_d = a.added) != null ? _d : 0);
+    const fa2 = frq.get(a.word) ?? Infinity;
+    const fb = frq.get(b.word) ?? Infinity;
+    if (fa2 !== fb) return fa2 - fb;
+    if (fa2 !== Infinity) return 0;
+    return (b.added ?? 0) - (a.added ?? 0);
   });
 }
 function isForm(token, word) {
@@ -307,27 +4007,26 @@ function starterNeedsUpgrade(meta) {
   return meta.ver < STARTER_VER;
 }
 function convertStarterEntries(entries2) {
-  var _a, _b, _c, _d, _e, _f, _g, _h, _i;
   const shards = /* @__PURE__ */ new Map();
   for (const e of entries2) {
-    const word = ((_a = e.word) != null ? _a : "").trim().toLowerCase();
-    const translation = ((_b = e.translation) != null ? _b : "").replace(/\\r\\n|\\n|\\r/g, "\uFF1B").replace(/[\r\n]+/g, "\uFF1B").trim();
+    const word = (e.word ?? "").trim().toLowerCase();
+    const translation = (e.translation ?? "").replace(/\\r\\n|\\n|\\r/g, "\uFF1B").replace(/[\r\n]+/g, "\uFF1B").trim();
     if (!word || !translation) continue;
     const letter = /^[a-z]/.test(word) ? word[0] : "0";
-    const shard = (_c = shards.get(letter)) != null ? _c : {};
-    const phonetic = (_d = e.phonetic) == null ? void 0 : _d.trim();
-    const tag = (_e = e.tag) == null ? void 0 : _e.trim();
+    const shard = shards.get(letter) ?? {};
+    const phonetic = e.phonetic?.trim();
+    const tag = e.tag?.trim();
     const entry = { word, translation };
     if (phonetic) entry.phonetic = phonetic;
     if (tag) entry.tag = tag;
-    if ((_f = e.synonyms) == null ? void 0 : _f.length) entry.synonyms = e.synonyms;
-    if ((_g = e.antonyms) == null ? void 0 : _g.length) entry.antonyms = e.antonyms;
-    if ((_h = e.rel) == null ? void 0 : _h.length) entry.rel = e.rel.filter(([x]) => x);
+    if (e.synonyms?.length) entry.synonyms = e.synonyms;
+    if (e.antonyms?.length) entry.antonyms = e.antonyms;
+    if (e.rel?.length) entry.rel = e.rel.filter(([x]) => x);
     if (e.rem) entry.rem = e.rem;
     if (e.wf) entry.wf = e.wf;
     if (typeof e.collins === "number" && e.collins > 0) entry.collins = e.collins;
     if (typeof e.frq === "number" && e.frq > 0) entry.frq = e.frq;
-    if ((_i = e.ex) == null ? void 0 : _i[0]) entry.ex = e.ex;
+    if (e.ex?.[0]) entry.ex = e.ex;
     shard[word] = entry;
     shards.set(letter, shard);
   }
@@ -340,7 +4039,7 @@ async function installStarterDict(app, dir, onUpgraded) {
       let meta = null;
       try {
         meta = JSON.parse(await app.vault.adapter.read(metaFile));
-      } catch (e) {
+      } catch {
       }
       if (!starterNeedsUpgrade(meta)) return true;
     }
@@ -376,7 +4075,7 @@ async function installStarterDict(app, dir, onUpgraded) {
       metaFile,
       JSON.stringify({ source: "starter", ver: STARTER_VER, installed: Date.now(), count })
     );
-    onUpgraded == null ? void 0 : onUpgraded();
+    onUpgraded?.();
     new import_obsidian.Notice(`English Learn\uFF1A\u57FA\u7840\u8BCD\u5178\u5C31\u7EEA\uFF08${count} \u8BCD\u6761\uFF0C\u542B\u97F3\u6807/\u540C\u53CD\u4E49\u8BCD/\u540C\u6839\u8BCD\uFF09`);
     return true;
   } catch (e) {
@@ -404,9 +4103,8 @@ var LEVEL_LABELS = {
   IELTS: "\u96C5\u601D"
 };
 function levelLabel(level) {
-  var _a;
   if (!level) return "";
-  return (_a = LEVEL_LABELS[level.toUpperCase()]) != null ? _a : level;
+  return LEVEL_LABELS[level.toUpperCase()] ?? level;
 }
 var WF_LABELS = {
   p: "\u8FC7\u53BB\u5F0F",
@@ -449,15 +4147,14 @@ function timedRequestUrl(p) {
   ]).finally(() => clearTimeout(timer));
 }
 async function myMemoryFetch(q, toEn) {
-  var _a, _b;
   const pair = toEn ? "zh%7Cen" : "en%7Czh";
   const res = await timedRequestUrl(
     (0, import_obsidian2.requestUrl)({ url: `https://api.mymemory.translated.net/get?q=${encodeURIComponent(q)}&langpair=${pair}` })
   );
   const data = JSON.parse(res.text.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ""));
   return {
-    text: String((_b = (_a = data == null ? void 0 : data.responseData) == null ? void 0 : _a.translatedText) != null ? _b : "").replace(/mymemory warning.*/i, "").replace(/\(.*?\)/g, "").trim(),
-    quota: !!(data == null ? void 0 : data.quotaFinished)
+    text: String(data?.responseData?.translatedText ?? "").replace(/mymemory warning.*/i, "").replace(/\(.*?\)/g, "").trim(),
+    quota: !!data?.quotaFinished
   };
 }
 async function translateZh2En(q) {
@@ -466,7 +4163,7 @@ async function translateZh2En(q) {
       const { text: text2 } = await myMemoryFetch(q, true);
       const words = [...new Set(text2.toLowerCase().split(/[^\w'-]+/).filter((w) => /^[a-z][\w'-]*$/.test(w)))].slice(0, 3);
       if (words.length) return words;
-    } catch (e) {
+    } catch {
     }
   }
   return [];
@@ -476,19 +4173,13 @@ async function myMemoryTranslate(q, toEn) {
     const { text: text2, quota } = await myMemoryFetch(q, toEn);
     if (quota || !text2) return null;
     return text2;
-  } catch (e) {
+  } catch {
     return null;
   }
 }
 function rankZhHits(hits, q) {
-  const exactOf = (e) => {
-    var _a;
-    return ((_a = e.translation) != null ? _a : "").split(/[；;\n]/).some((s) => s.replace(/^[a-z]+\.\s*/i, "").trim() === q);
-  };
-  const cmp = (a, b) => {
-    var _a, _b, _c, _d;
-    return ((_a = a.frq) != null ? _a : Infinity) - ((_b = b.frq) != null ? _b : Infinity) || ((_c = b.collins) != null ? _c : 0) - ((_d = a.collins) != null ? _d : 0) || a.word.length - b.word.length;
-  };
+  const exactOf = (e) => (e.translation ?? "").split(/[；;\n]/).some((s) => s.replace(/^[a-z]+\.\s*/i, "").trim() === q);
+  const cmp = (a, b) => (a.frq ?? Infinity) - (b.frq ?? Infinity) || (b.collins ?? 0) - (a.collins ?? 0) || a.word.length - b.word.length;
   const exact = [];
   const part = [];
   for (const e of hits) (exactOf(e) ? exact : part).push(e);
@@ -499,7 +4190,6 @@ var API1_COOLDOWN_MS = 6e4;
 var api1Fails = 0;
 var api1CooldownUntil = 0;
 async function lookupOnline(word) {
-  var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m;
   if (isPhrase(word)) return null;
   const out = {};
   if (Date.now() >= api1CooldownUntil) {
@@ -510,14 +4200,14 @@ async function lookupOnline(word) {
         })
       );
       api1Fails = 0;
-      const first = ((_a = JSON.parse(res.text)) != null ? _a : [])[0];
-      const phonetics = (_b = first == null ? void 0 : first.phonetics) != null ? _b : [];
-      out.phonetic = (_c = phonetics.find((p) => p == null ? void 0 : p.text)) == null ? void 0 : _c.text;
-      out.audioUrl = ((_d = phonetics.find((p) => p == null ? void 0 : p.audio)) == null ? void 0 : _d.audio) || void 0;
-      const def = (_h = (_g = (_f = (_e = first == null ? void 0 : first.meanings) == null ? void 0 : _e[0]) == null ? void 0 : _f.definitions) == null ? void 0 : _g[0]) == null ? void 0 : _h.definition;
+      const first = (JSON.parse(res.text) ?? [])[0];
+      const phonetics = first?.phonetics ?? [];
+      out.phonetic = phonetics.find((p) => p?.text)?.text;
+      out.audioUrl = phonetics.find((p) => p?.audio)?.audio || void 0;
+      const def = first?.meanings?.[0]?.definitions?.[0]?.definition;
       if (typeof def === "string") out.definition = def;
     } catch (e) {
-      if ((e == null ? void 0 : e.status) !== 404 && ++api1Fails >= API1_MAX_FAILS) {
+      if (e?.status !== 404 && ++api1Fails >= API1_MAX_FAILS) {
         api1CooldownUntil = Date.now() + API1_COOLDOWN_MS;
         api1Fails = 0;
       }
@@ -531,12 +4221,12 @@ async function lookupOnline(word) {
           headers: { "User-Agent": HTTP_UA }
         })
       );
-      const near = (_i = JSON.parse(res.text)) != null ? _i : [];
+      const near = JSON.parse(res.text) ?? [];
       const hit = near.find((d) => d.word === word.toLowerCase());
-      const def = (_j = hit == null ? void 0 : hit.defs) == null ? void 0 : _j[0];
+      const def = hit?.defs?.[0];
       if (def) out.definition = def.split("	").pop().trim();
-      else if (((_k = near[0]) == null ? void 0 : _k.word) && near[0].word !== word.toLowerCase()) out.suggest = near[0].word;
-    } catch (e) {
+      else if (near[0]?.word && near[0].word !== word.toLowerCase()) out.suggest = near[0].word;
+    } catch {
     }
   }
   if (!out.definition) {
@@ -547,9 +4237,9 @@ async function lookupOnline(word) {
         })
       );
       const data = JSON.parse(res.text);
-      const zh = String((_m = (_l = data == null ? void 0 : data.responseData) == null ? void 0 : _l.translatedText) != null ? _m : "").replace(/mymemory warning.*/i, "").replace(/\(.*?\)/g, "").trim();
-      if (!(data == null ? void 0 : data.quotaFinished) && /[一-鿿]/.test(zh) && zh.toLowerCase() !== word.toLowerCase()) out.zh = zh;
-    } catch (e) {
+      const zh = String(data?.responseData?.translatedText ?? "").replace(/mymemory warning.*/i, "").replace(/\(.*?\)/g, "").trim();
+      if (!data?.quotaFinished && /[一-鿿]/.test(zh) && zh.toLowerCase() !== word.toLowerCase()) out.zh = zh;
+    } catch {
     }
   }
   return out.phonetic || out.definition || out.zh || out.audioUrl || out.suggest ? out : null;
@@ -570,24 +4260,22 @@ var EcdictDict = class {
     return this.dataRoot ? `${this.dataRoot}/dict` : "dict";
   }
   async lookup(word) {
-    var _a;
     const key = word.trim().toLowerCase();
     if (!key || isPhrase(key)) return null;
     const shard = /^[a-z]/.test(key) ? key[0] : "0";
     const map = await this.loadShard(shard);
-    return (_a = map[key]) != null ? _a : null;
+    return map[key] ?? null;
   }
   /** 中查英：中文串在本地词典释义里反查英文词。扫全部分片（完整 ECDICT 用户首扫要读盘，秒级），
    *  rankZhHits 排序后截前 limit 条 */
   async searchByZh(query, limit = 20) {
-    var _a;
     const q = query.trim();
     if (!q) return [];
     const hits = [];
     for (const ch of SHARDS) {
       const map = await this.loadShard(ch);
       for (const key in map) {
-        if ((_a = map[key].translation) == null ? void 0 : _a.includes(q)) hits.push(map[key]);
+        if (map[key].translation?.includes(q)) hits.push(map[key]);
       }
     }
     return rankZhHits(hits, q).slice(0, limit);
@@ -596,16 +4284,15 @@ var EcdictDict = class {
    *  升级会重写分片文件：抬代次并清内存缓存，否则同会话内查词新旧混用直到重载；
    *  在途的旧读取由代次拦截，不会在清空后又把旧内容填回来 */
   ensureStarter() {
-    var _a;
     if (Date.now() - this.starterFailedAt < 6e4) return Promise.resolve(false);
-    (_a = this.starterPromise) != null ? _a : this.starterPromise = installStarterDict(this.app, this.dir, () => {
+    this.starterPromise ?? (this.starterPromise = installStarterDict(this.app, this.dir, () => {
       this.shardGen++;
       this.shards.clear();
     }).catch((e) => {
       this.starterPromise = null;
       this.starterFailedAt = Date.now();
       throw e;
-    });
+    }));
     return this.starterPromise;
   }
   /** 已安装词典的元信息（meta.json），未安装返回 null；ver 为旧版 starter 补默认 1。
@@ -617,13 +4304,13 @@ var EcdictDict = class {
       const meta = JSON.parse(await this.app.vault.adapter.read(file));
       let installed = Number(meta.installed) || 0;
       if (installed > 0 && installed < 1e12) installed *= 1e3;
-      return typeof (meta == null ? void 0 : meta.count) === "number" ? {
+      return typeof meta?.count === "number" ? {
         count: meta.count,
         installed,
         ver: Number(meta.ver) || 1,
         source: typeof meta.source === "string" ? meta.source : void 0
       } : null;
-    } catch (e) {
+    } catch {
       return null;
     }
   }
@@ -641,7 +4328,6 @@ var EcdictDict = class {
     }
     const out = /* @__PURE__ */ new Map();
     await runPool([...byShard], 8, async ([shard, ws]) => {
-      var _a;
       try {
         let map = this.shards.get(shard);
         if (!map && await this.app.vault.adapter.exists(`${this.dir}/${shard}.json`)) {
@@ -649,24 +4335,23 @@ var EcdictDict = class {
         }
         if (!map) return;
         for (const w of ws) {
-          const f = (_a = map[w]) == null ? void 0 : _a.frq;
+          const f = map[w]?.frq;
           if (f && f > 0) out.set(w, f);
         }
-      } catch (e) {
+      } catch {
       }
     });
     return out;
   }
   /** 反向查词：找释义包含中文关键词的常见英文词（离线兜底，语义精度一般） */
   async reverseLookup(zh, limit = 3) {
-    var _a, _b, _c;
     const hits = [];
     for (const ch of SHARDS) {
       const map = await this.loadShard(ch);
       await new Promise((r) => setTimeout(r, 0));
       for (const [word, e] of Object.entries(map)) {
-        if ((_a = e.translation) == null ? void 0 : _a.includes(zh)) {
-          const tags = (_c = (_b = e.tag) == null ? void 0 : _b.toLowerCase().split(/\s+/)) != null ? _c : [];
+        if (e.translation?.includes(zh)) {
+          const tags = e.tag?.toLowerCase().split(/\s+/) ?? [];
           const exam = tags.filter((t) => ["zk", "gk", "cet4", "cet6", "ky"].includes(t)).length;
           hits.push({ word, score: exam * 10 - word.length });
         }
@@ -740,9 +4425,9 @@ function vocabHighlight(plugin) {
         const b = new import_state.RangeSetBuilder();
         for (const { from, to } of view.visibleRanges) {
           const text2 = view.state.sliceDoc(from, to);
-          const re = new RegExp(this.re.source, "gi");
+          const re2 = new RegExp(this.re.source, "gi");
           let m;
-          while ((m = re.exec(text2)) !== null) {
+          while ((m = re2.exec(text2)) !== null) {
             if (m[0]) b.add(from + m.index, from + m.index + m[0].length, mark);
           }
         }
@@ -754,10 +4439,9 @@ function vocabHighlight(plugin) {
 }
 function vocabHover(plugin) {
   return (0, import_view.hoverTooltip)((view, pos) => {
-    var _a;
     const line = view.state.doc.lineAt(pos);
     for (const m of line.text.matchAll(/[A-Za-z][A-Za-z'-]*/g)) {
-      const start = line.from + ((_a = m.index) != null ? _a : 0);
+      const start = line.from + (m.index ?? 0);
       const end = start + m[0].length;
       if (pos < start || pos > end) continue;
       const doc = plugin.words.get(m[0]);
@@ -769,7 +4453,7 @@ function vocabHover(plugin) {
         create: () => {
           const dom = document.createElement("div");
           dom.className = "el-vocab-tip";
-          const head = dom.createEl("button", { cls: "el-tts", text: "\u{1F50A}" });
+          const head = dom.createEl("button", { cls: "el-tts" });
           void plugin.audio.badge(head, doc.word);
           head.onclick = () => plugin.speakWord(doc.word);
           const w = dom.createEl("strong", { text: doc.word });
@@ -805,13 +4489,13 @@ function wordNotice(plugin, token) {
   plugin.speakWord(doc.word);
   const head = `${doc.word}${doc.phonetic ? `  ${doc.phonetic}` : ""}${doc.level ? `  [${levelLabel(doc.level)}]` : ""}`;
   const frag = new DocumentFragment();
-  const l1 = document.createElement("div");
-  l1.textContent = head;
-  frag.appendChild(l1);
+  const l12 = document.createElement("div");
+  l12.textContent = head;
+  frag.appendChild(l12);
   if (doc.translation) {
-    const l2 = document.createElement("div");
-    l2.textContent = doc.translation;
-    frag.appendChild(l2);
+    const l22 = document.createElement("div");
+    l22.textContent = doc.translation;
+    frag.appendChild(l22);
   }
   new import_obsidian3.Notice(frag, 6e3);
 }
@@ -820,10 +4504,9 @@ function vocabTapTranslate(plugin) {
   return [
     import_view.EditorView.domEventHandlers({
       click(event) {
-        var _a, _b, _c;
         const t = event.target;
-        if (!((_a = t == null ? void 0 : t.classList) == null ? void 0 : _a.contains("el-vocab"))) return false;
-        const token = (_c = (_b = t.textContent) == null ? void 0 : _b.trim()) != null ? _c : "";
+        if (!t?.classList?.contains("el-vocab")) return false;
+        const token = t.textContent?.trim() ?? "";
         if (!plugin.words.resolveWord(token)) return false;
         event.preventDefault();
         wordNotice(plugin, token);
@@ -839,10 +4522,9 @@ function vocabHoldTranslate(plugin) {
   return [
     import_view.EditorView.domEventHandlers({
       mousedown(event) {
-        var _a;
         if (event.button !== 0) return false;
         const t = event.target;
-        if (!((_a = t == null ? void 0 : t.classList) == null ? void 0 : _a.contains("el-vocab"))) return false;
+        if (!t?.classList?.contains("el-vocab")) return false;
         const startX = event.clientX;
         const startY = event.clientY;
         let timer = 0;
@@ -855,9 +4537,8 @@ function vocabHoldTranslate(plugin) {
           document.removeEventListener("mouseup", cancel);
         };
         timer = window.setTimeout(() => {
-          var _a2, _b;
           cancel();
-          wordNotice(plugin, (_b = (_a2 = t.textContent) == null ? void 0 : _a2.trim()) != null ? _b : "");
+          wordNotice(plugin, t.textContent?.trim() ?? "");
         }, HOLD_MS);
         document.addEventListener("mousemove", onMove);
         document.addEventListener("mouseup", cancel);
@@ -868,7 +4549,42 @@ function vocabHoldTranslate(plugin) {
 }
 
 // src/dict/audio.ts
+var import_obsidian5 = require("obsidian");
+
+// src/ui/icon.ts
 var import_obsidian4 = require("obsidian");
+var CUSTOM_ICONS = {
+  /** 人形发声 = 真人标准音（user-voice-line） */
+  "human-voice": {
+    viewBox: "0 0 24 24",
+    path: '<path d="M1 22a8 8 0 1 1 16 0h-2a6 6 0 0 0-12 0zm8-9c-3.315 0-6-2.685-6-6s2.685-6 6-6s6 2.685 6 6s-2.685 6-6 6m0-2c2.21 0 4-1.79 4-4s-1.79-4-4-4s-4 1.79-4 4s1.79 4 4 4M21.548.784A13.94 13.94 0 0 1 23 7c0 2.233-.523 4.344-1.452 6.217l-1.645-1.197A12 12 0 0 0 21 7a12 12 0 0 0-1.097-5.02zm-3.302 2.4A10 10 0 0 1 19 7a10 10 0 0 1-.754 3.816l-1.677-1.22A8 8 0 0 0 17 7a8 8 0 0 0-.43-2.596z"/>'
+  },
+  /** 喇叭+声波 = 系统 TTS 兜底（volume-up-line） */
+  "tts-volume": {
+    viewBox: "0 0 24 24",
+    path: '<path d="M6.603 10L10 7.22v9.56L6.603 14H3v-4zM2 16h3.889l5.294 4.332a.5.5 0 0 0 .817-.387V4.055a.5.5 0 0 0-.817-.387L5.89 8H2a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1m21-4c0 3.292-1.446 6.246-3.738 8.262l-1.418-1.418A8.98 8.98 0 0 0 21 12a8.98 8.98 0 0 0-3.155-6.844l1.417-1.418A10.97 10.97 0 0 1 23 12m-5 0a5.99 5.99 0 0 0-2.287-4.713l-1.429 1.429A4 4 0 0 1 16 12c0 1.36-.679 2.561-1.716 3.284l1.43 1.43A5.99 5.99 0 0 0 18 12"/>'
+  },
+  /** 竖条声波 = 例句语音（waveform） */
+  "sentence-wave": {
+    viewBox: "0 0 256 256",
+    path: '<path d="M56 96v64a8 8 0 0 1-16 0V96a8 8 0 0 1 16 0m32-72a8 8 0 0 0-8 8v192a8 8 0 0 0 16 0V32a8 8 0 0 0-8-8m40 32a8 8 0 0 0-8 8v128a8 8 0 0 0 16 0V64a8 8 0 0 0-8-8m40 32a8 8 0 0 0-8 8v64a8 8 0 0 0 16 0V96a8 8 0 0 0-8-8m40-16a8 8 0 0 0-8 8v96a8 8 0 0 0 16 0V80a8 8 0 0 0-8-8"/>'
+  }
+};
+function renderIcon(node, name) {
+  node.empty();
+  const custom = CUSTOM_ICONS[name];
+  if (custom) {
+    node.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="${custom.viewBox}" fill="currentColor">${custom.path}</svg>`;
+    return;
+  }
+  (0, import_obsidian4.setIcon)(node, name);
+}
+function icon(node, name) {
+  renderIcon(node, name);
+  return { update: (n) => renderIcon(node, n) };
+}
+
+// src/dict/audio.ts
 var AudioCache = class {
   constructor(app, dataRoot) {
     this.app = app;
@@ -886,7 +4602,7 @@ var AudioCache = class {
     this.retryAt = /* @__PURE__ */ new Map();
     /** 在途下载（同词合流）：预下载窗口与播放兜底同时触发同一词只发一次请求，播放兜底可直接搭车等它落地 */
     this.inflight = /* @__PURE__ */ new Map();
-    /** 标准音缓存下载成功的订阅者（UI 据此把发音按钮换成 👤） */
+    /** 标准音缓存下载成功的订阅者（UI 据此把发音按钮换回真人声图标） */
     this.listeners = /* @__PURE__ */ new Set();
     this.dir = dataRoot ? `${dataRoot}/audio` : "audio";
   }
@@ -902,7 +4618,7 @@ var AudioCache = class {
       if (!await this.app.vault.adapter.exists(f)) return;
       const list = JSON.parse(await this.app.vault.adapter.read(f));
       if (Array.isArray(list)) for (const w of list) this.failed.add(String(w));
-    } catch (e) {
+    } catch {
     }
   }
   /** 无音频词名单防抖落盘（3s），写失败静默（下批失败词会再带上） */
@@ -927,17 +4643,16 @@ var AudioCache = class {
    *  onEnded：播完自然结束回调（pause 打断不触发 ended，被新播放取代时不会误触接读链）。
    *  cancelled：等读文件的窗口里被掐断（切卡/关弹窗）就别再起播——调用方拿代际号检查 */
   async play(word, onEnded, cancelled) {
-    var _a;
     let url = "";
     try {
       const f = this.file(word);
       if (!await this.app.vault.adapter.exists(f)) return false;
-      (_a = this.current) == null ? void 0 : _a.pause();
+      this.current?.pause();
       if (this.currentUrl) URL.revokeObjectURL(this.currentUrl);
       this.current = null;
       this.currentUrl = null;
       const buf = await this.app.vault.adapter.readBinary(f);
-      if (cancelled == null ? void 0 : cancelled()) return false;
+      if (cancelled?.()) return false;
       url = URL.createObjectURL(new Blob([buf], { type: "audio/mpeg" }));
       const audio = new Audio(url);
       this.current = audio;
@@ -948,7 +4663,7 @@ var AudioCache = class {
           this.currentUrl = null;
         }
         URL.revokeObjectURL(url);
-        onEnded == null ? void 0 : onEnded();
+        onEnded?.();
       };
       await audio.play();
       return true;
@@ -960,8 +4675,7 @@ var AudioCache = class {
   }
   /** 掐断在播的音频（切走词卡/关闭弹窗时停词音）。pause 不触发 ended，不会误触接读链 */
   stop() {
-    var _a;
-    (_a = this.current) == null ? void 0 : _a.pause();
+    this.current?.pause();
     if (this.currentUrl) URL.revokeObjectURL(this.currentUrl);
     this.current = null;
     this.currentUrl = null;
@@ -971,14 +4685,33 @@ var AudioCache = class {
     try {
       const f = this.file(word);
       if (await this.app.vault.adapter.exists(f)) await this.app.vault.adapter.remove(f);
-    } catch (e) {
+    } catch {
     }
   }
-  /** 该词是否已有缓存标准音（发音按钮角标：👤=标准音，🔊=TTS 兜底） */
+  /** 清理早于 cutoff 的词音缓存（设置页「清理发音缓存」）。文件名按词可预测，枚举词表精确路径
+   *  即可（点开头目录禁 list）；failed.json 无音频名单不动，删掉的词下次播放自动重新下载。
+   *  返回删除数与释放字节数 */
+  async clean(words, cutoffMs) {
+    let n = 0;
+    let bytes = 0;
+    await runPool(words, 20, async (w) => {
+      try {
+        const f = this.file(w);
+        const st = await this.app.vault.adapter.stat(f);
+        if (!st || st.mtime >= cutoffMs) return;
+        await this.app.vault.adapter.remove(f);
+        n++;
+        bytes += st.size;
+      } catch {
+      }
+    });
+    return { n, bytes };
+  }
+  /** 该词是否已有缓存标准音（发音按钮角标：human-voice 人声=真人标准音，tts-volume 喇叭=系统 TTS 兜底） */
   async has(word) {
     try {
       return await this.app.vault.adapter.exists(this.file(word));
-    } catch (e) {
+    } catch {
       return false;
     }
   }
@@ -987,11 +4720,15 @@ var AudioCache = class {
     this.listeners.add(cb);
     return () => this.listeners.delete(cb);
   }
-  /** 发音按钮角标（DOM 场景用）：有缓存标准音显示 👤 人头，否则 🔊 喇叭（TTS），suffix 保留按钮文字尾缀 */
+  /** 发音按钮角标（DOM 场景用）：有缓存标准音显示 human-voice 人声（真人音，Remix 内嵌图标见
+   *  icon.ts），否则 tts-volume 喇叭（系统
+   *  TTS），suffix 保留按钮文字尾缀。整钮重画（empty），图标尺寸由 .el-btn-ico 上下文规则管 */
   async badge(btn, word, suffix = "") {
     const ok = await this.has(word);
-    btn.setText((ok ? "\u{1F464}" : "\u{1F50A}") + suffix);
-    btn.setAttribute("title", ok ? "\u6807\u51C6\u53D1\u97F3" : "\u7CFB\u7EDF TTS \u64AD\u653E\uFF0C\u70B9\u51FB\u540E\u81EA\u52A8\u7F13\u5B58\u6807\u51C6\u97F3");
+    btn.empty();
+    renderIcon(btn.createSpan({ cls: "el-btn-ico" }), ok ? "human-voice" : "tts-volume");
+    if (suffix) btn.appendText(suffix);
+    btn.setAttr("title", ok ? "\u6807\u51C6\u53D1\u97F3" : "\u7CFB\u7EDF TTS \u64AD\u653E\uFF0C\u70B9\u51FB\u540E\u81EA\u52A8\u7F13\u5B58\u6807\u51C6\u97F3");
   }
   /** 后台下载某词的标准发音（有道 dictvoice，一次直连）；静默失败，确认无音频的词以后不再重试。
    *  已缓存的词直接返回不重下——预下载路径（学习翻卡）会对同词反复调用；
@@ -1004,7 +4741,7 @@ var AudioCache = class {
     if (until !== void 0 && Date.now() < until) return false;
     try {
       if (await this.app.vault.adapter.exists(this.file(w))) return true;
-    } catch (e) {
+    } catch {
     }
     const going = this.inflight.get(w);
     if (going) return going;
@@ -1026,7 +4763,7 @@ var AudioCache = class {
   }
   async download(w) {
     try {
-      const res = await (0, import_obsidian4.requestUrl)({
+      const res = await (0, import_obsidian5.requestUrl)({
         url: `https://dict.youdao.com/dictvoice?type=2&audio=${encodeURIComponent(w)}`
       });
       await mkdirp(this.app, this.dir);
@@ -1035,7 +4772,7 @@ var AudioCache = class {
       for (const cb of this.listeners) cb();
       return true;
     } catch (e) {
-      const status = e == null ? void 0 : e.status;
+      const status = e?.status;
       if (typeof status === "number" && status !== 429) {
         this.failed.add(w);
         this.scheduleFailedSave();
@@ -1059,17 +4796,16 @@ function canon(v) {
   );
 }
 function settingsPatch(cur, base) {
-  var _a, _b;
   const now2 = bagOf(cur);
   const patch = {};
   for (const [k, v] of Object.entries(now2)) {
-    if (k !== "llmSaved" && canon(v) !== canon(base == null ? void 0 : base[k])) patch[k] = v;
+    if (k !== "llmSaved" && canon(v) !== canon(base?.[k])) patch[k] = v;
   }
-  for (const k of Object.keys(base != null ? base : {})) {
+  for (const k of Object.keys(base ?? {})) {
     if (!(k in now2)) patch[k] = void 0;
   }
-  const poolNow = (_a = now2.llmSaved) != null ? _a : {};
-  const poolBase = (_b = base == null ? void 0 : base.llmSaved) != null ? _b : {};
+  const poolNow = now2.llmSaved ?? {};
+  const poolBase = base?.llmSaved ?? {};
   const poolPatch = {};
   let poolDirty = false;
   for (const [p, v] of Object.entries(poolNow)) {
@@ -1088,15 +4824,14 @@ function settingsPatch(cur, base) {
   return patch;
 }
 function mergeSettings(disk, patch) {
-  var _a;
-  const out = { ...disk != null ? disk : {} };
+  const out = { ...disk ?? {} };
   for (const [k, v] of Object.entries(patch)) {
     if (k !== "llmSaved") {
       if (v === void 0) delete out[k];
       else out[k] = v;
       continue;
     }
-    const pool = { ...(_a = out.llmSaved) != null ? _a : {} };
+    const pool = { ...out.llmSaved ?? {} };
     for (const [p, pv] of Object.entries(v)) {
       if (pv === void 0) delete pool[p];
       else pool[p] = pv;
@@ -1115,29 +4850,27 @@ function syncStateOf(db) {
   return rest;
 }
 function parseSync(text2) {
-  var _a, _b, _c, _d, _e, _f;
   if (!text2) return null;
   try {
     const raw = JSON.parse(text2);
     if (!raw || typeof raw !== "object") return null;
     return {
-      themes: (_a = raw.themes) != null ? _a : {},
-      progress: (_b = raw.progress) != null ? _b : {},
-      stats: { streak: (_d = (_c = raw.stats) == null ? void 0 : _c.streak) != null ? _d : 0, days: (_f = (_e = raw.stats) == null ? void 0 : _e.days) != null ? _f : {} },
+      themes: raw.themes ?? {},
+      progress: raw.progress ?? {},
+      stats: { streak: raw.stats?.streak ?? 0, days: raw.stats?.days ?? {} },
       lastRemind: raw.lastRemind,
       ignored: raw.ignored,
       dictExhausted: raw.dictExhausted,
       enriched: raw.enriched
     };
-  } catch (e) {
+  } catch {
     return null;
   }
 }
 var lastTs = (p) => p.hist.length ? p.hist[p.hist.length - 1][0] : 0;
 function absorbSync(mem, disk, tombstones) {
-  var _a, _b, _c, _d, _e, _f, _g;
   let changed = false;
-  const tomb = (key) => !!(tombstones == null ? void 0 : tombstones.has(key));
+  const tomb = (key) => !!tombstones?.has(key);
   for (const [name, info] of Object.entries(disk.themes)) {
     const cur = mem.themes[name];
     if (!cur) {
@@ -1147,7 +4880,7 @@ function absorbSync(mem, disk, tombstones) {
       }
       continue;
     }
-    if (info.pinnedAt && info.pinnedAt > ((_a = cur.pinnedAt) != null ? _a : 0) && (cur.pinned !== info.pinned || cur.pinnedAt !== info.pinnedAt)) {
+    if (info.pinnedAt && info.pinnedAt > (cur.pinnedAt ?? 0) && (cur.pinned !== info.pinned || cur.pinnedAt !== info.pinnedAt)) {
       cur.pinned = info.pinned;
       cur.pinnedAt = info.pinnedAt;
       changed = true;
@@ -1170,13 +4903,13 @@ function absorbSync(mem, disk, tombstones) {
     }
     for (const k of ["new", "rev", "m"]) {
       const v = d[k];
-      if (v !== void 0 && v > ((_b = cur[k]) != null ? _b : 0)) {
+      if (v !== void 0 && v > (cur[k] ?? 0)) {
         cur[k] = v;
         changed = true;
       }
     }
   }
-  if (((_c = disk.stats.streak) != null ? _c : 0) > ((_d = mem.stats.streak) != null ? _d : 0)) {
+  if ((disk.stats.streak ?? 0) > (mem.stats.streak ?? 0)) {
     mem.stats.streak = disk.stats.streak;
     changed = true;
   }
@@ -1184,9 +4917,9 @@ function absorbSync(mem, disk, tombstones) {
     mem.lastRemind = disk.lastRemind;
     changed = true;
   }
-  for (const [w, v] of Object.entries((_e = disk.ignored) != null ? _e : {})) {
-    if (!((_f = mem.ignored) == null ? void 0 : _f[w])) {
-      ((_g = mem.ignored) != null ? _g : mem.ignored = {})[w] = v;
+  for (const [w, v] of Object.entries(disk.ignored ?? {})) {
+    if (!mem.ignored?.[w]) {
+      (mem.ignored ?? (mem.ignored = {}))[w] = v;
       changed = true;
     }
   }
@@ -1210,9 +4943,9 @@ function parseSettings(raw) {
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw);
-    const s = parsed == null ? void 0 : parsed.settings;
+    const s = parsed?.settings;
     return s && typeof s === "object" ? s : null;
-  } catch (e) {
+  } catch {
     return null;
   }
 }
@@ -1236,8 +4969,7 @@ var DataStore = class {
    *  还没把另一端的文件送来）时以装载时的内存为「出生基线」：之后文件迟到，落盘也只会带上
    *  本端真正改过的键，内存里的默认值不会被当成改动整包盖掉另一端的配置 */
   markSettingsSynced(raw) {
-    var _a;
-    this.settingsBase = (_a = parseSettings(raw)) != null ? _a : structuredClone(bagOf(this.plugin.db.settings));
+    this.settingsBase = parseSettings(raw) ?? structuredClone(bagOf(this.plugin.db.settings));
   }
   /** 差异比对用的基线：root 暂缓采纳期间用内存当前值顶上，root 永不产生补丁 */
   effBase() {
@@ -1329,7 +5061,7 @@ var DataStore = class {
         });
       }
       const patch = settingsPatch(db.settings, disk ? this.effBase() : null);
-      if (this.plugin.sessionActive && this.rootDefer === null && patch.root === void 0 && typeof (disk == null ? void 0 : disk.root) === "string" && disk.root !== db.settings.root) {
+      if (this.plugin.sessionActive && this.rootDefer === null && patch.root === void 0 && typeof disk?.root === "string" && disk.root !== db.settings.root) {
         this.rootDefer = disk.root;
       }
       const merged = mergeSettings(disk, patch);
@@ -1384,7 +5116,7 @@ var DataStore = class {
 };
 
 // src/store/word-store.ts
-var import_obsidian5 = require("obsidian");
+var import_obsidian6 = require("obsidian");
 var asStr = (v) => typeof v === "string" ? v : v == null ? void 0 : String(v);
 var asArr = (v) => Array.isArray(v) ? v.map(String) : v == null ? [] : [String(v)];
 var EMPTY_WORDS = /* @__PURE__ */ new Set();
@@ -1394,7 +5126,7 @@ function hasTranslation(t) {
 function firstExample(doc) {
   let best;
   for (const e of doc.examples) if (!best || e.text.length < best.text.length) best = e;
-  return best == null ? void 0 : best.text;
+  return best?.text;
 }
 function parseBody(content) {
   const translation = extractSection(content, "\u91CA\u4E49");
@@ -1421,16 +5153,16 @@ ${line}` : line;
   return { translation, examples, memo };
 }
 function extractSection(content, title) {
-  const re = new RegExp(`^##\\s+${title}[ \\t]*$`, "m");
-  const m = content.match(re);
+  const re2 = new RegExp(`^##\\s+${title}[ \\t]*$`, "m");
+  const m = content.match(re2);
   if (!m || m.index === void 0) return "";
   const rest = content.slice(m.index + m[0].length);
   const next = rest.search(/^##\s+/m);
   return (next === -1 ? rest : rest.slice(0, next)).trim();
 }
 function setSection(content, title, newText) {
-  const re = new RegExp(`^##\\s+${title}[ \\t]*$`, "m");
-  const m = content.match(re);
+  const re2 = new RegExp(`^##\\s+${title}[ \\t]*$`, "m");
+  const m = content.match(re2);
   if (!m || m.index === void 0) {
     return `${content.replace(/\s*$/, "")}
 
@@ -1450,12 +5182,11 @@ ${body ? `
 ${body}` : ""}`;
 }
 function mutateFrontMatter(content, fn) {
-  var _a, _b;
   const m = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-  const fm = (_a = m ? (0, import_obsidian5.parseYaml)(m[1]) : void 0) != null ? _a : {};
+  const fm = (m ? (0, import_obsidian6.parseYaml)(m[1]) : void 0) ?? {};
   fn(fm);
-  const yaml = (0, import_obsidian5.stringifyYaml)(fm).replace(/\n+$/, "");
-  const at = (_b = m == null ? void 0 : m.index) != null ? _b : 0;
+  const yaml = (0, import_obsidian6.stringifyYaml)(fm).replace(/\n+$/, "");
+  const at = m?.index ?? 0;
   return m ? `${content.slice(0, at)}---
 ${yaml}
 ---${content.slice(at + m[0].length)}` : `---
@@ -1501,17 +5232,15 @@ function setExampleTranslation(exSection, index, zh) {
 }
 function exportWordList(words) {
   const lines = [...words].sort((a, b) => a.word.localeCompare(b.word)).map((w) => {
-    var _a;
     const base = `${w.word}	${w.translation.replace(/\n+/g, " ").trim()}`;
     const ex = w.examples.find((e) => e.text.trim());
     if (!ex) return base;
-    const zh = ((_a = ex.translation) != null ? _a : "").replace(/\n+/g, " ").trim();
+    const zh = (ex.translation ?? "").replace(/\n+/g, " ").trim();
     return zh ? `${base}	${ex.text}	${zh}` : `${base}	${ex.text}`;
   });
   return [`# ${words.length} \u8BCD`, ...lines].join("\n");
 }
 function parseImportLine(line) {
-  var _a;
   const cols = line.split("	").map((s) => s.trim());
   if (cols.length >= 2) {
     return {
@@ -1522,19 +5251,18 @@ function parseImportLine(line) {
     };
   }
   const parts = line.split(/[\t,，;；]/);
-  return { word: (_a = parts[0]) != null ? _a : "", translation: parts.slice(1).join(" ").trim() || void 0 };
+  return { word: parts[0] ?? "", translation: parts.slice(1).join(" ").trim() || void 0 };
 }
 function renderNote(word, o) {
-  var _a, _b, _c, _d;
   const fm = [`word: ${JSON.stringify(word)}`];
   if (o.phonetic) fm.push(`phonetic: ${JSON.stringify(o.phonetic)}`);
   if (o.level) fm.push(`level: ${JSON.stringify(o.level)}`);
   fm.push(`themes: [${o.themes.map((t) => JSON.stringify(t)).join(", ")}]`);
-  if ((_a = o.tags) == null ? void 0 : _a.length) fm.push(`tags: [${o.tags.map((t) => JSON.stringify(t)).join(", ")}]`);
+  if (o.tags?.length) fm.push(`tags: [${o.tags.map((t) => JSON.stringify(t)).join(", ")}]`);
   fm.push(`added: ${JSON.stringify((/* @__PURE__ */ new Date()).toISOString().slice(0, 10))}`);
-  if ((_b = o.synonyms) == null ? void 0 : _b.length) fm.push(`synonyms: [${o.synonyms.map((t) => JSON.stringify(t)).join(", ")}]`);
-  if ((_c = o.antonyms) == null ? void 0 : _c.length) fm.push(`antonyms: [${o.antonyms.map((t) => JSON.stringify(t)).join(", ")}]`);
-  const examples = ((_d = o.examples) == null ? void 0 : _d.length) ? o.examples.map(exampleLine).join("\n") : "\uFF08\u5F85\u8865\u5145\uFF09";
+  if (o.synonyms?.length) fm.push(`synonyms: [${o.synonyms.map((t) => JSON.stringify(t)).join(", ")}]`);
+  if (o.antonyms?.length) fm.push(`antonyms: [${o.antonyms.map((t) => JSON.stringify(t)).join(", ")}]`);
+  const examples = o.examples?.length ? o.examples.map(exampleLine).join("\n") : "\uFF08\u5F85\u8865\u5145\uFF09";
   return [
     "---",
     fm.join("\n"),
@@ -1581,10 +5309,7 @@ var WordStore = class {
     return void 0;
   }
   all() {
-    return [...this.index.values()].filter((w) => {
-      var _a;
-      return !((_a = this.plugin.db.ignored) == null ? void 0 : _a[w.word]);
-    });
+    return [...this.index.values()].filter((w) => !this.plugin.db.ignored?.[w.word]);
   }
   /** 不过滤忽略词的全量列表（词表管理、主题改名等需要触达被忽略的词） */
   allRaw() {
@@ -1598,7 +5323,6 @@ var WordStore = class {
   }
   /** 某主题下全部词（含忽略词，忽略过滤由消费方按需做）。索引在 rev 变化后首次查询时重建 */
   themeWords(theme) {
-    var _a;
     if (!this.themeIdx || this.themeIdxRev !== this.rev) {
       const m = /* @__PURE__ */ new Map();
       for (const d of this.allRaw()) {
@@ -1611,7 +5335,7 @@ var WordStore = class {
       this.themeIdx = m;
       this.themeIdxRev = this.rev;
     }
-    return (_a = this.themeIdx.get(theme)) != null ? _a : EMPTY_WORDS;
+    return this.themeIdx.get(theme) ?? EMPTY_WORDS;
   }
   /** 删除词：仅清内存索引（文件与进度由调用方处理） */
   remove(word) {
@@ -1656,7 +5380,6 @@ var WordStore = class {
       }
     }
     await runPool(files, 8, async (file) => {
-      var _a;
       const c = this.fileCache.get(file.path);
       if (c && c.mtime === file.stat.mtime) {
         if (this.setIndex(c.doc)) changed = true;
@@ -1666,7 +5389,7 @@ var WordStore = class {
         this.fileCache.delete(file.path);
         return;
       }
-      if (c && ((_a = this.index.get(c.doc.word)) == null ? void 0 : _a.path) === file.path) {
+      if (c && this.index.get(c.doc.word)?.path === file.path) {
         this.index.delete(c.doc.word);
         changed = true;
       }
@@ -1694,10 +5417,9 @@ var WordStore = class {
     return true;
   }
   async loadFile(file) {
-    var _a, _b, _c;
     const { app } = this.plugin;
-    const fm = (_b = (_a = app.metadataCache.getFileCache(file)) == null ? void 0 : _a.frontmatter) != null ? _b : {};
-    const word = ((_c = asStr(fm.word)) != null ? _c : file.basename).toLowerCase();
+    const fm = app.metadataCache.getFileCache(file)?.frontmatter ?? {};
+    const word = (asStr(fm.word) ?? file.basename).toLowerCase();
     const { translation, examples, memo } = parseBody(await app.vault.read(file));
     const synonyms = asArr(fm.synonyms);
     const antonyms = asArr(fm.antonyms);
@@ -1723,7 +5445,6 @@ var WordStore = class {
   }
   /** 创建词笔记；已存在则只合并主题（不覆盖内容） */
   async create(word, opts) {
-    var _a, _b, _c, _d;
     const { app } = this.plugin;
     const key = word.toLowerCase();
     const existingDoc = this.index.get(key);
@@ -1746,12 +5467,12 @@ var WordStore = class {
       themes: [...opts.themes],
       phonetic: opts.phonetic,
       level: opts.level,
-      tags: (_a = opts.tags) != null ? _a : [],
+      tags: opts.tags ?? [],
       added: Date.now(),
       translation: opts.translation,
-      examples: (_b = opts.examples) != null ? _b : [],
-      synonyms: ((_c = opts.synonyms) == null ? void 0 : _c.length) ? [...opts.synonyms] : void 0,
-      antonyms: ((_d = opts.antonyms) == null ? void 0 : _d.length) ? [...opts.antonyms] : void 0
+      examples: opts.examples ?? [],
+      synonyms: opts.synonyms?.length ? [...opts.synonyms] : void 0,
+      antonyms: opts.antonyms?.length ? [...opts.antonyms] : void 0
     };
     this.setIndex(doc);
     this.fileCache.set(path, { mtime: created.stat.mtime, doc });
@@ -1854,38 +5575,46 @@ var WordStore = class {
       if (fmPatch.level) doc.level = fmPatch.level;
     }
   }
-  /** 追加例句（文章导入/在线补全时用） */
+  /** 追加例句（文章导入/在线补全时用）。vault.process 按文件排队原子写：
+   *  后台补全（例句追加/翻译回填）与用户删例句并发时不丢写 */
   async appendExample(doc, example) {
     const file = this.plugin.app.vault.getFileByPath(doc.path);
     if (!file) return;
     const line = exampleLine(example);
-    const content = await this.plugin.app.vault.read(file);
-    const exSection = extractSection(content, "\u4F8B\u53E5");
-    const isPlaceholder = !exSection || exSection === "\uFF08\u5F85\u8865\u5145\uFF09";
-    const updated = isPlaceholder ? setSection(content, "\u4F8B\u53E5", line) : setSection(content, "\u4F8B\u53E5", `${exSection}
+    await this.plugin.app.vault.process(file, (content) => {
+      const exSection = extractSection(content, "\u4F8B\u53E5");
+      const isPlaceholder = !exSection || exSection === "\uFF08\u5F85\u8865\u5145\uFF09";
+      return isPlaceholder ? setSection(content, "\u4F8B\u53E5", line) : setSection(content, "\u4F8B\u53E5", `${exSection}
 ${line}`);
-    await this.plugin.app.vault.modify(file, updated);
+    });
     doc.examples.push(example);
   }
-  /** 删除一条例句（按当前顺序下标，与词卡展示一致）：重写「例句」区并同步内存 */
+  /** 删除一条例句（按当前顺序下标，与词卡展示一致）：重写「例句」区并同步内存。
+   *  原子写同上；下标失效（文件被并发改动）时不动文件、不同步内存 */
   async removeExample(doc, index) {
     const file = this.plugin.app.vault.getFileByPath(doc.path);
     if (!file) return;
-    const content = await this.plugin.app.vault.read(file);
-    const next = removeExampleFromSection(extractSection(content, "\u4F8B\u53E5"), index);
-    if (next === null) return;
-    await this.plugin.app.vault.modify(file, setSection(content, "\u4F8B\u53E5", next || "\uFF08\u5F85\u8865\u5145\uFF09"));
-    doc.examples.splice(index, 1);
+    let removed = false;
+    await this.plugin.app.vault.process(file, (content) => {
+      const next = removeExampleFromSection(extractSection(content, "\u4F8B\u53E5"), index);
+      if (next === null) return content;
+      removed = true;
+      return setSection(content, "\u4F8B\u53E5", next || "\uFF08\u5F85\u8865\u5145\uFF09");
+    });
+    if (removed) doc.examples.splice(index, 1);
   }
-  /** 更新一条例句的中文翻译（缺翻译回填用）：重写「例句」区并同步内存 */
+  /** 更新一条例句的中文翻译（缺翻译回填用）：重写「例句」区并同步内存。原子写同上 */
   async updateExampleTranslation(doc, index, zh) {
     const file = this.plugin.app.vault.getFileByPath(doc.path);
     if (!file) return;
-    const content = await this.plugin.app.vault.read(file);
-    const next = setExampleTranslation(extractSection(content, "\u4F8B\u53E5"), index, zh);
-    if (next === null) return;
-    await this.plugin.app.vault.modify(file, setSection(content, "\u4F8B\u53E5", next));
-    if (doc.examples[index]) doc.examples[index].translation = zh;
+    let updated = false;
+    await this.plugin.app.vault.process(file, (content) => {
+      const next = setExampleTranslation(extractSection(content, "\u4F8B\u53E5"), index, zh);
+      if (next === null) return content;
+      updated = true;
+      return setSection(content, "\u4F8B\u53E5", next);
+    });
+    if (updated && doc.examples[index]) doc.examples[index].translation = zh;
   }
 };
 
@@ -1894,7 +5623,7 @@ var THEME_VIEW_TYPE = "englishlearn-theme-view";
 var LEARN_VIEW_TYPE = "englishlearn-learn-view";
 
 // src/ui/help-tip.ts
-var import_obsidian6 = require("obsidian");
+var import_obsidian7 = require("obsidian");
 function addHelpTip(host, tip) {
   const el = (host instanceof HTMLElement ? host : host.nameEl).createSpan({
     cls: "el-helptip",
@@ -1906,10 +5635,10 @@ function addHelpTip(host, tip) {
 }
 var openBubble = null;
 function closeTipBubble() {
-  openBubble == null ? void 0 : openBubble.close();
+  openBubble?.close();
 }
 function showTipBubble(anchor, tip) {
-  const again = (openBubble == null ? void 0 : openBubble.anchor) === anchor;
+  const again = openBubble?.anchor === anchor;
   closeTipBubble();
   if (again) return;
   const el = createDiv({ cls: "el-tipbubble", text: tip });
@@ -1919,7 +5648,7 @@ function showTipBubble(anchor, tip) {
     document.body.removeEventListener("pointerdown", onOutside, true);
     window.removeEventListener("resize", onResize);
     window.clearTimeout(timer);
-    if ((openBubble == null ? void 0 : openBubble.el) === el) openBubble = null;
+    if (openBubble?.el === el) openBubble = null;
   };
   const onOutside = (e) => {
     const t = e.target;
@@ -1942,7 +5671,7 @@ function showTipBubble(anchor, tip) {
 }
 
 // src/ui/learn-view.ts
-var import_obsidian12 = require("obsidian");
+var import_obsidian13 = require("obsidian");
 
 // node_modules/svelte/src/runtime/internal/utils.js
 function noop() {
@@ -2011,14 +5740,12 @@ var ResizeObserverSingleton = class _ResizeObserverSingleton {
    * @private
    */
   _getObserver() {
-    var _a;
-    return (_a = this._observer) != null ? _a : this._observer = new ResizeObserver((entries2) => {
-      var _a2;
+    return this._observer ?? (this._observer = new ResizeObserver((entries2) => {
       for (const entry of entries2) {
         _ResizeObserverSingleton.entries.set(entry.target, entry);
-        (_a2 = this._listeners.get(entry.target)) == null ? void 0 : _a2(entry);
+        this._listeners.get(entry.target)?.(entry);
       }
-    });
+    }));
   }
 };
 ResizeObserverSingleton.entries = "WeakMap" in globals ? /* @__PURE__ */ new WeakMap() : void 0;
@@ -2260,7 +5987,7 @@ function transition_out(block, local, detach2, callback) {
 
 // node_modules/svelte/src/runtime/internal/each.js
 function ensure_array_like(array_like_or_iterator) {
-  return (array_like_or_iterator == null ? void 0 : array_like_or_iterator.length) !== void 0 ? array_like_or_iterator : Array.from(array_like_or_iterator);
+  return array_like_or_iterator?.length !== void 0 ? array_like_or_iterator : Array.from(array_like_or_iterator);
 }
 function destroy_block(block, lookup) {
   block.d(1);
@@ -2605,11 +6332,10 @@ if (typeof HTMLElement === "function") {
     // We don't need this when working within Svelte code, but for compatibility of people using this outside of Svelte
     // and setting attributes through setAttribute etc, this is helpful
     attributeChangedCallback(attr2, _oldValue, newValue) {
-      var _a;
       if (this.$$r) return;
       attr2 = this.$$g_p(attr2);
       this.$$d[attr2] = get_custom_element_value(attr2, newValue, this.$$p_d, "toProp");
-      (_a = this.$$c) == null ? void 0 : _a.$set({ [attr2]: this.$$d[attr2] });
+      this.$$c?.$set({ [attr2]: this.$$d[attr2] });
     }
     disconnectedCallback() {
       this.$$cn = false;
@@ -2628,8 +6354,7 @@ if (typeof HTMLElement === "function") {
   };
 }
 function get_custom_element_value(prop, value, props_definition, transform) {
-  var _a;
-  const type = (_a = props_definition[prop]) == null ? void 0 : _a.type;
+  const type = props_definition[prop]?.type;
   value = type === "Boolean" && typeof value !== "boolean" ? value != null : value;
   if (!transform || !props_definition[prop]) {
     return value;
@@ -2722,15 +6447,14 @@ if (typeof window !== "undefined")
   (window.__svelte || (window.__svelte = { v: /* @__PURE__ */ new Set() })).v.add(PUBLIC_VERSION);
 
 // src/components/LearnSession.svelte
-var import_obsidian11 = require("obsidian");
+var import_obsidian12 = require("obsidian");
 
 // src/cloze.ts
 var POS_RE = /^(?:n|v|vt|vi|adj|adv|prep|conj|pron|art|num|interj|aux|abbr)\./;
 var sensesOf = (d) => {
-  var _a, _b;
-  if ((_a = d.senses) == null ? void 0 : _a.length) return d.senses;
+  if (d.senses?.length) return d.senses;
   const merged = [];
-  for (const p of ((_b = d.translation) != null ? _b : "").split(/[\n;；]/)) {
+  for (const p of (d.translation ?? "").split(/[\n;；]/)) {
     const s = p.trim();
     if (!s) continue;
     if (!merged.length || POS_RE.test(s)) merged.push(s);
@@ -2740,20 +6464,18 @@ var sensesOf = (d) => {
 };
 var firstSenseCache = /* @__PURE__ */ new WeakMap();
 var firstSense = (d) => {
-  var _a;
   const hit = firstSenseCache.get(d);
   if (hit && hit.senses === d.senses && hit.translation === d.translation) return hit.s;
-  const s = (_a = sensesOf(d)[0]) != null ? _a : "";
+  const s = sensesOf(d)[0] ?? "";
   firstSenseCache.set(d, { senses: d.senses, translation: d.translation, s });
   return s;
 };
 var bigramCache = /* @__PURE__ */ new Map();
 var bigramsOf = (s) => {
-  var _a;
   let out = bigramCache.get(s);
   if (out) return out;
   out = /* @__PURE__ */ new Set();
-  for (const seg of (_a = s.match(/[一-鿿]+/g)) != null ? _a : []) {
+  for (const seg of s.match(/[一-鿿]+/g) ?? []) {
     for (let i = 0; i + 2 <= seg.length; i++) out.add(seg.slice(i, i + 2));
   }
   bigramCache.set(s, out);
@@ -2806,8 +6528,7 @@ function blankAll(text2, hit) {
   return text2.replace(new RegExp(`(?<![A-Za-z])${escapeRe(hit)}(?![A-Za-z])`, "gi"), "\uFF3F\uFF3F\uFF3F\uFF3F");
 }
 function clozeText(text2, word) {
-  var _a;
-  const tokens = (_a = text2.match(WORD_RE)) != null ? _a : [];
+  const tokens = text2.match(WORD_RE) ?? [];
   const hit = tokens.find((t) => isForm(t, word));
   if (!hit) return null;
   return blankAll(text2, hit);
@@ -2817,10 +6538,9 @@ function pickClozeHint(doc) {
   return hits.length ? hits[Math.floor(Math.random() * hits.length)] : null;
 }
 function buildQuiz(doc, pool, opts) {
-  var _a, _b, _c;
   const mine = firstSense(doc);
   const pos = posOf(mine);
-  if (mine && Math.random() < ((_a = opts == null ? void 0 : opts.spellChance) != null ? _a : 0.3)) {
+  if (mine && Math.random() < (opts?.spellChance ?? 0.3)) {
     return {
       kind: "spell",
       question: mine,
@@ -2828,13 +6548,13 @@ function buildQuiz(doc, pool, opts) {
       options: [],
       answer: -1,
       reveal: `${doc.word}  ${mine}`,
-      audioOnly: Math.random() < ((_b = opts == null ? void 0 : opts.audioChance) != null ? _b : 0.4)
+      audioOnly: Math.random() < (opts?.audioChance ?? 0.4)
     };
   }
   const exPool = shuffle(doc.examples);
   const exSorted = [...exPool.filter((e) => e.translation), ...exPool.filter((e) => !e.translation)];
   for (const ex of exSorted) {
-    const tokens = (_c = ex.text.match(WORD_RE)) != null ? _c : [];
+    const tokens = ex.text.match(WORD_RE) ?? [];
     const hit = tokens.find((t) => isForm(t, doc.word));
     if (!hit) continue;
     if (tokens.length < 5) continue;
@@ -2908,8 +6628,7 @@ function buildCheckReverse(doc, pool) {
 
 // src/ui/fit-text.ts
 function fitText(node, opts = {}) {
-  var _a;
-  const min = (_a = opts.min) != null ? _a : 18;
+  const min = opts.min ?? 18;
   const basePx = getComputedStyle(node).fontSize;
   function fit() {
     if (!node.clientWidth) return;
@@ -3032,12 +6751,12 @@ var HelpTip = class extends SvelteComponent {
 var HelpTip_default = HelpTip;
 
 // src/modals.ts
-var import_obsidian10 = require("obsidian");
+var import_obsidian11 = require("obsidian");
 
 // src/expand/datamuse.ts
-var import_obsidian7 = require("obsidian");
+var import_obsidian8 = require("obsidian");
 async function fetchWords(code, keyword, limit) {
-  const res = await (0, import_obsidian7.requestUrl)({
+  const res = await (0, import_obsidian8.requestUrl)({
     url: `https://api.datamuse.com/words?${code}=${encodeURIComponent(keyword)}&max=${limit}`,
     headers: { "User-Agent": HTTP_UA }
   });
@@ -3055,14 +6774,14 @@ function fetchAntonyms(keyword, limit = 5) {
 }
 
 // src/llm.ts
-var import_obsidian8 = require("obsidian");
+var import_obsidian9 = require("obsidian");
 
 // src/prompts.ts
 function testPrompt() {
   return { messages: [{ role: "user", content: "Reply with exactly: ok" }], temperature: 0 };
 }
 function topicClause(topics, focus, verb) {
-  const [primary = "", ...aux] = topics != null ? topics : [];
+  const [primary = "", ...aux] = topics ?? [];
   return primary ? `\u3002\u4E3B\u9898\u8BED\u5883\u300C${primary}\u300D${aux.length ? `\uFF08\u517C\u987E\u4E3B\u9898\uFF1A${aux.join("\u3001")}\uFF09` : ""}\uFF1A${focus}\uFF1B\u5176\u4E2D\u7684\u8BCD\u53EA\u662F\u9886\u57DF\u80CC\u666F\uFF0C\u4E0D\u662F\u8981${verb}\u7684\u5355\u8BCD` : "";
 }
 var EXPAND_ANGLES = [
@@ -3227,17 +6946,28 @@ function llmUrlLocked(p) {
 }
 function llmConf(saved, p) {
   const preset = LLM_PRESETS[p];
-  const c = { baseUrl: "", apiKey: "", model: "", ...preset, ...saved == null ? void 0 : saved[p] };
+  const c = { baseUrl: "", apiKey: "", model: "", ...preset, ...saved?.[p] };
   if (preset && llmUrlLocked(p)) c.baseUrl = preset.baseUrl;
   return c;
 }
 function llmReady(cfg) {
   return Boolean(cfg.baseUrl && cfg.model);
 }
+function isCloudLlm(cfg) {
+  try {
+    const { protocol, hostname } = new URL(cfg.baseUrl);
+    if (protocol !== "https:") return false;
+    return !/^(localhost|127\.|0\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|\[::1\])/.test(hostname);
+  } catch {
+    return false;
+  }
+}
+function llmTuning(cfg) {
+  return isCloudLlm(cfg) ? { senses: 20, sensesRetry: 10, translate: 30, zh: 20, concurrency: 4 } : { senses: 10, sensesRetry: 5, translate: 15, zh: 10, concurrency: 1 };
+}
 function llmConfigured(s) {
-  var _a;
   if (s.llmProvider !== "ollama" || s.llmMobileProvider) return true;
-  for (const [p, c] of Object.entries((_a = s.llmSaved) != null ? _a : {})) {
+  for (const [p, c] of Object.entries(s.llmSaved ?? {})) {
     if (p !== "ollama") {
       if (c.apiKey.trim()) return true;
     } else if (c.baseUrl !== LLM_OLLAMA_PRESET.baseUrl || c.model !== LLM_OLLAMA_PRESET.model) {
@@ -3250,20 +6980,42 @@ async function llmTest(cfg) {
   const spec = testPrompt();
   return llmChat(cfg, spec.messages, spec.temperature);
 }
-async function llmChat(cfg, messages, temperature = 0.3) {
-  var _a, _b, _c;
-  const headers = { "Content-Type": "application/json" };
-  if (cfg.apiKey) headers.Authorization = `Bearer ${cfg.apiKey}`;
-  const res = await (0, import_obsidian8.requestUrl)({
-    url: `${cfg.baseUrl.replace(/\/+$/, "")}/chat/completions`,
-    method: "POST",
-    headers,
-    body: JSON.stringify({ model: cfg.model, messages, temperature })
-  });
-  const data = JSON.parse(res.text);
-  const content = (_c = (_b = (_a = data == null ? void 0 : data.choices) == null ? void 0 : _a[0]) == null ? void 0 : _b.message) == null ? void 0 : _c.content;
+var LOCAL_FETCH_CAP_MS = 12e4;
+var FetchNetworkError = class extends Error {
+};
+function pickChatContent(data) {
+  const content = data?.choices?.[0]?.message?.content;
   if (typeof content !== "string") throw new Error("LLM \u54CD\u5E94\u683C\u5F0F\u5F02\u5E38");
   return content;
+}
+async function chatViaFetch(url, headers, body) {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), LOCAL_FETCH_CAP_MS);
+  try {
+    const res = await fetch(url, { method: "POST", headers, body, signal: ac.signal });
+    if (!res.ok) throw new Error(`LLM \u670D\u52A1\u7AEF\u9519\u8BEF HTTP ${res.status}`);
+    return pickChatContent(await res.json());
+  } catch (e) {
+    if (e instanceof TypeError) throw new FetchNetworkError(e.message);
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+async function llmChat(cfg, messages, temperature = 0.3) {
+  const url = `${cfg.baseUrl.replace(/\/+$/, "")}/chat/completions`;
+  const headers = { "Content-Type": "application/json" };
+  if (cfg.apiKey) headers.Authorization = `Bearer ${cfg.apiKey}`;
+  const body = JSON.stringify({ model: cfg.model, messages, temperature });
+  if (!isCloudLlm(cfg)) {
+    try {
+      return await chatViaFetch(url, headers, body);
+    } catch (e) {
+      if (!(e instanceof FetchNetworkError)) throw e;
+    }
+  }
+  const res = await (0, import_obsidian9.requestUrl)({ url, method: "POST", headers, body });
+  return pickChatContent(JSON.parse(res.text));
 }
 function repairJson(raw) {
   const PUNCT = { "\uFF1A": ":", "\uFF0C": ",", "\u201C": '"', "\u201D": '"' };
@@ -3366,10 +7118,10 @@ function parseJsonArray(text2) {
   if (raw) {
     try {
       return JSON.parse(raw);
-    } catch (e) {
+    } catch {
       try {
         return JSON.parse(repairJson(raw));
-      } catch (e2) {
+      } catch {
       }
     }
   }
@@ -3377,7 +7129,7 @@ function parseJsonArray(text2) {
   if (cut > 0) {
     try {
       return JSON.parse(repairJson(`${tail.slice(0, cut)}]`));
-    } catch (e) {
+    } catch {
     }
   }
   throw new Error("LLM \u8FD4\u56DE\u7684 JSON \u65E0\u6CD5\u89E3\u6790\uFF0C\u8BF7\u91CD\u8BD5\u6216\u6362\u66F4\u5927\u7684\u6A21\u578B");
@@ -3390,14 +7142,14 @@ function parseJsonObject(text2) {
   const raw = stripped.slice(start, end + 1);
   try {
     return JSON.parse(raw);
-  } catch (e) {
+  } catch {
     return JSON.parse(repairJson(raw));
   }
 }
 function toExamples(list) {
   return (Array.isArray(list) ? list : []).map((s) => {
     if (typeof s === "string") return s.trim() ? { text: s.trim() } : void 0;
-    const en = typeof (s == null ? void 0 : s.en) === "string" ? s.en.trim() : "";
+    const en = typeof s?.en === "string" ? s.en.trim() : "";
     if (!en) return void 0;
     return { text: en, zh: typeof s.zh === "string" ? s.zh.trim() : void 0 };
   }).filter((e) => !!e);
@@ -3417,46 +7169,45 @@ async function llmExamples(cfg, words, topics, count = 3, onBatch, shouldStop, o
   const m = /* @__PURE__ */ new Map();
   let firstErr;
   const ask = async (batch) => {
-    var _a;
     let out;
     try {
       const spec = examplesPrompt(batch, count, topics);
       out = await llmChat(cfg, spec.messages, spec.temperature);
     } catch (e) {
-      firstErr != null ? firstErr : firstErr = e;
+      firstErr ?? (firstErr = e);
       return;
     }
     let items;
     try {
       items = parseJsonArray(out);
     } catch (e) {
-      firstErr != null ? firstErr : firstErr = e;
+      firstErr ?? (firstErr = e);
       return;
     }
     for (const x of items) {
-      const w = x == null ? void 0 : x.word;
+      const w = x?.word;
       if (!w) continue;
-      const arr = toExamples(x == null ? void 0 : x.sentences);
+      const arr = toExamples(x?.sentences);
       if (!arr.length) continue;
       const k = String(w).toLowerCase();
-      m.set(k, [...(_a = m.get(k)) != null ? _a : [], ...arr]);
+      m.set(k, [...m.get(k) ?? [], ...arr]);
     }
-    onWords == null ? void 0 : onWords(batch.map((w) => w.toLowerCase()).filter((w) => m.has(w)));
+    onWords?.(batch.map((w) => w.toLowerCase()).filter((w) => m.has(w)));
   };
   const batches = chunk(words, count > 1 ? 10 : 30);
   let batchDone = 0;
-  await runPool(batches, 2, async (batch) => {
-    if (shouldStop == null ? void 0 : shouldStop()) return;
+  await runPool(batches, llmTuning(cfg).concurrency, async (batch) => {
+    if (shouldStop?.()) return;
     try {
       await ask(batch);
     } finally {
-      onBatch == null ? void 0 : onBatch(++batchDone, batches.length);
+      onBatch?.(++batchDone, batches.length);
     }
   });
   const missing = words.filter((w) => !m.has(w.toLowerCase()));
-  if (!(shouldStop == null ? void 0 : shouldStop()) && missing.length) {
-    onRetry == null ? void 0 : onRetry(missing.length);
-    await runPool(chunk(missing, 5), 2, ask);
+  if (!shouldStop?.() && missing.length) {
+    onRetry?.(missing.length);
+    await runPool(chunk(missing, 5), llmTuning(cfg).concurrency, ask);
   }
   if (!m.size && firstErr) throw firstErr;
   return m;
@@ -3470,31 +7221,32 @@ async function llmSenses(cfg, words, topics, onWords) {
       const spec = sensesPrompt(batch, topics);
       out = await llmChat(cfg, spec.messages, spec.temperature);
     } catch (e) {
-      firstErr != null ? firstErr : firstErr = e;
+      firstErr ?? (firstErr = e);
       return;
     }
     let items;
     try {
       items = parseJsonArray(out);
     } catch (e) {
-      firstErr != null ? firstErr : firstErr = e;
+      firstErr ?? (firstErr = e);
       return;
     }
     for (const x of items) {
-      const w = x == null ? void 0 : x.word;
+      const w = x?.word;
       if (!w) continue;
       const list = cleanSenses(x.senses);
       if (list.length) m.set(String(w).toLowerCase(), list);
     }
-    onWords == null ? void 0 : onWords(batch.map((w) => w.toLowerCase()).filter((w) => m.has(w)));
+    onWords?.(batch.map((w) => w.toLowerCase()).filter((w) => m.has(w)));
   };
-  await runPool(chunk(words, 10), 2, ask);
+  const { senses, sensesRetry, concurrency } = llmTuning(cfg);
+  await runPool(chunk(words, senses), concurrency, ask);
   const missing = words.filter((w) => !m.has(w.toLowerCase()));
   if (missing.length) {
-    await runPool(chunk(missing, 5), 2, ask);
+    await runPool(chunk(missing, sensesRetry), concurrency, ask);
     const still = missing.filter((w) => !m.has(w.toLowerCase()));
     if (still.length) {
-      await runPool(still.map((w) => [w]), 2, ask);
+      await runPool(still.map((w) => [w]), concurrency, ask);
     }
   }
   if (!m.size && firstErr) throw firstErr;
@@ -3505,7 +7257,7 @@ async function llmSensesExamples(cfg, words, topics, count = 3) {
   const out = await llmChat(cfg, spec.messages, spec.temperature);
   const m = /* @__PURE__ */ new Map();
   for (const x of parseJsonArray(out)) {
-    const w = x == null ? void 0 : x.word;
+    const w = x?.word;
     if (!w) continue;
     const senses = cleanSenses(x.senses);
     const examples = toExamples(x.sentences);
@@ -3516,7 +7268,7 @@ async function llmSensesExamples(cfg, words, topics, count = 3) {
 function memoSuggestions(items, cap = 5) {
   const out = [];
   for (const x of items) {
-    const raw = typeof x === "string" ? x : typeof (x == null ? void 0 : x.memo) === "string" ? x.memo : typeof (x == null ? void 0 : x.text) === "string" ? x.text : typeof (x == null ? void 0 : x.content) === "string" ? x.content : "";
+    const raw = typeof x === "string" ? x : typeof x?.memo === "string" ? x.memo : typeof x?.text === "string" ? x.text : typeof x?.content === "string" ? x.content : "";
     const s = raw.trim();
     if (s && !out.includes(s)) out.push(s);
     if (out.length >= cap) break;
@@ -3528,39 +7280,42 @@ async function llmMemoSuggestions(cfg, word, translation) {
   const out = await llmChat(cfg, spec.messages, spec.temperature);
   return memoSuggestions(parseJsonArray(out));
 }
-async function llmTranslateSentences(cfg, texts) {
+async function llmTranslateSentences(cfg, texts, onBatch) {
+  const { translate, concurrency } = llmTuning(cfg);
   const out = new Array(texts.length).fill("");
-  const translate = async (idx) => {
-    const spec = translateSentencesPrompt(idx.map((i) => texts[i]));
-    const out2 = await llmChat(cfg, spec.messages, spec.temperature);
-    const arr = parseJsonArray(out2);
-    idx.forEach((origIdx, j) => {
-      const t = arr[j];
-      if (typeof t === "string" && t.trim()) out[origIdx] = t.trim();
-    });
-  };
   const idxs = texts.map((_, i) => i).filter((i) => texts[i].trim());
-  await runPool(chunk(idxs, 15), 2, translate);
+  let done = 0;
+  await runPool(chunk(idxs, translate), concurrency, async (idx) => {
+    try {
+      const spec = translateSentencesPrompt(idx.map((i) => texts[i]));
+      const out2 = await llmChat(cfg, spec.messages, spec.temperature);
+      const arr = parseJsonArray(out2);
+      idx.forEach((origIdx, j) => {
+        const t = arr[j];
+        if (typeof t === "string" && t.trim()) out[origIdx] = t.trim();
+      });
+    } finally {
+      done += idx.length;
+      onBatch?.(done, idxs.length);
+    }
+  });
   return out;
 }
 var EN_TERM_RE = /^[a-z][a-z' -]*$/;
 async function llmTranslateCollect(cfg, text2) {
-  var _a;
   const spec = translateCollectPrompt(text2);
   const out = await llmChat(cfg, spec.messages, spec.temperature);
   const obj = parseJsonObject(out);
-  const translation = String((_a = obj.translation) != null ? _a : "").trim();
+  const translation = String(obj.translation ?? "").trim();
   if (!translation) throw new Error("LLM \u672A\u7ED9\u51FA\u8BD1\u6587");
-  const terms = (Array.isArray(obj.terms) ? obj.terms : []).map((x) => {
-    var _a2, _b;
-    return {
-      en: String((_a2 = x == null ? void 0 : x.en) != null ? _a2 : "").trim().toLowerCase(),
-      zh: String((_b = x == null ? void 0 : x.zh) != null ? _b : "").trim()
-    };
-  }).filter((t) => EN_TERM_RE.test(t.en) && t.en.split(/\s+/).length <= 5).slice(0, 8);
+  const terms = (Array.isArray(obj.terms) ? obj.terms : []).map((x) => ({
+    en: String(x?.en ?? "").trim().toLowerCase(),
+    zh: String(x?.zh ?? "").trim()
+  })).filter((t) => EN_TERM_RE.test(t.en) && t.en.split(/\s+/).length <= 5).slice(0, 8);
   return { translation, terms };
 }
 async function llmTranslateZhToEn(cfg, words, per = 1) {
+  const { zh, concurrency } = llmTuning(cfg);
   const out = Array.from({ length: words.length }, () => []);
   const translate = async (idx) => {
     const spec = zhToEnPrompt(idx.map((i) => words[i]), per);
@@ -3573,18 +7328,17 @@ async function llmTranslateZhToEn(cfg, words, per = 1) {
     });
   };
   const idxs = words.map((_, i) => i).filter((i) => words[i].trim());
-  await runPool(chunk(idxs, 10), 2, translate);
+  await runPool(chunk(idxs, zh), concurrency, translate);
   return out;
 }
 async function llmZhToEnPhrase(cfg, q) {
-  var _a;
-  return ((_a = (await llmTranslateZhToEn(cfg, [q]))[0]) != null ? _a : []).join(" ");
+  return ((await llmTranslateZhToEn(cfg, [q]))[0] ?? []).join(" ");
 }
 
 // src/dict/frequent-words.ts
 var set = null;
 function isFrequent(w) {
-  set != null ? set : set = new Set(NGSL.split(" "));
+  set ?? (set = new Set(NGSL.split(" ")));
   return set.has(w);
 }
 var SUPPLEMENT = new Set(
@@ -3607,84 +7361,78 @@ function isFrequentForm(w) {
 var NGSL = "a an abandon ability able abortion about above abroad absence absolute absolutely abstract abuse academic accept acceptable access accident accommodation accompany accomplish accord account accurate accuse achieve achievement acknowledge acquire acquisition across act action active activity actor actual actually ad adapt add addition additional address adequate adjust adjustment administration admire admit adopt adult advance advantage adventure advertise advertisement advice advise adviser advocate affair affect afford afraid after afternoon again against age agency agenda agent aggressive ago agree agreement agricultural ahead aid aim air aircraft airline alarm album alcohol alive all allege allow ally almost alone along alongside already alright also alter alternative although altogether always amaze amendment among amount analysis analyst analyze ancient and anger angle angry animal announce announcement annual another answer anticipate anxiety anxious any anybody anymore anyone anything anyway anywhere apart apartment apologize apparent apparently appeal appear appearance application apply appoint appointment appreciate approach appropriate approval approve approximately architecture area argue argument arise arm army around arrange arrangement arrest arrival arrive art article artist as ashamed aside ask assess assessment asset assign assist assistance assistant associate association assume assumption assure at athlete atmosphere attach attachment attack attempt attend attendance attention attitude attract attraction attractive attribute audience aunt author automatically autumn available average avoid award aware awareness away awful baby back background bad badly bag balance ball ban band bank bar barely barrier base basic basically basis bath battle be beach bear beat beautiful beauty because become bed bedroom beer before begin behave behavior behind belief believe bell belong below belt bend beneath benefit beside besides bet between beyond bias bid big bike bill billion bin bind biological bird birth bit bite black blame bless blind block blood bloody blow blue board boat body bomb bond bone book boom boost boot border bore borrow boss both bother bottle bottom boundary bowl box boy brain branch brand bread break breakfast breast breath breathe breed bridge brief briefly bright brilliant bring broad broadcast brother brown brush budget build bunch burden burn burst bury bus business busy but button buy buyer by cable cake calculate call calm camera camp campaign can cancel cancer cap capability capable capacity capital capture car carbon card care career careful carefully carpet carry case cash cast castle cat catalog catch category cause celebrate celebration cell cent center central century ceremony certain certainly chain chair chairman challenge chamber champion championship chance change channel chapter character characteristic characterize charge charity charm chart chase chat cheap check cheek cheese chemical chest chicken chief child childhood chip chocolate choice choose church cigarette circle circumstance cite citizen city civil civilian claim class classic classical clause clean clear clearly climate climb clinical clock close closely clothes clothing cloud club cluster coach coal coast coat code coffee coin cold collapse colleague collect collection college color column combination combine come comedy comfort comfortable command comment commercial commission commit commitment committee common communicate communication community company compare comparison compensation compete competition competitive competitor complain complaint complete completely complex complexity complicate component compose composition compound comprehensive comprise compromise compute computer concentrate concentration concept concern concert conclude conclusion concrete condition conduct confidence confident confirm conflict confuse confusion connect connection consequence consequently conservative consider considerable consideration consist consistent constant constantly constitute constraint construct construction consult consultant consume consumer contact contain contemporary content contest context continue continuous contract contrast contribute contribution control controversial convention conventional conversation convert convince cook cool cooperation cope copy core corner corporate corporation correct correspond cost cough could council counsel count counter country county couple course court cousin cover coverage cow crack craft crash crazy cream create creation creative creature credit crew crime criminal crisis criterion critic critical criticism criticize crop cross crowd crucial cry cultural culture cup curious currency current currently curtain curve custom customer cut cycle dad daily damage damn dance danger dangerous dare dark darkness data database date daughter day dead deal dealer dear death debate debt decade decide decision declare decline decrease dedicate deep deeply defeat defend defense deficit define definitely definition degree delay delight deliver delivery demand democracy democratic demonstrate demonstration density deny department depend dependent deposit depress depression depth derive describe description desert deserve design designer desire desk despite destroy destruction detail detect determination determine develop development device devote dialog die diet differ difference different differently difficult difficulty dig digital dimension dinner direct direction directly director dirty disagree disappear disappoint disaster discipline discount discover discovery discuss discussion disease dish disk dismiss disorder display dispute distance distant distinct distinction distinguish distribute district disturb diversity divide division divorce do doctor document dog dollar domestic dominate door double doubt down dozen draft drag drama dramatic dramatically draw dream dress drink drive driver drop drug dry due during dust duty each ear early earn earth ease easily east eastern easy eat economic economy edge edit edition editor educate education educational effect effective effectively efficiency efficient effort egg either elderly elect election electric electricity electronic element eliminate else elsewhere embarrass embrace emerge emergency emotion emotional emphasis emphasize empire employ employee employer employment empty enable encounter encourage end enemy energy engage engine engineer enhance enjoy enormous enough ensure enter enterprise entertain entertainment entire entirely entitle entrance entry envelope environment environmental episode equal equally equation equipment equivalent era error escape especially essay essential establish establishment estate estimate ethnic evaluate evaluation even evening event eventually ever every everybody everyday everyone everything everywhere evidence evil evolution evolve exact exactly exam examination examine example exceed excellent except exception excess exchange excite excitement exclude excuse executive exercise exhaust exhibit exhibition exist existence expand expansion expect expectation expenditure expense expensive experience experiment experimental expert explain explanation explore export expose exposure express expression extend extension extensive extent external extra extract extraordinary extreme extremely eye face facility fact factor factory fade fail failure fair fairly faith faithfully fall false familiar family famous fan fancy fantastic far farm farmer fascinate fashion fast fat father fault favor favorite fear feature federal fee feed feel fellow female fence festival few fiction field fifteen fifty fight figure file fill film filter final finally finance financial find fine finger finish fire firm firmly first firstly fish fit fix flag flash flat flexible flight float flood floor flow flower fly focus fold folk follow food fool foot football for force forecast foreign forest forever forget form formal format formation former formula forth fortunate fortune forward found foundation fragment frame framework free freedom freeze frequency frequent frequently fresh friend friendly friendship frighten from front fruit fuel fulfill full fully fun function functional fund fundamental funny furniture further furthermore future gain gallery game gap garden gas gate gather gay gaze gear gender gene general generally generate generation genetic gentle gentleman gently genuine gesture get giant gift girl give glad glance glass global go goal god gold golden golf good govern government governor grab grade gradually graduate grain grammar grand grandmother grant grass grateful gray great greatly green greet grin ground group grow growth guarantee guard guess guest guide guideline guilty guitar gun guy habit hair half hall hand handle hang happen happiness happy harbor hard hardly harm hat hate have he head health healthy hear heart heat heavily heavy height hell hello help helpful hence her hers here hero herself hesitate hi hide high highlight highly hill him himself hint hire his historian historic historical history hit hold holder hole holiday home honest honor hook hope hopefully horrible horse hospital host hot hotel hour house household how however huge human humor hunger hunt hurry hurt husband hypothesis i ice idea ideal identify identity if ignore ill illegal illness illustrate illustration image imagination imagine immediate immediately immigrant implement implementation implication imply import importance important impose impossible impress impression impressive improve improvement in incentive inch incident include income incorporate increase increasingly indeed independence independent index indicate indication individual industrial industry infant infection inflation influence inform information initial initially initiative injure injury inner innocent innovation input inquiry inside insight insist inspire install instance instead institution institutional instruction instrument insurance insure integrate intellectual intelligence intend intense intention interaction interest interior internal international interpret interpretation intervention interview into introduce introduction invent invest investigate investigation investment investor invitation invite involve involvement iron island isolate issue it item its itself jacket jail job join joint joke journal journalist journey joy judge judgment jump jury just justice justify keen keep key kick kid kill kind king kiss kitchen knee knife knock know knowledge label labor laboratory lack lady lake land landscape language large largely last late latter laugh laughter launch law lawyer lay layer lazy lead leader leadership league lean leap learn least leather leave lecture left leg legal legislation lend length less lesson let letter level liability liberal library license lie life lift light like likely limit limitation line link lip liquid list listen listener literally literary literature little live load loan local locate location lock log logic long look loose lose loss lot loud love lovely lover low luck lucky lunch luxury machine mad magazine magic mail main mainly maintain maintenance major majority make maker male man manage management manager manner manufacture manufacturer many map march margin mark market marriage marry mass massive master match mate material mathematics matter mature maximum may maybe mayor me meal mean meanwhile measure measurement meat mechanism medical medicine medium meet member membership memory mental mention menu mere merely mess message metal meter method middle might mile military milk mind mine minimum minister minor minority minute mirror miss mission mistake mix mixture mobile mode model moderate modern modify module mom moment money monitor month monthly mood moon moral more moreover morning mortgage most mostly mother motion motivate motivation motor mount mountain mouse mouth move movement movie much multiple murder muscle museum music musical musician must mutual my myself mystery name narrative narrow nation national native natural naturally nature near nearby nearly necessarily necessary neck need negative neglect negotiate negotiation neighbor neighborhood neither nerve nervous net network never nevertheless new newly news newspaper next nice night no nobody noise none nor normal normally north northern nose not note nothing notice notion noun novel now nowadays nowhere nuclear number numerous nurse object objective obligation observation observe obvious obviously occasion occasionally occupy occur ocean odd of off offense offer office officer official often oil okay old on once one online only onto open opera operate operation operator opinion opponent opportunity oppose opposite opposition option or orange order ordinary organic organization organize origin original originally other otherwise ought our ours ourselves out outcome outline output outside over overall overcome overseas owe own owner ownership pace pack package page pain paint pair pale panel panic paper paragraph parallel parent park part participant participate participation particular particularly partly partner partnership party pass passage passenger passion past path patient pattern pause pay payment peace peak peer pen penalty pension people per perceive percent percentage perception perfect perfectly perform performance perhaps period permanent permission permit person personal personality personally personnel perspective persuade phase phenomenon philosophy phone photo photograph phrase physical piano pick picture piece pig pile pilot pink pipe pitch place plain plan plane planet plant plastic plate platform play player pleasant please pleasure plenty plot plus pocket poem poet poetry point police policy political politician politics poll pollution pool poor pop popular population port portion portrait pose position positive possess possession possibility possible possibly post pot potato potential potentially pound pour poverty power powerful practical practice praise pray precise precisely predict prefer preference pregnancy pregnant premise preparation prepare presence present presentation preserve president presidential press pressure presumably pretend pretty prevent previous previously price pride primarily primary prime principal principle print printer prior priority prison prisoner private privilege prize pro probability probably problem procedure proceed process produce producer product production profession professional professor profile profit program progress project promise promote promotion prompt proof proper properly property proportion proposal propose prospect protect protection protein protest proud prove provide province provision psychological pub public publication publisher pull pump pupil purchase pure purpose pursue push put qualification qualify quality quantity quarter question quick quickly quiet quietly quite quote race racial radical radio rail rain raise random range rank rapid rapidly rare rarely rat rate rather ratio raw reach react reaction read reader ready real reality realize really rear reason reasonable reasonably recall receive recent recently reckon recognition recognize recommend recommendation record recover recovery recruit red reduce reduction refer reference reflect reflection reform refugee refuse regard regardless region regional register registration regret regular regularly regulate regulation reject relate relation relationship relative relatively relax release relevant reliable relief religion religious rely remain remark remarkable remember remind remote remove rent repair repeat replace reply report reporter represent representation representative reputation request require requirement rescue research researcher reserve resident resign resist resistance resolution resolve resort resource respect respectively respond response responsibility responsible rest restaurant restore restrict restriction result retail retain retire retirement return reveal revenue reverse review revise revolution reward rice rich rid ride right ring rise risk rival river road rock role roll romantic roof room root rough roughly round route routine row royal ruin rule run rural rush sad safe safety sail sake salary sale salt same sample sanction sand satisfaction satisfy save say scale scan scare scene schedule scheme scholar school science scientific scientist scope score scream screen sea seal search season seat second secondary secondly secret secretary section sector secure security see seed seek seem segment select selection self sell send senior sense sensitive sentence separate sequence series serious seriously servant serve server service session set settle settlement several severe sex sexual shade shadow shake shall shape share shareholder sharp she sheep sheet shelf shell shelter shift shine ship shirt shock shoe shoot shop shore short shot should shoulder shout show shower shut sick side sigh sight sign signal significance significant significantly silence silent silly silver similar similarly simple simply since sing singer single sink sir sister sit site situate situation size ski skill skin skirt sky slave sleep slice slide slight slightly slip slope slow slowly small smart smell smile smoke smooth snap snow so social society soft software soil soldier solid solution solve some somebody somehow someone something sometimes somewhat somewhere son song soon sorry sort soul sound source south southern space spare speak speaker special specialist specialize species specific specifically specify speech speed spell spend spin spirit split sponsor sport spot spread spring square stability stable staff stage stain stair stake stamp stand standard star stare start state statement station statistic status stay steady steal steel stem step stick still stimulate stir stock stomach stone stop storage store storm story straight strain strange stranger strategy stream street strength strengthen stress stretch strict strike string strip stroke strong strongly structural structure struggle student studio study stuff stupid style subject submit subsequent subsequently substance substantial substitute succeed success successful successfully such sudden suddenly suffer sufficient sugar suggest suggestion suit suitable sum summarize summary summer sun supplement supplier supply support supporter suppose sure surely surface surgery surprise surprisingly surround survey survival survive suspect suspend sustain swear sweep sweet swim swing switch symbol symptom system table tackle tail take tale talent talk tall tank tap tape target task taste tax taxi tea teach teacher team tear technical technique technology teenager telephone television tell temperature temporary tend tendency tender tennis tension tent term terrible territory terrorist test text than thank that the theater their them theme themselves then theoretical theory therapy there therefore these they thick thin thing think thirst this those though threat threaten throat through throughout throw thus ticket tie tight till time tiny tip tire tissue title to today together tomorrow tone tongue tonight too tool tooth top topic total totally touch tough tour tourism tourist toward tower town toy trace track trade tradition traditional traffic trail train transfer transform transition translate transport transportation trap travel treat treatment tree trend trial trick trigger trip troop trouble truck true truly trust truth try tube tune turn twice two twin twist type typical typically ugly ultimately unable uncertainty uncle unclear under undergo underlie understand undertake unemployment unfortunately uniform union unique unit unite universal universe university unknown unless unlike unlikely until unusual up update upon upper upset urban urge us use useful user usual usually valley valuable value van variable variation variety various vary vast vegetable vehicle venture verb version versus very vessel veteran via vice victim victory video view village violence violent virtually virus visible vision visit visitor visual vital voice volume voluntary volunteer vote voter wage wait wake walk wall wander want war warm warn wash waste watch water wave way we weak weakness wealth wealthy weapon wear weather web wed week weekend weekly weigh weight weird welcome welfare well west western wet what whatever wheel when whenever where whereas wherever whether which while whilst whisper white who whole whom whose why wide widely wife wild will win wind window wine wing winner winter wipe wire wise wish with withdraw within without witness woman wonder wonderful wood wooden word work worker world worry worth would wound wrap write writer wrong yard year yellow yes yesterday yet yield you young your yours yourself youth zero zone";
 
 // src/expand/fetcher.ts
-var import_obsidian9 = require("obsidian");
+var import_obsidian10 = require("obsidian");
 async function fetchWikiArticles(keyword, limit = 5, lang) {
-  var _a, _b;
-  const lg = lang != null ? lang : isZh(keyword) ? "zh" : "en";
+  const lg = lang ?? (isZh(keyword) ? "zh" : "en");
   const url = `https://${lg}.wikipedia.org/w/api.php?action=query&format=json&prop=extracts&explaintext=1&exlimit=${limit}&redirects=1&generator=search&gsrsearch=${encodeURIComponent(keyword)}&gsrlimit=${limit}&origin=*`;
-  const res = await (0, import_obsidian9.requestUrl)({
+  const res = await (0, import_obsidian10.requestUrl)({
     url,
     headers: { "User-Agent": HTTP_UA }
   });
   const data = JSON.parse(res.text);
-  const pages = Object.values((_b = (_a = data == null ? void 0 : data.query) == null ? void 0 : _a.pages) != null ? _b : {});
+  const pages = Object.values(data?.query?.pages ?? {});
   return pages.filter((p) => typeof p.extract === "string" && p.extract.length > 200).map((p) => ({ title: p.title, extract: p.extract.slice(0, 8e3), keyword }));
 }
 async function fetchArticleFromUrl(url) {
-  var _a, _b, _c, _d;
   const u = url.trim();
   if (!/^https?:\/\//i.test(u)) throw new Error("\u8BF7\u8F93\u5165\u4EE5 http(s):// \u5F00\u5934\u7684\u6587\u7AE0\u94FE\u63A5");
-  const res = await (0, import_obsidian9.requestUrl)({ url: u, headers: { "User-Agent": HTTP_UA } });
+  const res = await (0, import_obsidian10.requestUrl)({ url: u, headers: { "User-Agent": HTTP_UA } });
   const doc = new DOMParser().parseFromString(res.text, "text/html");
-  const root = (_c = (_b = (_a = doc.querySelector("article")) != null ? _a : doc.querySelector("[role='main']")) != null ? _b : doc.querySelector("main")) != null ? _c : doc.body;
+  const root = doc.querySelector("article") ?? doc.querySelector("[role='main']") ?? doc.querySelector("main") ?? doc.body;
   root.querySelectorAll("script,style,noscript,iframe,svg,nav,header,footer,aside,form,button").forEach((el) => el.remove());
   root.querySelectorAll("p,div,br,li,h1,h2,h3,h4,h5,h6,pre,blockquote,tr,section").forEach((el) => {
     el.after(doc.createTextNode("\n"));
   });
-  const text2 = ((_d = root.textContent) != null ? _d : "").replace(/[\t ]+/g, " ").replace(/ ?\n ?/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+  const text2 = (root.textContent ?? "").replace(/[\t ]+/g, " ").replace(/ ?\n ?/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
   if (text2.length < 200) {
     throw new Error("\u8BE5\u9875\u9762\u6B63\u6587\u592A\u77ED\uFF08\u53EF\u80FD\u9700\u8981\u767B\u5F55\u6216\u4E3A\u52A8\u6001\u6E32\u67D3\uFF09\uFF0C\u8BF7\u76F4\u63A5\u7C98\u8D34\u6587\u672C");
   }
   return text2;
 }
 async function fetchOpenAlexAbstracts(keyword, limit = 5) {
-  var _a;
   const url = `https://api.openalex.org/works?search=${encodeURIComponent(keyword)}&filter=language:en&per-page=${limit}`;
-  const res = await (0, import_obsidian9.requestUrl)({ url, headers: { "User-Agent": HTTP_UA } });
+  const res = await (0, import_obsidian10.requestUrl)({ url, headers: { "User-Agent": HTTP_UA } });
   const data = JSON.parse(res.text);
-  const works = (_a = data == null ? void 0 : data.results) != null ? _a : [];
+  const works = data?.results ?? [];
   return works.map((w) => {
-    var _a2, _b;
-    const inv = (_a2 = w.abstract_inverted_index) != null ? _a2 : {};
+    const inv = w.abstract_inverted_index ?? {};
     const words = [];
     for (const [word, positions] of Object.entries(inv)) {
       for (const p of positions) words[p] = word;
     }
-    return { title: (_b = w.display_name) != null ? _b : "", extract: words.join(" "), keyword };
+    return { title: w.display_name ?? "", extract: words.join(" "), keyword };
   }).filter((a) => a.extract.length > 200);
 }
 async function crossLangKeyword(keyword) {
-  var _a, _b, _c, _d, _e;
   const lg = isZh(keyword) ? "zh" : "en";
   const target = lg === "zh" ? "en" : "zh";
   const url = `https://${lg}.wikipedia.org/w/api.php?action=query&format=json&generator=search&gsrsearch=${encodeURIComponent(keyword)}&gsrlimit=1&prop=langlinks&lllang=${target}&redirects=1&origin=*`;
-  const res = await (0, import_obsidian9.requestUrl)({
+  const res = await (0, import_obsidian10.requestUrl)({
     url,
     headers: { "User-Agent": HTTP_UA }
   });
   const data = JSON.parse(res.text);
   const pages = Object.values(
-    (_b = (_a = data == null ? void 0 : data.query) == null ? void 0 : _a.pages) != null ? _b : {}
+    data?.query?.pages ?? {}
   );
-  return (_e = (_d = (_c = pages[0]) == null ? void 0 : _c.langlinks) == null ? void 0 : _d.find((l) => l.lang === target)) == null ? void 0 : _e["*"];
+  return pages[0]?.langlinks?.find((l) => l.lang === target)?.["*"];
 }
 async function relatedTitles(title, limit = 2) {
-  var _a, _b;
   const lg = isZh(title) ? "zh" : "en";
   const url = `https://${lg}.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent("morelike:" + title)}&srlimit=${limit + 1}&origin=*`;
-  const res = await (0, import_obsidian9.requestUrl)({
+  const res = await (0, import_obsidian10.requestUrl)({
     url,
     headers: { "User-Agent": HTTP_UA }
   });
   const data = JSON.parse(res.text);
-  const hits = (_b = (_a = data == null ? void 0 : data.query) == null ? void 0 : _a.search) != null ? _b : [];
+  const hits = data?.query?.search ?? [];
   return hits.map((h) => h.title).filter((t) => t !== title).slice(0, limit);
 }
 async function collectWikiArticles(kws, onStatus) {
-  onStatus == null ? void 0 : onStatus("\u6293\u53D6 OpenAlex \u8BBA\u6587\u6458\u8981\u2026");
+  onStatus?.("\u6293\u53D6 OpenAlex \u8BBA\u6587\u6458\u8981\u2026");
   let articles = (await settleValues(kws.map((k) => fetchOpenAlexAbstracts(k, 5)))).flat();
   if (!articles.length) {
-    onStatus == null ? void 0 : onStatus("OpenAlex \u65E0\u7ED3\u679C\uFF0C\u6539\u7528 Wikipedia\u2026\uFF08\u4E92\u67E5\u5BF9\u5E94\u8BCD\u6761\uFF09");
+    onStatus?.("OpenAlex \u65E0\u7ED3\u679C\uFF0C\u6539\u7528 Wikipedia\u2026\uFF08\u4E92\u67E5\u5BF9\u5E94\u8BCD\u6761\uFF09");
     const crosses = await Promise.allSettled(kws.map((k) => crossLangKeyword(k)));
     const targets = [...kws];
     for (const r of crosses) {
@@ -3693,11 +7441,11 @@ async function collectWikiArticles(kws, onStatus) {
     const fetchAll = async (list) => (await settleValues(list.map((k) => fetchWikiArticles(k, 5)))).flat();
     articles = await fetchAll(targets);
     if (articles.length) {
-      onStatus == null ? void 0 : onStatus(`\u67E5\u627E\u300C${articles[0].title}\u300D\u7684\u76F8\u5173\u8BCD\u6761\u2026`);
+      onStatus?.(`\u67E5\u627E\u300C${articles[0].title}\u300D\u7684\u76F8\u5173\u8BCD\u6761\u2026`);
       const rel = await relatedTitles(articles[0].title, 2).catch(() => []);
       const fresh = rel.filter((t) => !targets.includes(t)).slice(0, 4);
       if (fresh.length) {
-        onStatus == null ? void 0 : onStatus(`\u6269\u5C55\u76F8\u5173\u8BCD\uFF1A${fresh.join("\u3001")}`);
+        onStatus?.(`\u6269\u5C55\u76F8\u5173\u8BCD\uFF1A${fresh.join("\u3001")}`);
         articles = articles.concat(await fetchAll(fresh));
       }
     }
@@ -3784,8 +7532,7 @@ function filterNewByStem(words, existing) {
   return out;
 }
 function extractCandidates(articles, opts) {
-  var _a, _b, _c, _d;
-  const minFreq = (_a = opts.minFreq) != null ? _a : 2;
+  const minFreq = opts.minFreq ?? 2;
   const existingStems = new Set([...opts.existing].map(stemWord));
   const agg = /* @__PURE__ */ new Map();
   for (let ai = 0; ai < articles.length; ai++) {
@@ -3835,10 +7582,10 @@ function extractCandidates(articles, opts) {
     const order = [...agg.get(c.word).articles];
     let best;
     for (const ai of order) {
-      for (const raw of (_b = articles[ai].text.match(/[^.!?]+[.!?]+/g)) != null ? _b : [articles[ai].text]) {
+      for (const raw of articles[ai].text.match(/[^.!?]+[.!?]+/g) ?? [articles[ai].text]) {
         const s = raw.trim();
         if (s.length < 30 || s.length > 200) continue;
-        const tokens = (_c = s.match(/[A-Za-z][A-Za-z'-]*/g)) != null ? _c : [];
+        const tokens = s.match(/[A-Za-z][A-Za-z'-]*/g) ?? [];
         if (!tokens.some((t) => isForm(t, c.word))) continue;
         if (!best || s.length < best.text.length) best = { text: s, title: articles[ai].title };
       }
@@ -3849,7 +7596,7 @@ function extractCandidates(articles, opts) {
       c.sentenceTitle = best.title;
     }
   }
-  return cands.slice(0, (_d = opts.limit) != null ? _d : 120);
+  return cands.slice(0, opts.limit ?? 120);
 }
 
 // src/components/ExpandPanel.svelte
@@ -3932,7 +7679,7 @@ function create_else_block_1(ctx) {
   let t0;
   let div0;
   let button;
-  let t1;
+  let t12;
   let mounted;
   let dispose;
   return {
@@ -3942,7 +7689,7 @@ function create_else_block_1(ctx) {
       t0 = space();
       div0 = element("div");
       button = element("button");
-      t1 = text("\u5BFC\u5165");
+      t12 = text("\u5BFC\u5165");
       attr(textarea, "class", "el-article-input");
       attr(textarea, "rows", "8");
       attr(textarea, "placeholder", "\u6BCF\u884C\u4E00\u4E2A\u5355\u8BCD\uFF1B\u53EF\u9644\u5E26\u91CA\u4E49\u4E0E\u4F8B\u53E5\uFF1Aword<TAB>\u91CA\u4E49<TAB>\u4F8B\u53E5<TAB>\u4F8B\u53E5\u7FFB\u8BD1\uFF08\u540E\u4E24\u5217\u53EF\u9009\uFF09\uFF0C# \u5F00\u5934\u7684\u884C\u5FFD\u7565");
@@ -3964,7 +7711,7 @@ function create_else_block_1(ctx) {
       append(div1, t0);
       append(div1, div0);
       append(div0, button);
-      append(button, t1);
+      append(button, t12);
       if (!mounted) {
         dispose = [
           listen(
@@ -4013,8 +7760,8 @@ function create_if_block_13(ctx) {
   let input;
   let t0;
   let button0;
-  let t1;
-  let t2;
+  let t12;
+  let t22;
   let textarea;
   let t3;
   let div1;
@@ -4029,8 +7776,8 @@ function create_if_block_13(ctx) {
       input = element("input");
       t0 = space();
       button0 = element("button");
-      t1 = text("\u94FE\u63A5\u63D0\u53D6");
-      t2 = space();
+      t12 = text("\u94FE\u63A5\u63D0\u53D6");
+      t22 = space();
       textarea = element("textarea");
       t3 = space();
       div1 = element("div");
@@ -4067,8 +7814,8 @@ function create_if_block_13(ctx) {
       );
       append(div0, t0);
       append(div0, button0);
-      append(button0, t1);
-      append(div2, t2);
+      append(button0, t12);
+      append(div2, t22);
       append(div2, textarea);
       set_input_value(
         textarea,
@@ -4470,7 +8217,7 @@ function create_if_block_10(ctx) {
 function create_if_block_7(ctx) {
   let div;
   let t0;
-  let t1;
+  let t12;
   let if_block = !/*cands*/
   ctx[2].length && create_if_block_8(ctx);
   return {
@@ -4480,14 +8227,14 @@ function create_if_block_7(ctx) {
         /*summary*/
         ctx[7]
       );
-      t1 = space();
+      t12 = space();
       if (if_block) if_block.c();
       attr(div, "class", "el-expand-summary");
     },
     m(target, anchor) {
       insert(target, div, anchor);
       append(div, t0);
-      append(div, t1);
+      append(div, t12);
       if (if_block) if_block.m(div, null);
     },
     p(ctx2, dirty) {
@@ -4522,27 +8269,27 @@ function create_if_block_7(ctx) {
 function create_if_block_8(ctx) {
   let button;
   let t0;
-  let t1;
-  let t2;
+  let t12;
+  let t22;
   let mounted;
   let dispose;
   return {
     c() {
       button = element("button");
       t0 = text("\u73B0\u5728\u5B66\u300C");
-      t1 = text(
+      t12 = text(
         /*theme*/
         ctx[1]
       );
-      t2 = text("\u300D");
+      t22 = text("\u300D");
       attr(button, "class", "mod-cta");
       set_style(button, "margin-left", "var(--el-space-4)");
     },
     m(target, anchor) {
       insert(target, button, anchor);
       append(button, t0);
-      append(button, t1);
-      append(button, t2);
+      append(button, t12);
+      append(button, t22);
       if (!mounted) {
         dispose = listen(
           button,
@@ -4556,7 +8303,7 @@ function create_if_block_8(ctx) {
     p(ctx2, dirty) {
       if (dirty[0] & /*theme*/
       2) set_data(
-        t1,
+        t12,
         /*theme*/
         ctx2[1]
       );
@@ -4574,8 +8321,8 @@ function create_if_block_1(ctx) {
   let div1;
   let span;
   let t0;
-  let t1;
-  let t2;
+  let t12;
+  let t22;
   let t3_value = (
     /*cands*/
     ctx[2].length + ""
@@ -4612,11 +8359,11 @@ function create_if_block_1(ctx) {
       div1 = element("div");
       span = element("span");
       t0 = text("\u5DF2\u9009 ");
-      t1 = text(
+      t12 = text(
         /*checkedCount*/
         ctx[14]
       );
-      t2 = text(" / ");
+      t22 = text(" / ");
       t3 = text(t3_value);
       t4 = space();
       div0 = element("div");
@@ -4643,8 +8390,8 @@ function create_if_block_1(ctx) {
       insert(target, div1, anchor);
       append(div1, span);
       append(span, t0);
-      append(span, t1);
-      append(span, t2);
+      append(span, t12);
+      append(span, t22);
       append(span, t3);
       append(div1, t4);
       append(div1, div0);
@@ -4681,7 +8428,7 @@ function create_if_block_1(ctx) {
     p(ctx2, dirty) {
       if (dirty[0] & /*checkedCount*/
       16384) set_data(
-        t1,
+        t12,
         /*checkedCount*/
         ctx2[14]
       );
@@ -4760,8 +8507,8 @@ function create_if_block_5(ctx) {
     /*c*/
     ctx[55].freq + ""
   );
-  let t1;
-  let t2;
+  let t12;
+  let t22;
   let t3_value = (
     /*c*/
     ctx[55].coverage + ""
@@ -4771,22 +8518,22 @@ function create_if_block_5(ctx) {
     c() {
       span = element("span");
       t0 = text("\u9891 ");
-      t1 = text(t1_value);
-      t2 = text(" \xB7 \u6587 ");
+      t12 = text(t1_value);
+      t22 = text(" \xB7 \u6587 ");
       t3 = text(t3_value);
       attr(span, "class", "el-chip");
     },
     m(target, anchor) {
       insert(target, span, anchor);
       append(span, t0);
-      append(span, t1);
-      append(span, t2);
+      append(span, t12);
+      append(span, t22);
       append(span, t3);
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*cands*/
       4 && t1_value !== (t1_value = /*c*/
-      ctx2[55].freq + "")) set_data(t1, t1_value);
+      ctx2[55].freq + "")) set_data(t12, t1_value);
       if (dirty[0] & /*cands*/
       4 && t3_value !== (t3_value = /*c*/
       ctx2[55].coverage + "")) set_data(t3, t3_value);
@@ -4839,8 +8586,8 @@ function create_if_block_2(ctx) {
     /*c*/
     ctx[55].source + ""
   );
-  let t1;
-  let t2;
+  let t12;
+  let t22;
   let if_block_anchor;
   let if_block = (
     /*c*/
@@ -4851,8 +8598,8 @@ function create_if_block_2(ctx) {
       div = element("div");
       t0 = text(t0_value);
       span = element("span");
-      t1 = text(t1_value);
-      t2 = space();
+      t12 = text(t1_value);
+      t22 = space();
       if (if_block) if_block.c();
       if_block_anchor = empty();
       attr(span, "class", "el-example-src");
@@ -4862,8 +8609,8 @@ function create_if_block_2(ctx) {
       insert(target, div, anchor);
       append(div, t0);
       append(div, span);
-      append(span, t1);
-      insert(target, t2, anchor);
+      append(span, t12);
+      insert(target, t22, anchor);
       if (if_block) if_block.m(target, anchor);
       insert(target, if_block_anchor, anchor);
     },
@@ -4873,7 +8620,7 @@ function create_if_block_2(ctx) {
       ctx2[55].sentence + "")) set_data(t0, t0_value);
       if (dirty[0] & /*cands*/
       4 && t1_value !== (t1_value = /*c*/
-      ctx2[55].source + "")) set_data(t1, t1_value);
+      ctx2[55].source + "")) set_data(t12, t1_value);
       if (
         /*c*/
         ctx2[55].sentenceZh
@@ -4893,7 +8640,7 @@ function create_if_block_2(ctx) {
     d(detaching) {
       if (detaching) {
         detach(div);
-        detach(t2);
+        detach(t22);
         detach(if_block_anchor);
       }
       if (if_block) if_block.d(detaching);
@@ -4935,19 +8682,21 @@ function create_each_block(key_1, ctx) {
   let t0;
   let div1;
   let div0;
-  let span;
+  let span0;
   let t1_value = (
     /*c*/
     ctx[55].word + ""
   );
-  let t1;
-  let t2;
+  let t12;
+  let t22;
   let button;
+  let span1;
+  let icon_action;
+  let t3;
   let t4;
   let t5;
   let t6;
   let t7;
-  let t8;
   let mounted;
   let dispose;
   function input_change_handler() {
@@ -4993,22 +8742,23 @@ function create_each_block(key_1, ctx) {
       t0 = space();
       div1 = element("div");
       div0 = element("div");
-      span = element("span");
-      t1 = text(t1_value);
-      t2 = space();
+      span0 = element("span");
+      t12 = text(t1_value);
+      t22 = space();
       button = element("button");
-      button.textContent = "\u{1F50A}";
-      t4 = space();
+      span1 = element("span");
+      t3 = space();
       if (if_block0) if_block0.c();
-      t5 = space();
+      t4 = space();
       if (if_block1) if_block1.c();
-      t6 = space();
+      t5 = space();
       if (if_block2) if_block2.c();
-      t7 = space();
+      t6 = space();
       if (if_block3) if_block3.c();
-      t8 = space();
+      t7 = space();
       attr(input, "type", "checkbox");
-      attr(span, "class", "el-cand-word");
+      attr(span0, "class", "el-cand-word");
+      attr(span1, "class", "el-btn-ico");
       attr(button, "class", "el-tts");
       attr(button, "title", "\u8BD5\u542C\u53D1\u97F3");
       attr(div0, "class", "el-cand-head");
@@ -5030,22 +8780,24 @@ function create_each_block(key_1, ctx) {
       append(label, t0);
       append(label, div1);
       append(div1, div0);
-      append(div0, span);
-      append(span, t1);
-      append(div0, t2);
+      append(div0, span0);
+      append(span0, t12);
+      append(div0, t22);
       append(div0, button);
-      append(div0, t4);
+      append(button, span1);
+      append(div0, t3);
       if (if_block0) if_block0.m(div0, null);
-      append(div0, t5);
+      append(div0, t4);
       if (if_block1) if_block1.m(div0, null);
-      append(div1, t6);
+      append(div1, t5);
       if (if_block2) if_block2.m(div1, null);
-      append(div1, t7);
+      append(div1, t6);
       if (if_block3) if_block3.m(div1, null);
-      append(label, t8);
+      append(label, t7);
       if (!mounted) {
         dispose = [
           listen(input, "change", input_change_handler),
+          action_destroyer(icon_action = icon.call(null, span1, "tts-volume")),
           listen(button, "click", stop_propagation(prevent_default(click_handler_7)))
         ];
         mounted = true;
@@ -5060,7 +8812,7 @@ function create_each_block(key_1, ctx) {
       }
       if (dirty[0] & /*cands*/
       4 && t1_value !== (t1_value = /*c*/
-      ctx[55].word + "")) set_data(t1, t1_value);
+      ctx[55].word + "")) set_data(t12, t1_value);
       if (
         /*c*/
         ctx[55].level
@@ -5070,7 +8822,7 @@ function create_each_block(key_1, ctx) {
         } else {
           if_block0 = create_if_block_6(ctx);
           if_block0.c();
-          if_block0.m(div0, t5);
+          if_block0.m(div0, t4);
         }
       } else if (if_block0) {
         if_block0.d(1);
@@ -5100,7 +8852,7 @@ function create_each_block(key_1, ctx) {
         } else {
           if_block2 = create_if_block_4(ctx);
           if_block2.c();
-          if_block2.m(div1, t7);
+          if_block2.m(div1, t6);
         }
       } else if (if_block2) {
         if_block2.d(1);
@@ -5147,8 +8899,8 @@ function create_each_block(key_1, ctx) {
 function create_if_block(ctx) {
   let button;
   let t0;
-  let t1;
-  let t2;
+  let t12;
+  let t22;
   let t3;
   let t4;
   let button_disabled_value;
@@ -5158,11 +8910,11 @@ function create_if_block(ctx) {
     c() {
       button = element("button");
       t0 = text("\u52A0\u5165\u300C");
-      t1 = text(
+      t12 = text(
         /*theme*/
         ctx[1]
       );
-      t2 = text("\u300D\uFF08");
+      t22 = text("\u300D\uFF08");
       t3 = text(
         /*checkedCount*/
         ctx[14]
@@ -5176,8 +8928,8 @@ function create_if_block(ctx) {
     m(target, anchor) {
       insert(target, button, anchor);
       append(button, t0);
-      append(button, t1);
-      append(button, t2);
+      append(button, t12);
+      append(button, t22);
       append(button, t3);
       append(button, t4);
       if (!mounted) {
@@ -5193,7 +8945,7 @@ function create_if_block(ctx) {
     p(ctx2, dirty) {
       if (dirty[0] & /*theme*/
       2) set_data(
-        t1,
+        t12,
         /*theme*/
         ctx2[1]
       );
@@ -5228,8 +8980,8 @@ function create_fragment2(ctx) {
     /*llmOn*/
     ctx[3] ? "" : "\uFF08\u672A\u914D\u7F6E\uFF09"
   );
-  let t1;
-  let t2;
+  let t12;
+  let t22;
   let button1;
   let t3;
   let t4;
@@ -5243,7 +8995,7 @@ function create_fragment2(ctx) {
   let t9;
   let t10;
   let t11;
-  let t12;
+  let t122;
   let div1;
   let t13;
   let t14;
@@ -5303,8 +9055,8 @@ function create_fragment2(ctx) {
       div0 = element("div");
       button0 = element("button");
       t0 = text("AI \u6269\u8BCD");
-      t1 = text(t1_value);
-      t2 = space();
+      t12 = text(t1_value);
+      t22 = space();
       button1 = element("button");
       t3 = text("\u8054\u7F51\u6293\u53D6");
       t4 = space();
@@ -5320,7 +9072,7 @@ function create_fragment2(ctx) {
       if (if_block0) if_block0.c();
       t11 = space();
       if_block1.c();
-      t12 = space();
+      t122 = space();
       div1 = element("div");
       t13 = text(
         /*status*/
@@ -5390,8 +9142,8 @@ function create_fragment2(ctx) {
       append(div2, div0);
       append(div0, button0);
       append(button0, t0);
-      append(button0, t1);
-      append(div0, t2);
+      append(button0, t12);
+      append(div0, t22);
       append(div0, button1);
       append(button1, t3);
       append(div0, t4);
@@ -5407,7 +9159,7 @@ function create_fragment2(ctx) {
       if (if_block0) if_block0.m(div2, null);
       append(div2, t11);
       if_block1.m(div2, null);
-      append(div2, t12);
+      append(div2, t122);
       append(div2, div1);
       append(div1, t13);
       append(div2, t14);
@@ -5459,7 +9211,7 @@ function create_fragment2(ctx) {
     p(ctx2, dirty) {
       if ((!current || dirty[0] & /*llmOn*/
       8) && t1_value !== (t1_value = /*llmOn*/
-      ctx2[3] ? "" : "\uFF08\u672A\u914D\u7F6E\uFF09")) set_data(t1, t1_value);
+      ctx2[3] ? "" : "\uFF08\u672A\u914D\u7F6E\uFF09")) set_data(t12, t1_value);
       if (!current || dirty[0] & /*busy*/
       64) {
         button0.disabled = /*busy*/
@@ -5553,7 +9305,7 @@ function create_fragment2(ctx) {
         if_block1 = current_block_type(ctx2);
         if (if_block1) {
           if_block1.c();
-          if_block1.m(div2, t12);
+          if_block1.m(div2, t122);
         }
       }
       if (!current || dirty[0] & /*status*/
@@ -5647,7 +9399,7 @@ function instance2($$self, $$props, $$invalidate) {
   let checkedCount;
   let llmOn;
   let pageTip;
-  var _a, _b;
+  var _a2, _b;
   let { plugin } = $$props;
   let { theme } = $$props;
   let { onDone } = $$props;
@@ -5655,7 +9407,7 @@ function instance2($$self, $$props, $$invalidate) {
   } } = $$props;
   let { initialTab = "llm" } = $$props;
   let { autoRun = false } = $$props;
-  let keywordsText = ((_b = (_a = plugin.db.themes[theme]) === null || _a === void 0 ? void 0 : _a.keywords) !== null && _b !== void 0 ? _b : []).join(", ");
+  let keywordsText = ((_b = (_a2 = plugin.db.themes[theme]) === null || _a2 === void 0 ? void 0 : _a2.keywords) !== null && _b !== void 0 ? _b : []).join(", ");
   let cands = [];
   let status = "";
   let busy = false;
@@ -5684,11 +9436,11 @@ function instance2($$self, $$props, $$invalidate) {
     return parseKeywords(keywordsText);
   }
   function saveKeywords(kws) {
-    var _a2;
+    var _a3;
     const info = plugin.db.themes[theme];
     if (!info) return;
     const merged = [
-      .../* @__PURE__ */ new Set([...(_a2 = info.keywords) !== null && _a2 !== void 0 ? _a2 : [], ...kws])
+      .../* @__PURE__ */ new Set([...(_a3 = info.keywords) !== null && _a3 !== void 0 ? _a3 : [], ...kws])
     ];
     if (merged.join() !== info.keywords.join()) {
       info.keywords = merged;
@@ -5696,24 +9448,24 @@ function instance2($$self, $$props, $$invalidate) {
     }
   }
   async function enrichAndShow(raw, sourceLabel) {
-    var _a2, _b2, _c, _d;
+    var _a3, _b2, _c, _d;
     $$invalidate(5, status = `\u5019\u9009 ${raw.length} \u8BCD\uFF0C\u67E5\u8BCD\u5178\u8865\u91CA\u4E49\u2026`);
     const enriched = [];
     await runPool(raw, 6, async (c) => {
-      var _a3;
+      var _a4;
       let word = c.word;
       let e = await plugin.dict.lookup(word);
       if (!e && /^[a-z]+$/.test(word)) {
-        const e2 = await plugin.dict.lookup(word + "e");
-        if (e2) {
+        const e22 = await plugin.dict.lookup(word + "e");
+        if (e22) {
           word = word + "e";
-          e = e2;
+          e = e22;
         }
       }
       if (!e) return;
       enriched.push({
         word,
-        translation: (_a3 = e.translation) !== null && _a3 !== void 0 ? _a3 : "",
+        translation: (_a4 = e.translation) !== null && _a4 !== void 0 ? _a4 : "",
         sentence: c.sentence,
         source: c.sentence ? c.sentenceTitle ? `${sourceLabel}: ${c.sentenceTitle}` : sourceLabel : void 0,
         score: c.score,
@@ -5727,7 +9479,7 @@ function instance2($$self, $$props, $$invalidate) {
     for (const c of enriched) {
       const prev = seen.get(c.word);
       if (prev) {
-        prev.freq = ((_a2 = prev.freq) !== null && _a2 !== void 0 ? _a2 : 0) + ((_b2 = c.freq) !== null && _b2 !== void 0 ? _b2 : 0);
+        prev.freq = ((_a3 = prev.freq) !== null && _a3 !== void 0 ? _a3 : 0) + ((_b2 = c.freq) !== null && _b2 !== void 0 ? _b2 : 0);
         prev.coverage = Math.max((_c = prev.coverage) !== null && _c !== void 0 ? _c : 0, (_d = c.coverage) !== null && _d !== void 0 ? _d : 0);
       } else seen.set(c.word, c);
     }
@@ -5736,8 +9488,8 @@ function instance2($$self, $$props, $$invalidate) {
     const kept = new Set(fresh);
     const filtered = merged.filter((c) => kept.has(c.word));
     filtered.sort((a, b) => {
-      var _a3, _b3;
-      return ((_a3 = b.score) !== null && _a3 !== void 0 ? _a3 : 0) - ((_b3 = a.score) !== null && _b3 !== void 0 ? _b3 : 0);
+      var _a4, _b3;
+      return ((_a4 = b.score) !== null && _a4 !== void 0 ? _a4 : 0) - ((_b3 = a.score) !== null && _b3 !== void 0 ? _b3 : 0);
     });
     $$invalidate(2, cands = filtered.slice(0, 80));
     let picked = 0;
@@ -5751,7 +9503,7 @@ function instance2($$self, $$props, $$invalidate) {
     $$invalidate(5, status = cands.length ? `\u5171 ${cands.length} \u4E2A\u5019\u9009\uFF08\u9ED8\u8BA4\u52FE\u9009\u7F6E\u9876\uFF0C\u5176\u4F59\u6309 \u9891\u6B21\xD7\u6587\u7AE0\u8986\u76D6\u5EA6 \u6392\u5E8F\uFF1BZK/GK \u53CA NGSL \u9AD8\u9891\u57FA\u7840\u8BCD\u9ED8\u8BA4\u4E0D\u52FE\u9009\uFF09` : "\u6CA1\u6709\u63D0\u53D6\u5230\u5019\u9009\u8BCD\uFF0C\u8BD5\u8BD5\u66F4\u5177\u4F53\u7684\u5173\u952E\u8BCD\u6216\u66F4\u957F\u7684\u6587\u7AE0");
   }
   async function expandWiki() {
-    var _a2;
+    var _a3;
     const kws = kw();
     if (!kws.length) {
       $$invalidate(5, status = "\u8BF7\u5148\u586B\u5199\u5173\u952E\u8BCD");
@@ -5773,12 +9525,12 @@ function instance2($$self, $$props, $$invalidate) {
       if (strict.length < 10) $$invalidate(5, status = `\u5019\u9009\u4E0D\u8DB3\uFF0C\u5DF2\u653E\u5BBD\u8BCD\u9891\u8981\u6C42\u2026`);
       await enrichAndShow(strict.length >= 10 ? strict : all, "\u8054\u7F51");
     } catch (e) {
-      $$invalidate(5, status = (_a2 = e.message) !== null && _a2 !== void 0 ? _a2 : String(e));
+      $$invalidate(5, status = (_a3 = e.message) !== null && _a3 !== void 0 ? _a3 : String(e));
     }
     $$invalidate(6, busy = false);
   }
   async function extractFromText(text2) {
-    var _a2;
+    var _a3;
     if (text2.trim().length < 200) {
       $$invalidate(5, status = "\u8BF7\u7C98\u8D34\u66F4\u957F\u7684\u6587\u7AE0\uFF08\u81F3\u5C11 200 \u5B57\u7B26\uFF09");
       return;
@@ -5793,7 +9545,7 @@ function instance2($$self, $$props, $$invalidate) {
       const raw = extractCandidates([{ title: "\u6587\u7AE0", text: text2 }], { existing, minFreq: 1 });
       await enrichAndShow(raw, "\u6587\u7AE0");
     } catch (e) {
-      $$invalidate(5, status = (_a2 = e.message) !== null && _a2 !== void 0 ? _a2 : String(e));
+      $$invalidate(5, status = (_a3 = e.message) !== null && _a3 !== void 0 ? _a3 : String(e));
     }
     $$invalidate(6, busy = false);
   }
@@ -5801,7 +9553,7 @@ function instance2($$self, $$props, $$invalidate) {
     await extractFromText(articleText);
   }
   async function extractFromUrl() {
-    var _a2;
+    var _a3;
     const url = articleUrl.trim();
     if (!url) {
       $$invalidate(5, status = "\u8BF7\u5148\u8F93\u5165\u6587\u7AE0\u94FE\u63A5");
@@ -5814,7 +9566,7 @@ function instance2($$self, $$props, $$invalidate) {
       $$invalidate(8, articleText = text2);
       await extractFromText(text2);
     } catch (e) {
-      $$invalidate(5, status = `\u6293\u53D6\u5931\u8D25\uFF1A${(_a2 = e.message) !== null && _a2 !== void 0 ? _a2 : String(e)}`);
+      $$invalidate(5, status = `\u6293\u53D6\u5931\u8D25\uFF1A${(_a3 = e.message) !== null && _a3 !== void 0 ? _a3 : String(e)}`);
       $$invalidate(6, busy = false);
     }
   }
@@ -5864,7 +9616,7 @@ function instance2($$self, $$props, $$invalidate) {
   }
   let seenAiWords = /* @__PURE__ */ new Set();
   async function expandLlm() {
-    var _a2;
+    var _a3;
     if (!llmOn) {
       $$invalidate(5, status = "\u8BF7\u5148\u5728 \u8BBE\u7F6E \u2192 English Learn \u4E2D\u914D\u7F6E LLM API\uFF08\u5730\u5740/\u6A21\u578B\uFF1B\u4E91\u7AEF API \u53E6\u9700 Key\uFF0C\u672C\u5730 Ollama \u4E0D\u7528\uFF09");
       return;
@@ -5889,11 +9641,11 @@ function instance2($$self, $$props, $$invalidate) {
       const byWord = new Map(out.map((w, i) => [keys[i], w]));
       const fresh = filterNewByStem(keys.filter(Boolean), avoid);
       const list = fresh.map((word) => {
-        var _a3;
+        var _a4;
         const w = byWord.get(word);
         return {
           word,
-          translation: String((_a3 = w === null || w === void 0 ? void 0 : w.translation) !== null && _a3 !== void 0 ? _a3 : ""),
+          translation: String((_a4 = w === null || w === void 0 ? void 0 : w.translation) !== null && _a4 !== void 0 ? _a4 : ""),
           sentence: (w === null || w === void 0 ? void 0 : w.sentence) ? String(w.sentence) : void 0,
           source: "AI",
           checked: false
@@ -5914,13 +9666,13 @@ function instance2($$self, $$props, $$invalidate) {
         $$invalidate(5, status = "\u6CA1\u6709\u751F\u6210\u65B0\u7684\u5019\u9009\uFF08\u90FD\u4E0E\u8BCD\u5E93\u91CD\u590D\uFF09\uFF0C\u53EF\u518D\u70B9\u4E00\u6B21\u8BD5\u8BD5");
       }
     } catch (e) {
-      const msg = (_a2 = e.message) !== null && _a2 !== void 0 ? _a2 : String(e);
+      const msg = (_a3 = e.message) !== null && _a3 !== void 0 ? _a3 : String(e);
       $$invalidate(5, status = /timed? ?out|timeout|30/i.test(msg) ? "AI \u6269\u8BCD\u5931\u8D25\uFF1A\u8BF7\u6C42\u8D85\u65F6\uFF08\u53D6\u51B3\u4E8E\u6A21\u578B\u901F\u5EA6\uFF09\u3002\u5EFA\u8BAE\u7A0D\u540E\u518D\u8BD5\uFF0C\u6216\u51CF\u5C11\u5173\u952E\u8BCD\u540E\u518D\u8BD5" : "AI \u6269\u8BCD\u5931\u8D25\uFF1A" + msg);
     }
     $$invalidate(6, busy = false);
   }
   async function expandRelated() {
-    var _a2;
+    var _a3;
     const kws = kw();
     if (!kws.length) {
       $$invalidate(5, status = "\u8BF7\u5148\u586B\u5199\u5173\u952E\u8BCD");
@@ -5964,7 +9716,7 @@ function instance2($$self, $$props, $$invalidate) {
       const raw = filterNewByStem(words, plugin.words.allRaw().map((d) => d.word)).map((w) => ({ word: w, freq: 1, coverage: 1, score: 0 }));
       await enrichAndShow(raw, "Datamuse");
     } catch (e) {
-      $$invalidate(5, status = (_a2 = e.message) !== null && _a2 !== void 0 ? _a2 : String(e));
+      $$invalidate(5, status = (_a3 = e.message) !== null && _a3 !== void 0 ? _a3 : String(e));
     }
     $$invalidate(6, busy = false);
   }
@@ -5982,8 +9734,8 @@ function instance2($$self, $$props, $$invalidate) {
       let done = 0;
       const createdWords = [];
       await runPool(sel, 6, async (c) => {
-        var _a2;
-        const examples = ((_a2 = c.exs) === null || _a2 === void 0 ? void 0 : _a2.length) ? c.exs.map((e) => ({
+        var _a3;
+        const examples = ((_a3 = c.exs) === null || _a3 === void 0 ? void 0 : _a3.length) ? c.exs.map((e) => ({
           text: e.text,
           translation: e.zh,
           source: c.source
@@ -6191,7 +9943,7 @@ var ExpandPanel = class extends SvelteComponent {
 var ExpandPanel_default = ExpandPanel;
 
 // src/modals.ts
-var ConfirmModal = class extends import_obsidian10.Modal {
+var ConfirmModal = class extends import_obsidian11.Modal {
   // 只有点了确认按钮才置位；Esc/点外部关闭视为取消
   constructor(app, message, okText, onResult) {
     super(app);
@@ -6204,8 +9956,8 @@ var ConfirmModal = class extends import_obsidian10.Modal {
     tagModal(this.modalEl, "Confirm", false);
     this.contentEl.createEl("p", { text: this.message, cls: "el-confirm-msg" });
     const row = this.contentEl.createDiv("el-confirm-btns");
-    new import_obsidian10.ButtonComponent(row).setButtonText("\u53D6\u6D88").onClick(() => this.close());
-    new import_obsidian10.ButtonComponent(row).setButtonText(this.okText).setCta().onClick(() => {
+    new import_obsidian11.ButtonComponent(row).setButtonText("\u53D6\u6D88").onClick(() => this.close());
+    new import_obsidian11.ButtonComponent(row).setButtonText(this.okText).setCta().onClick(() => {
       this.ok = true;
       this.close();
     });
@@ -6222,7 +9974,7 @@ function confirmDeleteWord(app, word) {
   return confirmOk(app, `\u5220\u9664\u8BCD\u6761\u300C${word}\u300D\uFF1F
 \u8BCD\u7B14\u8BB0\u4F1A\u79FB\u5165 Obsidian \u56DE\u6536\u7AD9\uFF08.trash\uFF09\uFF0C\u5B66\u4E60\u8FDB\u5EA6\u4E00\u5E76\u6E05\u9664\u3002`, "\u5220\u9664");
 }
-var SessionSwitchModal = class extends import_obsidian10.Modal {
+var SessionSwitchModal = class extends import_obsidian11.Modal {
   constructor(app, label, onPick) {
     super(app);
     this.label = label;
@@ -6236,12 +9988,12 @@ var SessionSwitchModal = class extends import_obsidian10.Modal {
       cls: "el-confirm-msg"
     });
     const row = this.contentEl.createDiv("el-confirm-btns");
-    new import_obsidian10.ButtonComponent(row).setButtonText("\u53D6\u6D88").onClick(() => this.close());
-    new import_obsidian10.ButtonComponent(row).setButtonText("\u653E\u5F03\u5E76\u91CD\u5F00").setWarning().onClick(() => {
+    new import_obsidian11.ButtonComponent(row).setButtonText("\u53D6\u6D88").onClick(() => this.close());
+    new import_obsidian11.ButtonComponent(row).setButtonText("\u653E\u5F03\u5E76\u91CD\u5F00").setWarning().onClick(() => {
       this.picked = false;
       this.close();
     });
-    new import_obsidian10.ButtonComponent(row).setButtonText(`\u56DE\u5230\u300C${this.label}\u300D`).setCta().onClick(() => {
+    new import_obsidian11.ButtonComponent(row).setButtonText(`\u56DE\u5230\u300C${this.label}\u300D`).setCta().onClick(() => {
       this.picked = true;
       this.close();
     });
@@ -6254,7 +10006,7 @@ var SessionSwitchModal = class extends import_obsidian10.Modal {
 function askActiveSession(app, theme, hard) {
   return new Promise((resolve) => new SessionSwitchModal(app, sessionLabel(theme, hard), resolve).open());
 }
-var CreateThemeModal = class extends import_obsidian10.Modal {
+var CreateThemeModal = class extends import_obsidian11.Modal {
   constructor(app, plugin, onDone, ctaLabel = "\u5BFC\u5165\u4E3B\u9898\u8BCD\u6C47") {
     super(app);
     this.plugin = plugin;
@@ -6280,18 +10032,18 @@ var CreateThemeModal = class extends import_obsidian10.Modal {
       tabRestore = tabBar.createEl("button", { text: "\u542F\u7528\u9690\u85CF\u4E3B\u9898", cls: "el-tab" });
     }
     const pageCreate = contentEl.createDiv();
-    new import_obsidian10.Setting(pageCreate).setName("\u4E3B\u9898\u540D\u79F0").setDesc("\u5982\uFF1A\u79D1\u6280\u3001\u5546\u52A1\u3001\u5B66\u672F\u5199\u4F5C").addText((t) => t.onChange((v) => name = v.trim()));
-    new import_obsidian10.Setting(pageCreate).setName("\u5173\u952E\u8BCD").setDesc("\u591A\u4E2A\u5173\u952E\u8BCD\uFF0C\u9017\u53F7\u5206\u9694\uFF08\u652F\u6301\u77ED\u8BED\u5982 machine learning\uFF09\uFF1B\u521B\u5EFA\u540E\u5C06\u6309\u5173\u952E\u8BCD\u81EA\u52A8\u6269\u8BCD").addText((t) => t.onChange((v) => keywords = v));
-    new import_obsidian10.Setting(pageCreate).addButton((b) => {
+    new import_obsidian11.Setting(pageCreate).setName("\u4E3B\u9898\u540D\u79F0").setDesc("\u5982\uFF1A\u79D1\u6280\u3001\u5546\u52A1\u3001\u5B66\u672F\u5199\u4F5C").addText((t) => t.onChange((v) => name = v.trim()));
+    new import_obsidian11.Setting(pageCreate).setName("\u5173\u952E\u8BCD").setDesc("\u591A\u4E2A\u5173\u952E\u8BCD\uFF0C\u9017\u53F7\u5206\u9694\uFF08\u652F\u6301\u77ED\u8BED\u5982 machine learning\uFF09\uFF1B\u521B\u5EFA\u540E\u5C06\u6309\u5173\u952E\u8BCD\u81EA\u52A8\u6269\u8BCD").addText((t) => t.onChange((v) => keywords = v));
+    new import_obsidian11.Setting(pageCreate).addButton((b) => {
       b.setButtonText(this.ctaLabel).setCta();
       if (this.ctaLabel === "\u5BFC\u5165\u4E3B\u9898\u8BCD\u6C47") b.setTooltip("\u521B\u5EFA\u540E\u5C06\u8FDB\u5165\u6269\u8BCD\u9875");
       b.onClick(() => {
         if (!name) {
-          new import_obsidian10.Notice("\u8BF7\u8F93\u5165\u4E3B\u9898\u540D\u79F0");
+          new import_obsidian11.Notice("\u8BF7\u8F93\u5165\u4E3B\u9898\u540D\u79F0");
           return;
         }
         if (this.plugin.db.themes[name]) {
-          new import_obsidian10.Notice("\u4E3B\u9898\u5DF2\u5B58\u5728");
+          new import_obsidian11.Notice("\u4E3B\u9898\u5DF2\u5B58\u5728");
           return;
         }
         this.plugin.db.themes[name] = {
@@ -6314,7 +10066,7 @@ var CreateThemeModal = class extends import_obsidian10.Modal {
         row.createEl("button", { text: "\u542F\u7528", cls: "el-btn-restore" }).addEventListener("click", () => {
           delete t.enabled;
           this.plugin.store.touch();
-          new import_obsidian10.Notice(`\u5DF2\u542F\u7528\u300C${t.name}\u300D`);
+          new import_obsidian11.Notice(`\u5DF2\u542F\u7528\u300C${t.name}\u300D`);
           this.close();
           this.onDone(void 0);
           void this.plugin.refreshStatusBar();
@@ -6324,24 +10076,24 @@ var CreateThemeModal = class extends import_obsidian10.Modal {
     const showCreatePage = () => {
       pageCreate.style.display = "";
       if (pageRestore) pageRestore.style.display = "none";
-      tabCreate == null ? void 0 : tabCreate.classList.add("is-active");
-      tabRestore == null ? void 0 : tabRestore.classList.remove("is-active");
+      tabCreate?.classList.add("is-active");
+      tabRestore?.classList.remove("is-active");
     };
     const showRestorePage = () => {
       pageCreate.style.display = "none";
       if (pageRestore) pageRestore.style.display = "";
-      tabCreate == null ? void 0 : tabCreate.classList.remove("is-active");
-      tabRestore == null ? void 0 : tabRestore.classList.add("is-active");
+      tabCreate?.classList.remove("is-active");
+      tabRestore?.classList.add("is-active");
     };
-    tabCreate == null ? void 0 : tabCreate.addEventListener("click", showCreatePage);
-    tabRestore == null ? void 0 : tabRestore.addEventListener("click", showRestorePage);
+    tabCreate?.addEventListener("click", showCreatePage);
+    tabRestore?.addEventListener("click", showRestorePage);
     if (pageRestore) showCreatePage();
   }
   onClose() {
     this.contentEl.empty();
   }
 };
-var EditThemeModal = class extends import_obsidian10.Modal {
+var EditThemeModal = class extends import_obsidian11.Modal {
   constructor(app, plugin, theme, onDone) {
     super(app);
     this.plugin = plugin;
@@ -6349,18 +10101,17 @@ var EditThemeModal = class extends import_obsidian10.Modal {
     this.onDone = onDone;
   }
   onOpen() {
-    var _a, _b;
     tagModal(this.modalEl, "Edit");
     const { contentEl } = this;
     contentEl.createEl("h3", { text: `\u7F16\u8F91\u4E3B\u9898 \u2014 ${this.theme}` });
     let name = this.theme;
-    let keywords = ((_b = (_a = this.plugin.db.themes[this.theme]) == null ? void 0 : _a.keywords) != null ? _b : []).join(", ");
+    let keywords = (this.plugin.db.themes[this.theme]?.keywords ?? []).join(", ");
     let mergeTarget = "";
-    new import_obsidian10.Setting(contentEl).setName("\u4E3B\u9898\u540D\u79F0").addText((t) => {
+    new import_obsidian11.Setting(contentEl).setName("\u4E3B\u9898\u540D\u79F0").addText((t) => {
       t.setValue(name).onChange((v) => name = v.trim());
     });
-    new import_obsidian10.Setting(contentEl).setName("\u5173\u952E\u8BCD").setDesc("\u591A\u4E2A\u5173\u952E\u8BCD\uFF0C\u9017\u53F7\u5206\u9694\uFF08\u652F\u6301\u77ED\u8BED\u5982 machine learning\uFF09\uFF1B\u6269\u8BCD\u65F6\u7528\u4F5C\u9ED8\u8BA4\u5173\u952E\u8BCD").addText((t) => t.setValue(keywords).onChange((v) => keywords = v));
-    new import_obsidian10.Setting(contentEl).addButton(
+    new import_obsidian11.Setting(contentEl).setName("\u5173\u952E\u8BCD").setDesc("\u591A\u4E2A\u5173\u952E\u8BCD\uFF0C\u9017\u53F7\u5206\u9694\uFF08\u652F\u6301\u77ED\u8BED\u5982 machine learning\uFF09\uFF1B\u6269\u8BCD\u65F6\u7528\u4F5C\u9ED8\u8BA4\u5173\u952E\u8BCD").addText((t) => t.setValue(keywords).onChange((v) => keywords = v));
+    new import_obsidian11.Setting(contentEl).addButton(
       (b) => b.setButtonText("\u4FDD\u5B58").setCta().onClick(async () => {
         const err = await this.plugin.editTheme(
           this.theme,
@@ -6368,26 +10119,26 @@ var EditThemeModal = class extends import_obsidian10.Modal {
           parseKeywords(keywords)
         );
         if (err) {
-          new import_obsidian10.Notice(err);
+          new import_obsidian11.Notice(err);
           return;
         }
-        new import_obsidian10.Notice(name !== this.theme ? `\u5DF2\u6539\u540D\uFF1A${this.theme} \u2192 ${name}` : "\u5DF2\u4FDD\u5B58");
+        new import_obsidian11.Notice(name !== this.theme ? `\u5DF2\u6539\u540D\uFF1A${this.theme} \u2192 ${name}` : "\u5DF2\u4FDD\u5B58");
         this.close();
         this.onDone();
       })
     );
-    new import_obsidian10.Setting(contentEl).setName("\u5220\u9664\u4E3B\u9898").setDesc("\u8BCD\u7B14\u8BB0\u6587\u4EF6\u4F1A\u4FDD\u7559\uFF0C\u4EC5\u89E3\u9664\u5173\u8054").addButton(
+    new import_obsidian11.Setting(contentEl).setName("\u5220\u9664\u4E3B\u9898").setDesc("\u8BCD\u7B14\u8BB0\u6587\u4EF6\u4F1A\u4FDD\u7559\uFF0C\u4EC5\u89E3\u9664\u5173\u8054").addButton(
       (b) => b.setButtonText("\u5220\u9664").setWarning().onClick(async () => {
         if (!await confirmOk(this.app, `\u5220\u9664\u4E3B\u9898\u300C${this.theme}\u300D\uFF1F
 \u8BCD\u7B14\u8BB0\u6587\u4EF6\u4F1A\u4FDD\u7559\uFF0C\u4EC5\u89E3\u9664\u5173\u8054\u3002`, "\u5220\u9664"))
           return;
         await this.plugin.deleteTheme(this.theme);
-        new import_obsidian10.Notice(`\u5DF2\u5220\u9664\u4E3B\u9898\u300C${this.theme}\u300D`);
+        new import_obsidian11.Notice(`\u5DF2\u5220\u9664\u4E3B\u9898\u300C${this.theme}\u300D`);
         this.close();
         this.onDone();
       })
     );
-    new import_obsidian10.Setting(contentEl).setName("\u5408\u5E76\u5230\u5176\u4ED6\u4E3B\u9898").setDesc(`\u628A\u300C${this.theme}\u300D\u7684\u5168\u90E8\u8BCD\u5E76\u5165\u76EE\u6807\u4E3B\u9898\u540E\u5220\u9664\u672C\u4E3B\u9898\uFF08\u5B66\u4E60\u8FDB\u5EA6\u4FDD\u7559\uFF09`).addDropdown((d) => {
+    new import_obsidian11.Setting(contentEl).setName("\u5408\u5E76\u5230\u5176\u4ED6\u4E3B\u9898").setDesc(`\u628A\u300C${this.theme}\u300D\u7684\u5168\u90E8\u8BCD\u5E76\u5165\u76EE\u6807\u4E3B\u9898\u540E\u5220\u9664\u672C\u4E3B\u9898\uFF08\u5B66\u4E60\u8FDB\u5EA6\u4FDD\u7559\uFF09`).addDropdown((d) => {
       d.addOption("", "\u9009\u62E9\u76EE\u6807\u4E3B\u9898\u2026");
       for (const n of Object.keys(this.plugin.db.themes)) {
         if (n !== this.theme) d.addOption(n, n);
@@ -6396,14 +10147,14 @@ var EditThemeModal = class extends import_obsidian10.Modal {
     }).addButton(
       (b) => b.setButtonText("\u5408\u5E76").setWarning().onClick(async () => {
         if (!mergeTarget) {
-          new import_obsidian10.Notice("\u5148\u9009\u62E9\u76EE\u6807\u4E3B\u9898");
+          new import_obsidian11.Notice("\u5148\u9009\u62E9\u76EE\u6807\u4E3B\u9898");
           return;
         }
         if (!await confirmOk(this.app, `\u628A\u300C${this.theme}\u300D\u7684\u8BCD\u5168\u90E8\u5E76\u5165\u300C${mergeTarget}\u300D\uFF1F
 \u5B66\u4E60\u8FDB\u5EA6\u4FDD\u7559\uFF0C\u672C\u4E3B\u9898\u5C06\u5220\u9664\u3002`, "\u5408\u5E76"))
           return;
         const n = await this.plugin.mergeTheme(this.theme, mergeTarget);
-        new import_obsidian10.Notice(`\u5DF2\u5408\u5E76\uFF1A${n} \u4E2A\u8BCD\u79FB\u5165\u300C${mergeTarget}\u300D`);
+        new import_obsidian11.Notice(`\u5DF2\u5408\u5E76\uFF1A${n} \u4E2A\u8BCD\u79FB\u5165\u300C${mergeTarget}\u300D`);
         this.close();
         this.onDone();
       })
@@ -6415,14 +10166,14 @@ var EditThemeModal = class extends import_obsidian10.Modal {
 };
 function themePicker(plugin, host, names, preferred) {
   let theme = preferred && names.includes(preferred) ? preferred : plugin.lastAddTheme && names.includes(plugin.lastAddTheme) ? plugin.lastAddTheme : names[0];
-  new import_obsidian10.Setting(host).setName("\u52A0\u5165\u4E3B\u9898").addDropdown((d) => {
+  new import_obsidian11.Setting(host).setName("\u52A0\u5165\u4E3B\u9898").addDropdown((d) => {
     d.addOptions(Object.fromEntries(names.map((n) => [n, n])));
     d.setValue(theme);
     d.onChange((v) => theme = v);
   });
   return () => theme;
 }
-var AddWordModal = class _AddWordModal extends import_obsidian10.Modal {
+var AddWordModal = class _AddWordModal extends import_obsidian11.Modal {
   constructor(app, plugin, presetWord, onDone, defaultTheme, presetZh) {
     super(app);
     this.plugin = plugin;
@@ -6452,7 +10203,7 @@ var AddWordModal = class _AddWordModal extends import_obsidian10.Modal {
     // onlineFor 锁词——手改词面后旧结果作废（与 zhQuery 的作废口径同思路）
     this.onlineFor = "";
     this.online = null;
-    this.word = presetWord != null ? presetWord : "";
+    this.word = presetWord ?? "";
   }
   onOpen() {
     tagModal(this.modalEl, "Add");
@@ -6466,8 +10217,7 @@ var AddWordModal = class _AddWordModal extends import_obsidian10.Modal {
           this.app,
           this.plugin,
           (created) => {
-            var _a;
-            (_a = this.onDone) == null ? void 0 : _a.call(this);
+            this.onDone?.();
             new _AddWordModal(this.app, this.plugin, this.presetWord, this.onDone, created, this.presetZh).open();
           },
           "\u521B\u5EFA\u4E3B\u9898"
@@ -6483,7 +10233,7 @@ var AddWordModal = class _AddWordModal extends import_obsidian10.Modal {
   buildForm(names) {
     const { contentEl } = this;
     contentEl.createEl("h3", { text: "\u67E5\u8BCD" });
-    new import_obsidian10.Setting(contentEl).setName("\u5355\u8BCD").addText((t) => {
+    new import_obsidian11.Setting(contentEl).setName("\u5355\u8BCD").addText((t) => {
       this.wordInput = t;
       t.setValue(this.word);
       t.inputEl.addEventListener("keydown", (e) => {
@@ -6504,8 +10254,8 @@ var AddWordModal = class _AddWordModal extends import_obsidian10.Modal {
     }).addButton((b) => b.setButtonText("\u67E5\u8BE2").setCta().onClick(() => this.query()));
     this.toolsRow = contentEl.createDiv();
     this.toolsRow.style.display = "none";
-    new import_obsidian10.Setting(this.toolsRow).addButton((b) => {
-      b.setButtonText("\u{1F50A} \u53D1\u97F3").onClick(() => {
+    new import_obsidian11.Setting(this.toolsRow).addButton((b) => {
+      b.setButtonText("\u53D1\u97F3").onClick(() => {
         if (!this.word) return;
         this.plugin.speakWord(this.word);
         window.setTimeout(() => void this.plugin.audio.badge(b.buttonEl, this.word, " \u53D1\u97F3"), 1200);
@@ -6520,7 +10270,7 @@ var AddWordModal = class _AddWordModal extends import_obsidian10.Modal {
     this.addArea = contentEl.createDiv();
     this.addArea.style.display = "none";
     const pickTheme = themePicker(this.plugin, this.addArea, names, this.defaultTheme);
-    new import_obsidian10.Setting(this.addArea).addButton((b) => {
+    new import_obsidian11.Setting(this.addArea).addButton((b) => {
       this.addBtn = b;
       return b.setButtonText("\u52A0\u5165").setCta().onClick(async () => {
         b.setDisabled(true).setButtonText("\u52A0\u5165\u4E2D\u2026");
@@ -6538,17 +10288,16 @@ var AddWordModal = class _AddWordModal extends import_obsidian10.Modal {
     }).addButton((b) => b.setButtonText("\u5173\u95ED").onClick(() => this.close()));
   }
   /** 「加入」落地：校验/去重 → addWord（预览的联网结果直接复用）→ 成功页 */
-  async doAdd(theme, tr) {
-    var _a;
+  async doAdd(theme, tr2) {
     if (!this.word) return;
     if (this.word.split(/\s+/).length > 5) {
-      new import_obsidian10.Notice("\u8D85\u8FC7 5 \u4E2A\u8BCD\uFF0C\u7591\u4F3C\u6574\u53E5\u800C\u975E\u77ED\u8BED\uFF0C\u4E0D\u6536\u5F55");
+      new import_obsidian11.Notice("\u8D85\u8FC7 5 \u4E2A\u8BCD\uFF0C\u7591\u4F3C\u6574\u53E5\u800C\u975E\u77ED\u8BED\uFF0C\u4E0D\u6536\u5F55");
       return;
     }
     const owned = this.plugin.words.get(this.word);
-    const backfill = !!owned && !hasTranslation(owned.translation) && !!tr;
-    if ((owned == null ? void 0 : owned.themes.includes(theme)) && !backfill) {
-      new import_obsidian10.Notice(`\u300C${this.word}\u300D\u5DF2\u5728\u300C${theme}\u300D\uFF0C\u65E0\u9700\u91CD\u590D\u52A0\u5165`);
+    const backfill = !!owned && !hasTranslation(owned.translation) && !!tr2;
+    if (owned?.themes.includes(theme) && !backfill) {
+      new import_obsidian11.Notice(`\u300C${this.word}\u300D\u5DF2\u5728\u300C${theme}\u300D\uFF0C\u65E0\u9700\u91CD\u590D\u52A0\u5165`);
       return;
     }
     const on = this.onlineFor === this.word ? this.online : null;
@@ -6557,25 +10306,25 @@ var AddWordModal = class _AddWordModal extends import_obsidian10.Modal {
       r = await this.plugin.addWord(this.word, theme, {
         // 短语词典查不到，把查询时 AI 翻译的结果带上；中查英直加/同根词带入的词拿现成中文当释义
         translation: isPhrase(this.word) ? this.phraseZh || void 0 : this.zhQuery || this.presetZh || (on ? on.definition ? `[\u82F1] ${on.definition}` : on.zh : void 0),
-        phonetic: on == null ? void 0 : on.phonetic,
+        phonetic: on?.phonetic,
         examples: this.example ? [{ text: this.example, translation: this.exampleZh || void 0, source: "AI" }] : void 0
       });
     } catch (e) {
-      new import_obsidian10.Notice(`\u6536\u5F55\u5931\u8D25\uFF1A${e instanceof Error ? e.message : e}`);
+      new import_obsidian11.Notice(`\u6536\u5F55\u5931\u8D25\uFF1A${e instanceof Error ? e.message : e}`);
       return;
     }
     if (r === "skipped") {
-      new import_obsidian10.Notice("\u65E0\u6548\u5355\u8BCD");
+      new import_obsidian11.Notice("\u65E0\u6548\u5355\u8BCD");
       return;
     }
     this.plugin.lastAddTheme = theme;
-    if (backfill) new import_obsidian10.Notice(`\u5DF2\u56DE\u586B\u91CA\u4E49\uFF1A${tr}`);
+    if (backfill) new import_obsidian11.Notice(`\u5DF2\u56DE\u586B\u91CA\u4E49\uFF1A${tr2}`);
     const doc = this.plugin.words.get(this.word);
-    if (doc) void this.plugin.enrichWordsInBackground([doc.word], { theme });
+    if (doc) void this.plugin.enrichWordsInBackground([doc.word], { theme, quiet: true });
     void this.plugin.audio.prefetch(this.word);
     this.plugin.refreshStatusBar();
-    (_a = this.onDone) == null ? void 0 : _a.call(this);
-    this.showDone(theme, r === "created", doc == null ? void 0 : doc.phonetic);
+    this.onDone?.();
+    this.showDone(theme, r === "created", doc?.phonetic);
   }
   /** 收录成功页：交代收录结果；中文查询过的话可「返回候选列表」换词重选 */
   showDone(theme, created, phonetic) {
@@ -6628,14 +10377,10 @@ var AddWordModal = class _AddWordModal extends import_obsidian10.Modal {
    *  联网把中文译成英文再出候选——本地查得到的长释义行，查不到的照样列出（直加，释义用查询串）。
    *  点候选回填单词框并走正常查询（含联网词典兜底） */
   async renderZhSearch(q) {
-    var _a;
     this.previewEl.setText("\u672C\u5730\u8BCD\u5178\u53CD\u67E5\u4E2D\u2026");
     this.addArea.style.display = "none";
     this.zhQuery = "";
-    const mine = this.plugin.words.all().filter((d) => {
-      var _a2;
-      return hasTranslation(d.translation) && ((_a2 = d.translation) == null ? void 0 : _a2.includes(q));
-    });
+    const mine = this.plugin.words.all().filter((d) => hasTranslation(d.translation) && d.translation?.includes(q));
     let hits = await this.plugin.dict.searchByZh(q, 20);
     let raw = [];
     const resolved = /* @__PURE__ */ new Set();
@@ -6674,30 +10419,28 @@ var AddWordModal = class _AddWordModal extends import_obsidian10.Modal {
       return;
     }
     this.zhBack = { q, mine, hits, raw, resolved };
-    (_a = this.backBtn) == null ? void 0 : _a.buttonEl.style.removeProperty("display");
+    this.backBtn?.buttonEl.style.removeProperty("display");
     this.renderZhList();
   }
   /** 渲染中文候选列表（renderZhSearch 出结果后调用；预览页「返回重选」也走这） */
   /** 词典候选行模型（中查英 hits）：截断释义 + 已收录判定，整表渲染与联网拓展共用一处，
    *  防两套行构建逻辑漂移 */
   zhHitRow(e) {
-    var _a;
     return {
       word: e.word,
-      sense: ((_a = e.translation) != null ? _a : "").split(/[；;\n]/)[0].replace(/^[a-z]+\.\s*/i, "").trim().slice(0, 24),
+      sense: (e.translation ?? "").split(/[；;\n]/)[0].replace(/^[a-z]+\.\s*/i, "").trim().slice(0, 24),
       owned: !!this.plugin.words.get(e.word),
       direct: false
     };
   }
   renderZhList() {
-    var _a;
     if (!this.zhBack) return;
     const { q, mine, hits, raw, resolved } = this.zhBack;
     const seen = /* @__PURE__ */ new Set();
     const rows = [];
     for (const d of mine) {
       seen.add(d.word);
-      rows.push({ word: d.word, sense: ((_a = d.translation) != null ? _a : "").split(/[；;\n]/)[0].slice(0, 20), owned: true, direct: false });
+      rows.push({ word: d.word, sense: (d.translation ?? "").split(/[；;\n]/)[0].slice(0, 20), owned: true, direct: false });
     }
     for (const e of hits) {
       if (seen.has(e.word)) continue;
@@ -6726,13 +10469,12 @@ var AddWordModal = class _AddWordModal extends import_obsidian10.Modal {
       moreBtn.disabled = true;
       moreBtn.setText("\u62D3\u5C55\u4E2D\u2026");
       void this.expandZhCandidates(q, known).then((entries2) => {
-        var _a2;
         if (this.zhBack !== snap) return;
         moreBtn.remove();
         if (!entries2.length) {
           moreBtn.setText("\u6CA1\u6709\u66F4\u591A\u4E86");
         } else {
-          (_a2 = this.zhBack) == null ? void 0 : _a2.hits.push(...entries2);
+          this.zhBack?.hits.push(...entries2);
           for (const e of entries2) {
             known.add(e.word);
             const r = this.zhHitRow(e);
@@ -6780,7 +10522,6 @@ var AddWordModal = class _AddWordModal extends import_obsidian10.Modal {
     btn.addClass("el-zh-w");
     if (owned) btn.addClass("is-owned");
     btn.onClickEvent(() => {
-      var _a;
       if (owned) {
         const doc = this.plugin.words.get(word);
         if (doc) {
@@ -6793,7 +10534,7 @@ var AddWordModal = class _AddWordModal extends import_obsidian10.Modal {
       this.example = "";
       this.exampleZh = "";
       this.zhQuery = direct ? q : "";
-      (_a = this.wordInput) == null ? void 0 : _a.setValue(word);
+      this.wordInput?.setValue(word);
       void this.query();
     });
     if (tag) row.createSpan({ text: tag, cls: "el-chip" });
@@ -6801,7 +10542,6 @@ var AddWordModal = class _AddWordModal extends import_obsidian10.Modal {
     zh.style.fontSize = "12px";
   }
   async renderPreview(word) {
-    var _a;
     if (word.split(/\s+/).length > 5) {
       this.previewEl.setText("\u8D85\u8FC7 5 \u4E2A\u8BCD\uFF0C\u7591\u4F3C\u6574\u53E5\u800C\u975E\u77ED\u8BED\uFF0C\u4E0D\u6536\u5F55");
       return;
@@ -6839,7 +10579,7 @@ var AddWordModal = class _AddWordModal extends import_obsidian10.Modal {
           try {
             const [zh] = await llmTranslateSentences(cfg, [word]);
             if (zh) this.phraseZh = zh;
-          } catch (e) {
+          } catch {
           }
         }
       }
@@ -6858,12 +10598,12 @@ var AddWordModal = class _AddWordModal extends import_obsidian10.Modal {
         lines.push(`\u300C${word}\u300D\u662F ${lemHit} \u7684\u53D8\u5F62\uFF1A\u663E\u793A\u539F\u5F62\u91CA\u4E49\uFF0C\u5EFA\u8BAE\u6536\u539F\u5F62`);
         this.retargetLemma(lemHit);
       }
-      if (entry == null ? void 0 : entry.phonetic) lines.push(entry.phonetic);
-      if (entry == null ? void 0 : entry.translation) lines.push(entry.translation.replace(/；/g, "\n"));
-      const lv = levelFromTag(entry == null ? void 0 : entry.tag);
+      if (entry?.phonetic) lines.push(entry.phonetic);
+      if (entry?.translation) lines.push(entry.translation.replace(/；/g, "\n"));
+      const lv = levelFromTag(entry?.tag);
       if (lv) lines.push(`\u{1F3F7} ${levelLabel(lv)}`);
-      if (entry == null ? void 0 : entry.collins) lines.push(`${"\u2605".repeat(entry.collins)}${"\u2606".repeat(5 - entry.collins)}`);
-      if (entry == null ? void 0 : entry.frq) lines.push(`\u8BCD\u9891 ${entry.frq}`);
+      if (entry?.collins) lines.push(`${"\u2605".repeat(entry.collins)}${"\u2606".repeat(5 - entry.collins)}`);
+      if (entry?.frq) lines.push(`\u8BCD\u9891 ${entry.frq}`);
       if (lines.length) return this.flushPreview(lines);
       if (this.presetZh) {
         lines.push(`\u{1F4D6} ${this.presetZh}`);
@@ -6891,10 +10631,10 @@ var AddWordModal = class _AddWordModal extends import_obsidian10.Modal {
         lines.push(`\u300C${word}\u300D\u662F ${onLem} \u7684\u53D8\u5F62\uFF1A\u663E\u793A\u539F\u5F62\u91CA\u4E49\uFF0C\u5EFA\u8BAE\u6536\u539F\u5F62`);
         this.retargetLemma(onLem);
       }
-      if (on == null ? void 0 : on.phonetic) lines.push(on.phonetic);
-      if (on == null ? void 0 : on.definition) lines.push(`[\u82F1] ${on.definition}`);
-      if (on == null ? void 0 : on.zh) lines.push(`\u{1F004} ${on.zh}\uFF08\u8054\u7F51\u7FFB\u8BD1\u515C\u5E95\uFF09`);
-      suggest = (_a = on == null ? void 0 : on.suggest) != null ? _a : "";
+      if (on?.phonetic) lines.push(on.phonetic);
+      if (on?.definition) lines.push(`[\u82F1] ${on.definition}`);
+      if (on?.zh) lines.push(`\u{1F004} ${on.zh}\uFF08\u8054\u7F51\u7FFB\u8BD1\u515C\u5E95\uFF09`);
+      suggest = on?.suggest ?? "";
       if (!lines.length)
         lines.push(
           suggest ? `\u300C${word}\u300D\u8BCD\u5178\u4E0E\u5728\u7EBF\u5747\u672A\u547D\u4E2D\uFF0C\u53EF\u80FD\u662F\u62FC\u5199\u6709\u8BEF` : "\uFF08\u8BCD\u5178\u672A\u547D\u4E2D\uFF0C\u52A0\u5165\u540E\u53EF\u7528\u300C\u8865\u5168\u7F3A\u5931\u91CA\u4E49\u300D\u91CD\u8BD5\uFF09"
@@ -6914,51 +10654,48 @@ var AddWordModal = class _AddWordModal extends import_obsidian10.Modal {
    *  后续加入/发音/AI 例句/去重判定都按原形走——词库只收原形，变形词入库即脏数据。
    *  Obsidian setValue 不触发 onChange，this.word 手动同步 */
   retargetLemma(lem) {
-    var _a;
     this.word = lem;
-    (_a = this.wordInput) == null ? void 0 : _a.setValue(lem);
+    this.wordInput?.setValue(lem);
   }
   /** 预览落盘：带上 AI 例句一次性渲染，并把焦点交给「加入」（Enter 二段式第二段：再按 Enter 即收录） */
   flushPreview(lines) {
-    var _a;
     if (this.example) lines.push(`
 \u{1F4DD} ${this.example}${this.exampleZh ? `
 ${this.exampleZh}` : ""}`);
     this.previewEl.setText(lines.join("\n"));
     this.addArea.style.display = "";
-    (_a = this.addBtn) == null ? void 0 : _a.buttonEl.focus();
+    this.addBtn?.buttonEl.focus();
   }
   /** AI 生成一句例句：收词时即有例句，免去事后补全 */
   async genExample(b) {
-    var _a, _b;
     const word = this.word.trim().toLowerCase();
     if (!word) {
-      new import_obsidian10.Notice("\u8BF7\u5148\u586B\u5199\u5355\u8BCD");
+      new import_obsidian11.Notice("\u8BF7\u5148\u586B\u5199\u5355\u8BCD");
       return;
     }
     if (/[一-鿿]/.test(word)) {
-      new import_obsidian10.Notice("\u5355\u8BCD\u6846\u662F\u4E2D\u6587\uFF1A\u5148\u70B9\u5019\u9009\u8BCD\u9009\u5B9A\u82F1\u6587\uFF0C\u518D\u751F\u6210\u4F8B\u53E5");
+      new import_obsidian11.Notice("\u5355\u8BCD\u6846\u662F\u4E2D\u6587\uFF1A\u5148\u70B9\u5019\u9009\u8BCD\u9009\u5B9A\u82F1\u6587\uFF0C\u518D\u751F\u6210\u4F8B\u53E5");
       return;
     }
     const cfg = this.plugin.llmCfg;
     if (!llmReady(cfg)) {
-      new import_obsidian10.Notice("\u8BF7\u5148\u5728 \u8BBE\u7F6E \u2192 English Learn \u914D\u7F6E LLM API");
+      new import_obsidian11.Notice("\u8BF7\u5148\u5728 \u8BBE\u7F6E \u2192 English Learn \u914D\u7F6E LLM API");
       return;
     }
     b.setDisabled(true).setButtonText("\u751F\u6210\u4E2D\u2026");
     try {
       const m = await llmExamples(cfg, [word], void 0, 1);
       if (word !== this.word.trim().toLowerCase()) return;
-      const ex = (_a = m.get(word)) == null ? void 0 : _a[0];
+      const ex = m.get(word)?.[0];
       if (ex) {
         this.example = ex.text;
-        this.exampleZh = (_b = ex.zh) != null ? _b : "";
+        this.exampleZh = ex.zh ?? "";
         void this.query();
       } else {
-        new import_obsidian10.Notice("\u6CA1\u6709\u751F\u6210\u51FA\u4F8B\u53E5\uFF0C\u53EF\u91CD\u8BD5");
+        new import_obsidian11.Notice("\u6CA1\u6709\u751F\u6210\u51FA\u4F8B\u53E5\uFF0C\u53EF\u91CD\u8BD5");
       }
     } catch (e) {
-      new import_obsidian10.Notice("\u4F8B\u53E5\u751F\u6210\u5931\u8D25\uFF1A" + (e instanceof Error ? e.message : e));
+      new import_obsidian11.Notice("\u4F8B\u53E5\u751F\u6210\u5931\u8D25\uFF1A" + (e instanceof Error ? e.message : e));
     } finally {
       b.setDisabled(false).setButtonText("AI \u4F8B\u53E5");
     }
@@ -6967,7 +10704,7 @@ ${this.exampleZh}` : ""}`);
     this.contentEl.empty();
   }
 };
-var TranslateModal = class extends import_obsidian10.Modal {
+var TranslateModal = class extends import_obsidian11.Modal {
   // 另一侧句子（例句 translation）
   constructor(app, plugin, onDone) {
     super(app);
@@ -6982,26 +10719,25 @@ var TranslateModal = class extends import_obsidian10.Modal {
     tagModal(this.modalEl, "Trans");
     const { contentEl } = this;
     contentEl.createEl("h3", { text: "\u7FFB\u8BD1" });
-    const ta = contentEl.createEl("textarea", {
+    const ta2 = contentEl.createEl("textarea", {
       cls: "el-memo-in",
       // 复用助记弹窗的输入框样式（占满弹窗的多行文本框）
       attr: { rows: "4", placeholder: "\u8F93\u5165\u6216\u7C98\u8D34\u4E00\u6BB5\u8BDD\uFF0C\u4E2D\u82F1\u81EA\u52A8\u5224\u5411\uFF1BCtrl/Cmd+Enter \u7FFB\u8BD1" }
     });
     const btnRow = contentEl.createDiv("el-confirm-btns");
-    const goBtn = new import_obsidian10.ButtonComponent(btnRow).setButtonText("\u7FFB\u8BD1").setCta();
+    const goBtn = new import_obsidian11.ButtonComponent(btnRow).setButtonText("\u7FFB\u8BD1").setCta();
     const resultEl = contentEl.createDiv();
-    goBtn.onClick(() => void this.go(ta, resultEl, goBtn));
-    ta.addEventListener("keydown", (e) => {
+    goBtn.onClick(() => void this.go(ta2, resultEl, goBtn));
+    ta2.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.isComposing) {
         e.preventDefault();
-        void this.go(ta, resultEl, goBtn);
+        void this.go(ta2, resultEl, goBtn);
       }
     });
-    setTimeout(() => ta.focus(), 50);
+    setTimeout(() => ta2.focus(), 50);
   }
-  async go(ta, resultEl, btn) {
-    var _a;
-    const text2 = ta.value.trim();
+  async go(ta2, resultEl, btn) {
+    const text2 = ta2.value.trim();
     if (!text2 || this.busy) return;
     this.busy = true;
     btn.setDisabled(true).setButtonText("\u7FFB\u8BD1\u4E2D\u2026");
@@ -7013,9 +10749,9 @@ var TranslateModal = class extends import_obsidian10.Modal {
       if (llmReady(this.plugin.llmCfg)) {
         ({ translation, terms } = await llmTranslateCollect(this.plugin.llmCfg, text2));
       } else {
-        translation = (_a = await myMemoryTranslate(text2, zhIn)) != null ? _a : "";
+        translation = await myMemoryTranslate(text2, zhIn) ?? "";
         if (!translation) {
-          new import_obsidian10.Notice("\u514D\u8D39\u7FFB\u8BD1\u63A5\u53E3\u65E0\u7ED3\u679C\uFF1A\u53EF\u7A0D\u540E\u518D\u8BD5\uFF0C\u6216\u914D\u7F6E AI \u540E\u8FD8\u80FD\u540C\u65F6\u63D0\u53D6\u5173\u952E\u8BCD");
+          new import_obsidian11.Notice("\u514D\u8D39\u7FFB\u8BD1\u63A5\u53E3\u65E0\u7ED3\u679C\uFF1A\u53EF\u7A0D\u540E\u518D\u8BD5\uFF0C\u6216\u914D\u7F6E AI \u540E\u8FD8\u80FD\u540C\u65F6\u63D0\u53D6\u5173\u952E\u8BCD");
           return;
         }
       }
@@ -7023,13 +10759,13 @@ var TranslateModal = class extends import_obsidian10.Modal {
       this.exOther = zhIn ? text2 : translation;
       const box = resultEl.createDiv({ cls: "el-trans-result" });
       box.setText(translation);
-      new import_obsidian10.ButtonComponent(resultEl).setButtonText("\u{1F4CB} \u590D\u5236\u8BD1\u6587").onClick(async () => {
+      new import_obsidian11.ButtonComponent(resultEl).setButtonText("\u{1F4CB} \u590D\u5236\u8BD1\u6587").onClick(async () => {
         await navigator.clipboard.writeText(translation);
-        new import_obsidian10.Notice("\u8BD1\u6587\u5DF2\u590D\u5236");
+        new import_obsidian11.Notice("\u8BD1\u6587\u5DF2\u590D\u5236");
       });
       if (terms.length) this.renderTerms(resultEl, terms);
     } catch (e) {
-      new import_obsidian10.Notice(`\u7FFB\u8BD1\u5931\u8D25\uFF1A${e instanceof Error ? e.message : e}`);
+      new import_obsidian11.Notice(`\u7FFB\u8BD1\u5931\u8D25\uFF1A${e instanceof Error ? e.message : e}`);
     } finally {
       this.busy = false;
       btn.setDisabled(false).setButtonText("\u7FFB\u8BD1");
@@ -7057,12 +10793,11 @@ var TranslateModal = class extends import_obsidian10.Modal {
       return;
     }
     const pickTheme = themePicker(this.plugin, addArea, names);
-    new import_obsidian10.Setting(addArea).addButton(
+    new import_obsidian11.Setting(addArea).addButton(
       (b) => b.setButtonText("\u52A0\u5165\u6240\u9009").setCta().onClick(async () => {
-        var _a;
         const picked = rows.filter((r) => r.input.checked).map((r) => r.term);
         if (!picked.length) {
-          new import_obsidian10.Notice("\u5148\u52FE\u9009\u8981\u6536\u5F55\u7684\u8BCD/\u77ED\u8BED");
+          new import_obsidian11.Notice("\u5148\u52FE\u9009\u8981\u6536\u5F55\u7684\u8BCD/\u77ED\u8BED");
           return;
         }
         b.setDisabled(true).setButtonText("\u52A0\u5165\u4E2D\u2026");
@@ -7080,15 +10815,15 @@ var TranslateModal = class extends import_obsidian10.Modal {
             else if (r === "merged") merged++;
           });
         } catch (e) {
-          new import_obsidian10.Notice(`\u6536\u5F55\u5931\u8D25\uFF1A${e instanceof Error ? e.message : e}`);
+          new import_obsidian11.Notice(`\u6536\u5F55\u5931\u8D25\uFF1A${e instanceof Error ? e.message : e}`);
           return;
         } finally {
           b.setDisabled(false).setButtonText("\u52A0\u5165\u6240\u9009");
         }
         this.plugin.lastAddTheme = theme;
         void this.plugin.enrichWordsInBackground(picked.map((t) => t.en), { theme });
-        new import_obsidian10.Notice(`\u5DF2\u6536\u5F55 ${created} \u8BCD${merged ? `\u3001${merged} \u8BCD\u5E76\u5165\u4E3B\u9898` : ""}\uFF0C\u4F8B\u53E5\u4E3A\u7FFB\u8BD1\u53E5`);
-        (_a = this.onDone) == null ? void 0 : _a.call(this);
+        new import_obsidian11.Notice(`\u5DF2\u6536\u5F55 ${created} \u8BCD${merged ? `\u3001${merged} \u8BCD\u5E76\u5165\u4E3B\u9898` : ""}\uFF0C\u4F8B\u53E5\u4E3A\u7FFB\u8BD1\u53E5`);
+        this.onDone?.();
       })
     );
   }
@@ -7096,7 +10831,7 @@ var TranslateModal = class extends import_obsidian10.Modal {
     this.contentEl.empty();
   }
 };
-var ExpandModal = class extends import_obsidian10.Modal {
+var ExpandModal = class extends import_obsidian11.Modal {
   constructor(app, plugin, theme, onDone, initialTab = "llm", autoRun = false) {
     super(app);
     this.plugin = plugin;
@@ -7122,12 +10857,11 @@ var ExpandModal = class extends import_obsidian10.Modal {
     });
   }
   onClose() {
-    var _a;
-    (_a = this.comp) == null ? void 0 : _a.$destroy();
+    this.comp?.$destroy();
     this.contentEl.empty();
   }
 };
-var BackfillExamplesModal = class extends import_obsidian10.Modal {
+var BackfillExamplesModal = class extends import_obsidian11.Modal {
   constructor(app, plugin, onDone) {
     super(app);
     this.plugin = plugin;
@@ -7177,11 +10911,11 @@ var BackfillExamplesModal = class extends import_obsidian10.Modal {
       }
       const eff = limit > 0 ? Math.min(limit, missing.length) : missing.length;
       summaryEl.setText(`\u672C\u6B21\u5C06\u4E3A ${eff} \u4E2A\u8BCD\u751F\u6210\u4F8B\u53E5\uFF08\u4F8B\u53E5\u6700\u5C11\u7684\u8BCD\u4F18\u5148\uFF0C\u7EA6 ${Math.ceil(eff / 10)} \u6279\u8BF7\u6C42\uFF09`);
-      button == null ? void 0 : button.setDisabled(busy || missing.length === 0);
+      button?.setDisabled(busy || missing.length === 0);
       return missing.length;
     };
     const missing0 = renderStats();
-    new import_obsidian10.Setting(contentEl).setName("\u76EE\u6807\u4F8B\u53E5\u6570").setDesc("\u6BCF\u4E2A\u8BCD\u8865\u5230\u51E0\u6761\uFF08\u53EA\u5F71\u54CD\u672C\u6B21\uFF0C\u4E0D\u4FEE\u6539\u9ED8\u8BA4\u8BBE\u7F6E\uFF09").addDropdown((d) => {
+    new import_obsidian11.Setting(contentEl).setName("\u76EE\u6807\u4F8B\u53E5\u6570").setDesc("\u6BCF\u4E2A\u8BCD\u8865\u5230\u51E0\u6761\uFF08\u53EA\u5F71\u54CD\u672C\u6B21\uFF0C\u4E0D\u4FEE\u6539\u9ED8\u8BA4\u8BBE\u7F6E\uFF09").addDropdown((d) => {
       wantDrop = d;
       d.addOptions({ "1": "1 \u6761", "2": "2 \u6761", "3": "3 \u6761", "5": "5 \u6761" });
       d.setValue(String(want));
@@ -7190,7 +10924,7 @@ var BackfillExamplesModal = class extends import_obsidian10.Modal {
         renderStats();
       });
     });
-    new import_obsidian10.Setting(contentEl).setName("\u672C\u6B21\u6700\u591A\u8865\u8BCD\u6570").setDesc(`\u7559\u7A7A\u6216 0 \u8868\u793A\u5168\u90E8\uFF08\u5F53\u524D\u9700\u8865 ${missing0} \u8BCD\uFF09\uFF1B\u5927\u8BCD\u5E93\u5EFA\u8BAE\u5206\u6279`).addText((t) => {
+    new import_obsidian11.Setting(contentEl).setName("\u672C\u6B21\u6700\u591A\u8865\u8BCD\u6570").setDesc(`\u7559\u7A7A\u6216 0 \u8868\u793A\u5168\u90E8\uFF08\u5F53\u524D\u9700\u8865 ${missing0} \u8BCD\uFF09\uFF1B\u5927\u8BCD\u5E93\u5EFA\u8BAE\u5206\u6279`).addText((t) => {
       limitInput = t;
       t.inputEl.type = "number";
       t.inputEl.min = "0";
@@ -7198,22 +10932,21 @@ var BackfillExamplesModal = class extends import_obsidian10.Modal {
       t.setValue("20");
       t.onChange((v) => limit = Math.max(0, Number(v) || 0));
     });
-    const footer = new import_obsidian10.Setting(contentEl);
+    const footer = new import_obsidian11.Setting(contentEl);
     const setBusy = (b) => {
-      button == null ? void 0 : button.setDisabled(b);
-      if (b) button == null ? void 0 : button.setButtonText("\u751F\u6210\u4E2D\u2026");
-      else button == null ? void 0 : button.setButtonText("\u5F00\u59CB\u751F\u6210");
-      if (!b) cancelBtn == null ? void 0 : cancelBtn.setButtonText("\u53D6\u6D88");
-      wantDrop == null ? void 0 : wantDrop.setDisabled(b);
-      limitInput == null ? void 0 : limitInput.setDisabled(b);
+      button?.setDisabled(b);
+      if (b) button?.setButtonText("\u751F\u6210\u4E2D\u2026");
+      else button?.setButtonText("\u5F00\u59CB\u751F\u6210");
+      if (!b) cancelBtn?.setButtonText("\u53D6\u6D88");
+      wantDrop?.setDisabled(b);
+      limitInput?.setDisabled(b);
     };
     const start = async () => {
-      var _a;
       if (busy) return;
       busy = true;
       this.cancelled = false;
       setBusy(true);
-      cancelBtn == null ? void 0 : cancelBtn.setButtonText("\u505C\u6B62");
+      cancelBtn?.setButtonText("\u505C\u6B62");
       progWrap.addClass("is-active");
       progFill.style.width = "0%";
       try {
@@ -7221,15 +10954,15 @@ var BackfillExamplesModal = class extends import_obsidian10.Modal {
           want,
           limit || void 0,
           (done, total, extra) => {
-            const text2 = `\u751F\u6210\u4E2D ${done}/${total}\u2026${extra != null ? extra : ""}`;
+            const text2 = `\u751F\u6210\u4E2D ${done}/${total}\u2026${extra ?? ""}`;
             summaryEl.setText(text2);
-            button == null ? void 0 : button.setButtonText(text2);
+            button?.setButtonText(text2);
             progFill.style.width = `${total > 0 ? Math.round(done / total * 100) : 0}%`;
           },
           () => this.cancelled
         );
       } catch (e) {
-        new import_obsidian10.Notice("\u8865\u4F8B\u53E5\u5931\u8D25\uFF1A" + ((_a = e.message) != null ? _a : e));
+        new import_obsidian11.Notice("\u8865\u4F8B\u53E5\u5931\u8D25\uFF1A" + (e.message ?? e));
         progWrap.removeClass("is-active");
         setBusy(false);
         busy = false;
@@ -7244,7 +10977,7 @@ var BackfillExamplesModal = class extends import_obsidian10.Modal {
       return b.setButtonText("\u53D6\u6D88").onClick(() => {
         if (busy) {
           this.cancelled = true;
-          cancelBtn == null ? void 0 : cancelBtn.setDisabled(true).setButtonText("\u505C\u6B62\u4E2D\u2026");
+          cancelBtn?.setDisabled(true).setButtonText("\u505C\u6B62\u4E2D\u2026");
         } else {
           this.close();
         }
@@ -7260,7 +10993,7 @@ var BackfillExamplesModal = class extends import_obsidian10.Modal {
     this.contentEl.empty();
   }
 };
-var DataBackfillModal = class extends import_obsidian10.Modal {
+var DataBackfillModal = class extends import_obsidian11.Modal {
   constructor(app, plugin, onDone) {
     super(app);
     this.plugin = plugin;
@@ -7278,7 +11011,7 @@ var DataBackfillModal = class extends import_obsidian10.Modal {
         `\u5F53\u524D\u7F3A\u53E3\uFF1A\u4F8B\u53E5 ${gaps.ex} \u8BCD \xB7 \u4E49\u9879 ${gaps.senses} \u8BCD \xB7 \u4F8B\u53E5\u7FFB\u8BD1 ${gaps.zh} \u53E5 \xB7 \u540C\u53CD\u4E49 ${gaps.rel} \u8BCD \xB7 \u91CA\u4E49\u97F3\u6807 ${gaps.trans} \u8BCD`
       );
       const gap = (btn, n) => {
-        btn == null ? void 0 : btn.setDisabled(n === 0);
+        btn?.setDisabled(n === 0);
       };
       gap(btns.ex, gaps.ex);
       gap(btns.senses, gaps.senses);
@@ -7290,7 +11023,7 @@ var DataBackfillModal = class extends import_obsidian10.Modal {
     });
     const btns = {};
     const row = (key, name, desc, run2) => {
-      new import_obsidian10.Setting(this.contentEl).setName(name).setDesc(desc).addButton((b) => {
+      new import_obsidian11.Setting(this.contentEl).setName(name).setDesc(desc).addButton((b) => {
         btns[key] = b;
         return b.setButtonText("\u6267\u884C").onClick(() => {
           this.close();
@@ -7333,7 +11066,7 @@ var DataBackfillModal = class extends import_obsidian10.Modal {
     this.contentEl.empty();
   }
 };
-var WordListModal = class extends import_obsidian10.Modal {
+var WordListModal = class extends import_obsidian11.Modal {
   // false = 状态序（难词>待复习>…，默认），true = 字母序
   constructor(app, plugin, theme) {
     super(app);
@@ -7358,10 +11091,7 @@ var WordListModal = class extends import_obsidian10.Modal {
     contentEl.empty();
     this.wordsAll = this.plugin.words.byThemeRaw(this.theme);
     const words = this.wordsAll;
-    const nIgnored = words.filter((w) => {
-      var _a;
-      return (_a = this.plugin.db.ignored) == null ? void 0 : _a[w.word];
-    }).length;
+    const nIgnored = words.filter((w) => this.plugin.db.ignored?.[w.word]).length;
     const title = nIgnored ? `${this.theme} \xB7 ${words.length} \u8BCD\uFF08\u5FFD\u7565 ${nIgnored}\uFF0C\u4E0D\u8FDB\u5B66\u4E60\uFF09` : `${this.theme} \xB7 ${words.length} \u8BCD`;
     this.headEl = contentEl.createEl("h3", { text: title });
     const actions = contentEl.createDiv("el-wordlist-actions");
@@ -7371,10 +11101,9 @@ var WordListModal = class extends import_obsidian10.Modal {
       attr: { title: "\u5207\u6362\u6392\u5E8F\uFF1A\u72B6\u6001\u5E8F\uFF08\u96BE\u8BCD>\u5F85\u590D\u4E60>\u5B66\u4E60\u4E2D>\u672A\u5B66>\u5DF2\u638C\u63E1\uFF09/ \u5B57\u6BCD\u5E8F" }
     });
     sortBtn.addEventListener("click", () => {
-      var _a, _b;
       this.sortAlpha = !this.sortAlpha;
       sortBtn.textContent = this.sortAlpha ? "\u{1F524} \u5B57\u6BCD\u5E8F" : "\u2B50 \u72B6\u6001\u5E8F";
-      const q = ((_b = (_a = this.searchEl) == null ? void 0 : _a.value) != null ? _b : "").trim().toLowerCase();
+      const q = (this.searchEl?.value ?? "").trim().toLowerCase();
       if (this.listEl) this.renderRows(this.listEl, this.currentList(q), q);
     });
     const exportBtn = actions.createEl("button", {
@@ -7391,11 +11120,11 @@ var WordListModal = class extends import_obsidian10.Modal {
         await mkdirp(this.plugin.app, dir);
         const path = `${dir}/${sanitizeFilename(this.theme)}-${fmtDate(Date.now())}.txt`;
         const existing = this.plugin.app.vault.getAbstractFileByPath(path);
-        if (existing instanceof import_obsidian10.TFile) await this.plugin.app.vault.modify(existing, text2);
+        if (existing instanceof import_obsidian11.TFile) await this.plugin.app.vault.modify(existing, text2);
         else await this.plugin.app.vault.create(path, text2);
-        new import_obsidian10.Notice(`\u5DF2\u590D\u5236 ${wordsAll.length} \u4E2A\u8BCD\uFF0C\u5E76\u5B58\u6863 ${path}`);
+        new import_obsidian11.Notice(`\u5DF2\u590D\u5236 ${wordsAll.length} \u4E2A\u8BCD\uFF0C\u5E76\u5B58\u6863 ${path}`);
       } catch (e) {
-        new import_obsidian10.Notice(`\u5BFC\u51FA\u5931\u8D25\uFF1A${e instanceof Error ? e.message : String(e)}`);
+        new import_obsidian11.Notice(`\u5BFC\u51FA\u5931\u8D25\uFF1A${e instanceof Error ? e.message : String(e)}`);
       }
     });
     const learnBtn = actions.createEl("button", {
@@ -7424,10 +11153,9 @@ var WordListModal = class extends import_obsidian10.Modal {
     };
     search.addEventListener("input", renderList);
     renderList();
-    if (!import_obsidian10.Platform.isMobile) setTimeout(() => search.focus(), 50);
+    if (!import_obsidian11.Platform.isMobile) setTimeout(() => search.focus(), 50);
   }
   renderRows(wrap, words, q) {
-    var _a, _b, _c;
     wrap.empty();
     const table = wrap.createEl("table", { cls: "el-wordlist" });
     const thead = table.createEl("thead");
@@ -7437,22 +11165,21 @@ var WordListModal = class extends import_obsidian10.Modal {
     const tbody = table.createEl("tbody");
     for (const w of words) {
       const st = wordStatus(w.word, this.plugin.db.progress, this.plugin.db.ignored);
-      const tr = tbody.createEl("tr", { cls: `el-wordlist-row st-${st}` });
-      tr.addEventListener("click", () => {
+      const tr2 = tbody.createEl("tr", { cls: `el-wordlist-row st-${st}` });
+      tr2.addEventListener("click", () => {
         this.plugin.openWordCard(w);
       });
-      const tdSt = tr.createEl("td", { cls: "el-wordlist-st" });
+      const tdSt = tr2.createEl("td", { cls: "el-wordlist-st" });
       const ico = STATUS_ICON[st];
       if (ico) tdSt.createSpan({ text: ico, cls: "el-word-ico" });
       tdSt.createSpan({ text: STATUS_LABEL[st] });
-      const tdWord = tr.createEl("td", { cls: "el-wordlist-word" });
+      const tdWord = tr2.createEl("td", { cls: "el-wordlist-word" });
       tdWord.setText(w.word);
       if (isPhrase(w.word)) tdWord.createSpan({ text: "\u77ED\u8BED", cls: "el-chip" });
-      tr.createEl("td", { cls: "el-wordlist-phon", text: (_a = w.phonetic) != null ? _a : "" });
-      const tdAudio = tr.createEl("td", { cls: "el-wordlist-audio" });
+      tr2.createEl("td", { cls: "el-wordlist-phon", text: w.phonetic ?? "" });
+      const tdAudio = tr2.createEl("td", { cls: "el-wordlist-audio" });
       const ttsBtn = tdAudio.createEl("button", {
         cls: "el-wordlist-btn",
-        text: "\u{1F50A}",
         attr: { title: "\u53D1\u97F3" }
       });
       void this.plugin.audio.badge(ttsBtn, w.word);
@@ -7461,12 +11188,12 @@ var WordListModal = class extends import_obsidian10.Modal {
         this.plugin.speakWord(w.word);
         window.setTimeout(() => void this.plugin.audio.badge(ttsBtn, w.word), 1200);
       });
-      tr.createEl("td", { cls: "el-wordlist-gloss", text: w.translation.replace(/\n/g, "\uFF1B") });
-      const tdOp = tr.createEl("td", { cls: "el-wordlist-op" });
+      tr2.createEl("td", { cls: "el-wordlist-gloss", text: w.translation.replace(/\n/g, "\uFF1B") });
+      const tdOp = tr2.createEl("td", { cls: "el-wordlist-op" });
       tdOp.createEl("button", {
         cls: "el-wordlist-btn",
-        text: ((_b = this.plugin.db.ignored) == null ? void 0 : _b[w.word]) ? "\u6062\u590D" : "\u5FFD\u7565",
-        attr: { title: ((_c = this.plugin.db.ignored) == null ? void 0 : _c[w.word]) ? "\u53D6\u6D88\u5FFD\u7565\uFF0C\u91CD\u65B0\u8FDB\u5B66\u4E60\u4F1A\u8BDD" : "\u5FFD\u7565\u8BE5\u8BCD\uFF1A\u4E0D\u8FDB\u5B66\u4E60\u4F1A\u8BDD\u3001\u4E0D\u8BA1\u5165\u7EDF\u8BA1" }
+        text: this.plugin.db.ignored?.[w.word] ? "\u6062\u590D" : "\u5FFD\u7565",
+        attr: { title: this.plugin.db.ignored?.[w.word] ? "\u53D6\u6D88\u5FFD\u7565\uFF0C\u91CD\u65B0\u8FDB\u5B66\u4E60\u4F1A\u8BDD" : "\u5FFD\u7565\u8BE5\u8BCD\uFF1A\u4E0D\u8FDB\u5B66\u4E60\u4F1A\u8BDD\u3001\u4E0D\u8BA1\u5165\u7EDF\u8BA1" }
       }).addEventListener("click", (e) => {
         e.stopPropagation();
         this.toggleIgnored(w.word);
@@ -7480,25 +11207,22 @@ var WordListModal = class extends import_obsidian10.Modal {
     }
   }
   toggleIgnored(word) {
-    var _a, _b, _c, _d;
-    const ignored = (_b = (_a = this.plugin.db).ignored) != null ? _b : _a.ignored = {};
+    var _a2;
+    const ignored = (_a2 = this.plugin.db).ignored ?? (_a2.ignored = {});
     if (ignored[word]) delete ignored[word];
     else ignored[word] = true;
     this.plugin.store.touch();
     this.plugin.refreshStatusBar();
-    const nIgnored = this.wordsAll.filter((w) => {
-      var _a2;
-      return (_a2 = this.plugin.db.ignored) == null ? void 0 : _a2[w.word];
-    }).length;
+    const nIgnored = this.wordsAll.filter((w) => this.plugin.db.ignored?.[w.word]).length;
     this.headEl.textContent = nIgnored ? `${this.theme} \xB7 ${this.wordsAll.length} \u8BCD\uFF08\u5FFD\u7565 ${nIgnored}\uFF0C\u4E0D\u8FDB\u5B66\u4E60\uFF09` : `${this.theme} \xB7 ${this.wordsAll.length} \u8BCD`;
-    const q = ((_d = (_c = this.searchEl) == null ? void 0 : _c.value) != null ? _d : "").trim().toLowerCase();
+    const q = (this.searchEl?.value ?? "").trim().toLowerCase();
     this.renderRows(this.listEl, this.currentList(q), q);
   }
   onClose() {
     this.contentEl.empty();
   }
 };
-var MemoModal = class extends import_obsidian10.Modal {
+var MemoModal = class extends import_obsidian11.Modal {
   constructor(app, plugin, wordDoc, onSaved) {
     super(app);
     this.plugin = plugin;
@@ -7506,7 +11230,6 @@ var MemoModal = class extends import_obsidian10.Modal {
     this.onSaved = onSaved;
   }
   onOpen() {
-    var _a;
     tagModal(this.modalEl, "Memo");
     const { contentEl } = this;
     const d = this.wordDoc;
@@ -7514,64 +11237,60 @@ var MemoModal = class extends import_obsidian10.Modal {
       contentEl.createEl("h3", { text: `\u52A9\u8BB0 \xB7 ${d.word}` }),
       "\u5199\u4E0B\u4F60\u81EA\u5DF1\u7684\u8BB0\u5FC6\u7EBF\u7D22\uFF1A\u8BCD\u6839\u8BCD\u7F00\u3001\u8C10\u97F3\u8054\u60F3\u3001\u76F8\u8FD1\u8BCD\u5BF9\u6BD4\u2026\u2026\u590D\u4E60\u65F6\u663E\u793A\u5728\u8BCD\u5361\u4E0A\u3002"
     );
-    const ta = contentEl.createEl("textarea", {
+    const ta2 = contentEl.createEl("textarea", {
       cls: "el-memo-in",
       attr: { placeholder: "\u5982\uFF1Abene- \u597D + fit \u505A \u2192 \u597D\u5904", rows: "5" }
     });
-    ta.value = (_a = d.memo) != null ? _a : "";
-    setTimeout(() => ta.focus(), 50);
+    ta2.value = d.memo ?? "";
+    setTimeout(() => ta2.focus(), 50);
     const sugBox = contentEl.createDiv("el-memo-sugs");
     const applySug = (text2) => {
-      const cur = ta.value.trim();
-      ta.value = cur ? `${cur}
+      const cur = ta2.value.trim();
+      ta2.value = cur ? `${cur}
 ${text2}` : text2;
-      ta.focus();
+      ta2.focus();
     };
     const addSug = (text2) => {
       sugBox.createDiv({ cls: "el-memo-sug", text: text2, attr: { title: "\u70B9\u51FB\u586B\u5165\uFF0C\u53EF\u518D\u7F16\u8F91" } }).addEventListener("click", () => applySug(text2));
     };
     void this.plugin.dict.lookup(d.word).then((e) => {
-      var _a2;
-      const rem = (_a2 = e == null ? void 0 : e.rem) == null ? void 0 : _a2.trim();
+      const rem = e?.rem?.trim();
       if (rem && !sugBox.childNodes.length) addSug(`\u{1F4D6} ${rem}`);
     }).catch(() => {
     });
     const btns = contentEl.createDiv("el-memo-btns");
-    new import_obsidian10.ButtonComponent(btns).setButtonText("\u6E05\u7A7A\u52A9\u8BB0").setClass("el-memo-clear").onClick(async () => {
-      var _a2;
+    new import_obsidian11.ButtonComponent(btns).setButtonText("\u6E05\u7A7A\u52A9\u8BB0").setClass("el-memo-clear").onClick(async () => {
       await this.plugin.words.setMemo(d, "");
-      (_a2 = this.onSaved) == null ? void 0 : _a2.call(this);
+      this.onSaved?.();
       this.close();
     });
-    const ai = new import_obsidian10.ButtonComponent(btns).setButtonText("\u2728 AI \u52A9\u8BB0").setClass("el-memo-ai");
+    const ai = new import_obsidian11.ButtonComponent(btns).setButtonText("\u2728 AI \u52A9\u8BB0").setClass("el-memo-ai");
     ai.buttonEl.addEventListener("click", async () => {
-      var _a2, _b;
       if (!llmReady(this.plugin.llmCfg)) {
-        new import_obsidian10.Notice("\u5148\u5728\u8BBE\u7F6E\u91CC\u914D\u7F6E AI\uFF08LLM\uFF09\u518D\u751F\u6210\u52A9\u8BB0");
+        new import_obsidian11.Notice("\u5148\u5728\u8BBE\u7F6E\u91CC\u914D\u7F6E AI\uFF08LLM\uFF09\u518D\u751F\u6210\u52A9\u8BB0");
         return;
       }
       ai.setButtonText("\u751F\u6210\u4E2D\u2026").setDisabled(true);
       sugBox.empty();
       try {
-        const sugs = await llmMemoSuggestions(this.plugin.llmCfg, d.word, (_b = (_a2 = d.senses) == null ? void 0 : _a2[0]) != null ? _b : d.translation);
-        if (!sugs.length) new import_obsidian10.Notice("AI \u6CA1\u7ED9\u51FA\u52A9\u8BB0\uFF0C\u53EF\u91CD\u8BD5\u6216\u6362\u4E2A\u6A21\u578B");
+        const sugs = await llmMemoSuggestions(this.plugin.llmCfg, d.word, d.senses?.[0] ?? d.translation);
+        if (!sugs.length) new import_obsidian11.Notice("AI \u6CA1\u7ED9\u51FA\u52A9\u8BB0\uFF0C\u53EF\u91CD\u8BD5\u6216\u6362\u4E2A\u6A21\u578B");
         for (const s of sugs) addSug(s);
         if (sugs.length) applySug(sugs[0]);
       } catch (e) {
-        new import_obsidian10.Notice(`AI \u52A9\u8BB0\u751F\u6210\u5931\u8D25\uFF1A${e instanceof Error ? e.message : String(e)}`);
+        new import_obsidian11.Notice(`AI \u52A9\u8BB0\u751F\u6210\u5931\u8D25\uFF1A${e instanceof Error ? e.message : String(e)}`);
       } finally {
         ai.setButtonText("\u2728 AI \u52A9\u8BB0").setDisabled(false);
       }
     });
-    const save = new import_obsidian10.ButtonComponent(btns).setButtonText("\u4FDD\u5B58").setCta().setClass("el-memo-save");
+    const save = new import_obsidian11.ButtonComponent(btns).setButtonText("\u4FDD\u5B58").setCta().setClass("el-memo-save");
     save.buttonEl.addEventListener("click", async () => {
-      var _a2;
-      await this.plugin.words.setMemo(d, ta.value);
-      new import_obsidian10.Notice("\u52A9\u8BB0\u5DF2\u4FDD\u5B58");
-      (_a2 = this.onSaved) == null ? void 0 : _a2.call(this);
+      await this.plugin.words.setMemo(d, ta2.value);
+      new import_obsidian11.Notice("\u52A9\u8BB0\u5DF2\u4FDD\u5B58");
+      this.onSaved?.();
       this.close();
     });
-    ta.addEventListener("keydown", (e) => {
+    ta2.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) save.buttonEl.click();
     });
   }
@@ -7604,7 +11323,7 @@ var KEY_GUIDES = {
     keyPrefix: "sk-"
   }
 };
-var KeyGuideModal = class extends import_obsidian10.Modal {
+var KeyGuideModal = class extends import_obsidian11.Modal {
   constructor(app, provider, onPick) {
     super(app);
     this.provider = provider;
@@ -7618,27 +11337,27 @@ var KeyGuideModal = class extends import_obsidian10.Modal {
     c.addClass("el-keyguide");
     c.createEl("p", { text: g.steps, cls: "el-keyguide-steps" });
     if (g.note) c.createEl("p", { text: g.note, cls: "el-muted" });
-    new import_obsidian10.ButtonComponent(c).setButtonText(g.openText).setCta().onClick(() => {
+    new import_obsidian11.ButtonComponent(c).setButtonText(g.openText).setCta().onClick(() => {
       window.open(g.url);
     });
     const row = c.createDiv("el-keyguide-row");
-    const input = new import_obsidian10.TextComponent(row);
+    const input = new import_obsidian11.TextComponent(row);
     input.setPlaceholder(g.keyPrefix ? `\u7C98\u8D34 ${g.keyPrefix} \u5F00\u5934\u7684\u5BC6\u94A5` : "\u7C98\u8D34 API \u5BC6\u94A5");
-    new import_obsidian10.ButtonComponent(row).setButtonText("\u7C98\u8D34").onClick(async () => {
+    new import_obsidian11.ButtonComponent(row).setButtonText("\u7C98\u8D34").onClick(async () => {
       try {
         const t = (await navigator.clipboard.readText()).trim();
         if (t) input.inputEl.value = t;
-        else new import_obsidian10.Notice("\u526A\u8D34\u677F\u662F\u7A7A\u7684\uFF0C\u5148\u53BB\u7F51\u9875\u91CC\u590D\u5236\u5BC6\u94A5");
-      } catch (e) {
-        new import_obsidian10.Notice("\u65E0\u6CD5\u8BFB\u53D6\u526A\u8D34\u677F\uFF0C\u8BF7\u5728\u8F93\u5165\u6846\u91CC\u624B\u52A8\u7C98\u8D34");
+        else new import_obsidian11.Notice("\u526A\u8D34\u677F\u662F\u7A7A\u7684\uFF0C\u5148\u53BB\u7F51\u9875\u91CC\u590D\u5236\u5BC6\u94A5");
+      } catch {
+        new import_obsidian11.Notice("\u65E0\u6CD5\u8BFB\u53D6\u526A\u8D34\u677F\uFF0C\u8BF7\u5728\u8F93\u5165\u6846\u91CC\u624B\u52A8\u7C98\u8D34");
       }
     });
     const btns = c.createDiv("el-confirm-btns");
-    new import_obsidian10.ButtonComponent(btns).setButtonText("\u53D6\u6D88").onClick(() => this.close());
-    new import_obsidian10.ButtonComponent(btns).setButtonText("\u4FDD\u5B58\u5E76\u4F7F\u7528").setCta().onClick(() => {
+    new import_obsidian11.ButtonComponent(btns).setButtonText("\u53D6\u6D88").onClick(() => this.close());
+    new import_obsidian11.ButtonComponent(btns).setButtonText("\u4FDD\u5B58\u5E76\u4F7F\u7528").setCta().onClick(() => {
       const key = input.inputEl.value.trim();
       if (g.keyPrefix ? !key.startsWith(g.keyPrefix) : key.length < 16) {
-        new import_obsidian10.Notice(g.keyPrefix ? `\u5BC6\u94A5\u5E94\u4EE5 ${g.keyPrefix} \u5F00\u5934\uFF0C\u8BF7\u68C0\u67E5\u662F\u5426\u590D\u5236\u5B8C\u6574` : "\u5BC6\u94A5\u770B\u8D77\u6765\u4E0D\u5B8C\u6574\uFF0C\u8BF7\u91CD\u65B0\u590D\u5236");
+        new import_obsidian11.Notice(g.keyPrefix ? `\u5BC6\u94A5\u5E94\u4EE5 ${g.keyPrefix} \u5F00\u5934\uFF0C\u8BF7\u68C0\u67E5\u662F\u5426\u590D\u5236\u5B8C\u6574` : "\u5BC6\u94A5\u770B\u8D77\u6765\u4E0D\u5B8C\u6574\uFF0C\u8BF7\u91CD\u65B0\u590D\u5236");
         return;
       }
       this.onPick(key);
@@ -7655,7 +11374,7 @@ var AI_SETUP_OPTIONS = [
   { id: "deepseek", label: "DeepSeek" },
   { id: "ollama", label: "\u672C\u5730 Ollama\uFF08\u5DF2\u5B89\u88C5\uFF09" }
 ];
-var AiSetupModal = class extends import_obsidian10.Modal {
+var AiSetupModal = class extends import_obsidian11.Modal {
   constructor(app, plugin, onDone) {
     super(app);
     this.plugin = plugin;
@@ -7689,40 +11408,38 @@ var AiSetupModal = class extends import_obsidian10.Modal {
     this.detailEl = c.createDiv("el-aisetup-detail");
     this.renderDetail();
     const btns = c.createDiv("el-confirm-btns");
-    new import_obsidian10.ButtonComponent(btns).setButtonText("\u6682\u4E0D\u914D\u7F6E").onClick(() => {
-      var _a;
+    new import_obsidian11.ButtonComponent(btns).setButtonText("\u6682\u4E0D\u914D\u7F6E").onClick(() => {
       this.plugin.db.settings.aiGuideDone = true;
       this.plugin.store.touch();
-      (_a = this.onDone) == null ? void 0 : _a.call(this);
+      this.onDone?.();
       this.close();
     });
-    const save = new import_obsidian10.ButtonComponent(btns).setButtonText("\u4FDD\u5B58\u5E76\u6D4B\u8BD5").setCta();
+    const save = new import_obsidian11.ButtonComponent(btns).setButtonText("\u4FDD\u5B58\u5E76\u6D4B\u8BD5").setCta();
     save.buttonEl.addEventListener("click", async () => {
-      var _a;
       const p = this.picked;
       const key = this.keyVal.trim();
       if (p !== "ollama") {
         const g = KEY_GUIDES[p];
         if (g.keyPrefix ? !key.startsWith(g.keyPrefix) : key.length < 16) {
-          new import_obsidian10.Notice(g.keyPrefix ? `\u5BC6\u94A5\u5E94\u4EE5 ${g.keyPrefix} \u5F00\u5934\uFF0C\u8BF7\u68C0\u67E5\u662F\u5426\u590D\u5236\u5B8C\u6574` : "\u5BC6\u94A5\u770B\u8D77\u6765\u4E0D\u5B8C\u6574\uFF0C\u8BF7\u91CD\u65B0\u590D\u5236");
+          new import_obsidian11.Notice(g.keyPrefix ? `\u5BC6\u94A5\u5E94\u4EE5 ${g.keyPrefix} \u5F00\u5934\uFF0C\u8BF7\u68C0\u67E5\u662F\u5426\u590D\u5236\u5B8C\u6574` : "\u5BC6\u94A5\u770B\u8D77\u6765\u4E0D\u5B8C\u6574\uFF0C\u8BF7\u91CD\u65B0\u590D\u5236");
           return;
         }
       }
       const s = this.plugin.db.settings;
       const preset = { baseUrl: "", apiKey: "", model: "", ...LLM_PRESETS[p] };
       s.llmSaved = { ...s.llmSaved, [p]: { ...preset, apiKey: key } };
-      if (import_obsidian10.Platform.isMobile) s.llmMobileProvider = p;
+      if (import_obsidian11.Platform.isMobile) s.llmMobileProvider = p;
       else s.llmProvider = p;
       s.aiGuideDone = true;
       this.plugin.store.touch();
-      (_a = this.onDone) == null ? void 0 : _a.call(this);
+      this.onDone?.();
       this.close();
-      new import_obsidian10.Notice("\u6B63\u5728\u6D4B\u8BD5\u8FDE\u63A5\u2026");
+      new import_obsidian11.Notice("\u6B63\u5728\u6D4B\u8BD5\u8FDE\u63A5\u2026");
       try {
         await llmTest(this.plugin.llmCfg);
-        new import_obsidian10.Notice("\u8FDE\u63A5\u6210\u529F \u2713\uFF0CAI \u4F8B\u53E5/\u6269\u8BCD/\u52A9\u8BB0\u5DF2\u53EF\u7528");
+        new import_obsidian11.Notice("\u8FDE\u63A5\u6210\u529F \u2713\uFF0CAI \u4F8B\u53E5/\u6269\u8BCD/\u52A9\u8BB0\u5DF2\u53EF\u7528");
       } catch (e) {
-        new import_obsidian10.Notice(`\u914D\u7F6E\u5DF2\u4FDD\u5B58\uFF0C\u4F46\u8FDE\u63A5\u5931\u8D25\uFF1A${e instanceof Error ? e.message : String(e)}\uFF08\u53EF\u5230 \u8BBE\u7F6E \u2192 English Learn \u2192 AI \u6269\u8BCD \u4FEE\u6539\uFF09`, 1e4);
+        new import_obsidian11.Notice(`\u914D\u7F6E\u5DF2\u4FDD\u5B58\uFF0C\u4F46\u8FDE\u63A5\u5931\u8D25\uFF1A${e instanceof Error ? e.message : String(e)}\uFF08\u53EF\u5230 \u8BBE\u7F6E \u2192 English Learn \u2192 AI \u6269\u8BCD \u4FEE\u6539\uFF09`, 1e4);
       }
     });
   }
@@ -7740,21 +11457,21 @@ var AiSetupModal = class extends import_obsidian10.Modal {
     const g = KEY_GUIDES[this.picked];
     d.createEl("p", { text: g.steps, cls: "el-keyguide-steps" });
     if (g.note) d.createEl("p", { text: g.note, cls: "el-muted" });
-    new import_obsidian10.ButtonComponent(d).setButtonText(g.openText).onClick(() => window.open(g.url));
+    new import_obsidian11.ButtonComponent(d).setButtonText(g.openText).onClick(() => window.open(g.url));
     const row = d.createDiv("el-keyguide-row");
-    const input = new import_obsidian10.TextComponent(row);
+    const input = new import_obsidian11.TextComponent(row);
     input.setPlaceholder(g.keyPrefix ? `\u7C98\u8D34 ${g.keyPrefix} \u5F00\u5934\u7684\u5BC6\u94A5` : "\u7C98\u8D34 API \u5BC6\u94A5");
     input.inputEl.value = this.keyVal;
     input.onChange((v) => this.keyVal = v);
-    new import_obsidian10.ButtonComponent(row).setButtonText("\u7C98\u8D34").onClick(async () => {
+    new import_obsidian11.ButtonComponent(row).setButtonText("\u7C98\u8D34").onClick(async () => {
       try {
         const t = (await navigator.clipboard.readText()).trim();
         if (t) {
           input.inputEl.value = t;
           this.keyVal = t;
-        } else new import_obsidian10.Notice("\u526A\u8D34\u677F\u662F\u7A7A\u7684\uFF0C\u5148\u53BB\u7F51\u9875\u91CC\u590D\u5236\u5BC6\u94A5");
-      } catch (e) {
-        new import_obsidian10.Notice("\u65E0\u6CD5\u8BFB\u53D6\u526A\u8D34\u677F\uFF0C\u8BF7\u5728\u8F93\u5165\u6846\u91CC\u624B\u52A8\u7C98\u8D34");
+        } else new import_obsidian11.Notice("\u526A\u8D34\u677F\u662F\u7A7A\u7684\uFF0C\u5148\u53BB\u7F51\u9875\u91CC\u590D\u5236\u5BC6\u94A5");
+      } catch {
+        new import_obsidian11.Notice("\u65E0\u6CD5\u8BFB\u53D6\u526A\u8D34\u677F\uFF0C\u8BF7\u5728\u8F93\u5165\u6846\u91CC\u624B\u52A8\u7C98\u8D34");
       }
     });
   }
@@ -8049,43 +11766,43 @@ var SenseList_default = SenseList;
 // src/components/WordFullCard.svelte
 function get_each_context3(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[73] = list[i];
-  child_ctx[75] = i;
+  child_ctx[76] = list[i];
+  child_ctx[78] = i;
   return child_ctx;
 }
 function get_each_context_12(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[76] = list[i];
+  child_ctx[79] = list[i];
   return child_ctx;
 }
 function get_each_context_2(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[79] = list[i][0];
-  child_ctx[80] = list[i][1];
+  child_ctx[82] = list[i][0];
+  child_ctx[83] = list[i][1];
   return child_ctx;
 }
 function get_each_context_3(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[79] = list[i][0];
-  child_ctx[83] = list[i][1];
+  child_ctx[82] = list[i][0];
+  child_ctx[86] = list[i][1];
   return child_ctx;
 }
 function get_each_context_4(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[79] = list[i];
+  child_ctx[82] = list[i];
   return child_ctx;
 }
 function get_each_context_5(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[79] = list[i];
+  child_ctx[82] = list[i];
   return child_ctx;
 }
 function get_each_context_6(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[83] = list[i];
+  child_ctx[86] = list[i];
   return child_ctx;
 }
-function create_if_block_26(ctx) {
+function create_if_block_25(ctx) {
   let span;
   return {
     c() {
@@ -8103,7 +11820,7 @@ function create_if_block_26(ctx) {
     }
   };
 }
-function create_if_block_25(ctx) {
+function create_if_block_24(ctx) {
   let div;
   let t_1_value = (
     /*doc*/
@@ -8132,57 +11849,57 @@ function create_if_block_25(ctx) {
     }
   };
 }
-function create_if_block_24(ctx) {
+function create_if_block_23(ctx) {
   let button0;
   let t0_value = (
     /*aiBusy*/
-    ctx[12] ? "\u23F3 \u8865\u4F8B\u53E5\u2026" : "\u270D\uFE0F \u8865\u4F8B\u53E5"
+    ctx[13] ? "\u23F3 \u8865\u4F8B\u53E5\u2026" : "\u270D\uFE0F \u8865\u4F8B\u53E5"
   );
   let t0;
-  let t1;
+  let t12;
   let button1;
   let t2_value = (
     /*sensesBusy*/
-    ctx[13] ? "\u23F3 \u66F4\u65B0\u4E49\u9879\u2026" : "\u{1F4D6} \u66F4\u65B0\u4E49\u9879"
+    ctx[14] ? "\u23F3 \u66F4\u65B0\u4E49\u9879\u2026" : "\u{1F4D6} \u66F4\u65B0\u4E49\u9879"
   );
-  let t2;
+  let t22;
   let mounted;
   let dispose;
   return {
     c() {
       button0 = element("button");
       t0 = text(t0_value);
-      t1 = space();
+      t12 = space();
       button1 = element("button");
-      t2 = text(t2_value);
+      t22 = text(t2_value);
       attr(button0, "class", "el-tts el-ai-btn");
       attr(button0, "title", "AI \u8865\u4F8B\u53E5\uFF08\u6BCF\u6B21 3 \u6761\uFF09");
       button0.disabled = /*aiBusy*/
-      ctx[12];
+      ctx[13];
       attr(button1, "class", "el-tts el-ai-btn");
       attr(button1, "title", "AI \u91CD\u65B0\u751F\u6210\u4E49\u9879\uFF08\u5E26\u8BCD\u6027\u591A\u4E49\uFF0C\u8986\u76D6\u73B0\u6709\uFF09");
       button1.disabled = /*sensesBusy*/
-      ctx[13];
+      ctx[14];
     },
     m(target, anchor) {
       insert(target, button0, anchor);
       append(button0, t0);
-      insert(target, t1, anchor);
+      insert(target, t12, anchor);
       insert(target, button1, anchor);
-      append(button1, t2);
+      append(button1, t22);
       if (!mounted) {
         dispose = [
           listen(
             button0,
             "click",
             /*click_handler*/
-            ctx[40]
+            ctx[41]
           ),
           listen(
             button1,
             "click",
             /*click_handler_1*/
-            ctx[41]
+            ctx[42]
           )
         ];
         mounted = true;
@@ -8190,64 +11907,30 @@ function create_if_block_24(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*aiBusy*/
-      4096 && t0_value !== (t0_value = /*aiBusy*/
-      ctx2[12] ? "\u23F3 \u8865\u4F8B\u53E5\u2026" : "\u270D\uFE0F \u8865\u4F8B\u53E5")) set_data(t0, t0_value);
+      8192 && t0_value !== (t0_value = /*aiBusy*/
+      ctx2[13] ? "\u23F3 \u8865\u4F8B\u53E5\u2026" : "\u270D\uFE0F \u8865\u4F8B\u53E5")) set_data(t0, t0_value);
       if (dirty[0] & /*aiBusy*/
-      4096) {
+      8192) {
         button0.disabled = /*aiBusy*/
-        ctx2[12];
+        ctx2[13];
       }
       if (dirty[0] & /*sensesBusy*/
-      8192 && t2_value !== (t2_value = /*sensesBusy*/
-      ctx2[13] ? "\u23F3 \u66F4\u65B0\u4E49\u9879\u2026" : "\u{1F4D6} \u66F4\u65B0\u4E49\u9879")) set_data(t2, t2_value);
+      16384 && t2_value !== (t2_value = /*sensesBusy*/
+      ctx2[14] ? "\u23F3 \u66F4\u65B0\u4E49\u9879\u2026" : "\u{1F4D6} \u66F4\u65B0\u4E49\u9879")) set_data(t22, t2_value);
       if (dirty[0] & /*sensesBusy*/
-      8192) {
+      16384) {
         button1.disabled = /*sensesBusy*/
-        ctx2[13];
+        ctx2[14];
       }
     },
     d(detaching) {
       if (detaching) {
         detach(button0);
-        detach(t1);
+        detach(t12);
         detach(button1);
       }
       mounted = false;
       run_all(dispose);
-    }
-  };
-}
-function create_else_block_4(ctx) {
-  let t_1;
-  return {
-    c() {
-      t_1 = text("\u{1F50A}");
-    },
-    m(target, anchor) {
-      insert(target, t_1, anchor);
-    },
-    d(detaching) {
-      if (detaching) {
-        detach(t_1);
-      }
-    }
-  };
-}
-function create_if_block_23(ctx) {
-  let span;
-  return {
-    c() {
-      span = element("span");
-      span.textContent = "\u{1F464}";
-      attr(span, "class", "el-ico-human");
-    },
-    m(target, anchor) {
-      insert(target, span, anchor);
-    },
-    d(detaching) {
-      if (detaching) {
-        detach(span);
-      }
     }
   };
 }
@@ -8289,8 +11972,8 @@ function create_if_block_22(ctx) {
 function create_if_block3(ctx) {
   let senselist;
   let t0;
-  let t1;
-  let t2;
+  let t12;
+  let t22;
   let t3;
   let t4;
   let t5;
@@ -8305,22 +11988,22 @@ function create_if_block3(ctx) {
     /*showBody*/
     ctx[5] && /*doc*/
     (ctx[0].level || /*dictCollins*/
-    ctx[17] > 0 || /*dictFrq*/
-    ctx[18] > 0 || /*doc*/
+    ctx[18] > 0 || /*dictFrq*/
+    ctx[19] > 0 || /*doc*/
     ctx[0].themes.length) && create_if_block_17(ctx)
   );
-  function select_block_type_2(ctx2, dirty) {
+  function select_block_type_1(ctx2, dirty) {
     if (
       /*doc*/
       ctx2[0].memo
     ) return create_if_block_152;
     if (
       /*dictRem*/
-      ctx2[16]
+      ctx2[17]
     ) return create_if_block_16;
     return create_else_block_2;
   }
-  let current_block_type = select_block_type_2(ctx, [-1, -1, -1]);
+  let current_block_type = select_block_type_1(ctx, [-1, -1, -1, -1]);
   let if_block1 = current_block_type(ctx);
   let if_block2 = (
     /*synonyms*/
@@ -8337,7 +12020,7 @@ function create_if_block3(ctx) {
   );
   let if_block5 = (
     /*doc*/
-    ctx[0].examples.length && create_if_block_27(ctx)
+    ctx[0].examples.length && create_if_block_26(ctx)
   );
   let if_block6 = (
     /*doc*/
@@ -8348,9 +12031,9 @@ function create_if_block3(ctx) {
       create_component(senselist.$$.fragment);
       t0 = space();
       if (if_block0) if_block0.c();
-      t1 = space();
+      t12 = space();
       if_block1.c();
-      t2 = space();
+      t22 = space();
       if (if_block2) if_block2.c();
       t3 = space();
       if (if_block3) if_block3.c();
@@ -8366,9 +12049,9 @@ function create_if_block3(ctx) {
       mount_component(senselist, target, anchor);
       insert(target, t0, anchor);
       if (if_block0) if_block0.m(target, anchor);
-      insert(target, t1, anchor);
+      insert(target, t12, anchor);
       if_block1.m(target, anchor);
-      insert(target, t2, anchor);
+      insert(target, t22, anchor);
       if (if_block2) if_block2.m(target, anchor);
       insert(target, t3, anchor);
       if (if_block3) if_block3.m(target, anchor);
@@ -8391,8 +12074,8 @@ function create_if_block3(ctx) {
         /*showBody*/
         ctx2[5] && /*doc*/
         (ctx2[0].level || /*dictCollins*/
-        ctx2[17] > 0 || /*dictFrq*/
-        ctx2[18] > 0 || /*doc*/
+        ctx2[18] > 0 || /*dictFrq*/
+        ctx2[19] > 0 || /*doc*/
         ctx2[0].themes.length)
       ) {
         if (if_block0) {
@@ -8400,20 +12083,20 @@ function create_if_block3(ctx) {
         } else {
           if_block0 = create_if_block_17(ctx2);
           if_block0.c();
-          if_block0.m(t1.parentNode, t1);
+          if_block0.m(t12.parentNode, t12);
         }
       } else if (if_block0) {
         if_block0.d(1);
         if_block0 = null;
       }
-      if (current_block_type === (current_block_type = select_block_type_2(ctx2, dirty)) && if_block1) {
+      if (current_block_type === (current_block_type = select_block_type_1(ctx2, dirty)) && if_block1) {
         if_block1.p(ctx2, dirty);
       } else {
         if_block1.d(1);
         if_block1 = current_block_type(ctx2);
         if (if_block1) {
           if_block1.c();
-          if_block1.m(t2.parentNode, t2);
+          if_block1.m(t22.parentNode, t22);
         }
       }
       if (
@@ -8469,7 +12152,7 @@ function create_if_block3(ctx) {
         if (if_block5) {
           if_block5.p(ctx2, dirty);
         } else {
-          if_block5 = create_if_block_27(ctx2);
+          if_block5 = create_if_block_26(ctx2);
           if_block5.c();
           if_block5.m(t6.parentNode, t6);
         }
@@ -8505,8 +12188,8 @@ function create_if_block3(ctx) {
     d(detaching) {
       if (detaching) {
         detach(t0);
-        detach(t1);
-        detach(t2);
+        detach(t12);
+        detach(t22);
         detach(t3);
         detach(t4);
         detach(t5);
@@ -8527,8 +12210,8 @@ function create_if_block3(ctx) {
 function create_if_block_17(ctx) {
   let div;
   let t0;
-  let t1;
-  let t2;
+  let t12;
+  let t22;
   let each_blocks = [];
   let each_1_lookup = /* @__PURE__ */ new Map();
   let if_block0 = (
@@ -8537,11 +12220,11 @@ function create_if_block_17(ctx) {
   );
   let if_block1 = (
     /*dictCollins*/
-    ctx[17] > 0 && create_if_block_20(ctx)
+    ctx[18] > 0 && create_if_block_20(ctx)
   );
   let if_block2 = (
     /*dictFrq*/
-    ctx[18] > 0 && create_if_block_19(ctx)
+    ctx[19] > 0 && create_if_block_19(ctx)
   );
   let each_value_6 = ensure_array_like(
     /*doc*/
@@ -8549,7 +12232,7 @@ function create_if_block_17(ctx) {
   );
   const get_key = (ctx2) => (
     /*t*/
-    ctx2[83]
+    ctx2[86]
   );
   for (let i = 0; i < each_value_6.length; i += 1) {
     let child_ctx = get_each_context_6(ctx, each_value_6, i);
@@ -8562,9 +12245,9 @@ function create_if_block_17(ctx) {
       if (if_block0) if_block0.c();
       t0 = space();
       if (if_block1) if_block1.c();
-      t1 = space();
+      t12 = space();
       if (if_block2) if_block2.c();
-      t2 = space();
+      t22 = space();
       for (let i = 0; i < each_blocks.length; i += 1) {
         each_blocks[i].c();
       }
@@ -8579,9 +12262,9 @@ function create_if_block_17(ctx) {
       if (if_block0) if_block0.m(div, null);
       append(div, t0);
       if (if_block1) if_block1.m(div, null);
-      append(div, t1);
+      append(div, t12);
       if (if_block2) if_block2.m(div, null);
-      append(div, t2);
+      append(div, t22);
       for (let i = 0; i < each_blocks.length; i += 1) {
         if (each_blocks[i]) {
           each_blocks[i].m(div, null);
@@ -8606,14 +12289,14 @@ function create_if_block_17(ctx) {
       }
       if (
         /*dictCollins*/
-        ctx2[17] > 0
+        ctx2[18] > 0
       ) {
         if (if_block1) {
           if_block1.p(ctx2, dirty);
         } else {
           if_block1 = create_if_block_20(ctx2);
           if_block1.c();
-          if_block1.m(div, t1);
+          if_block1.m(div, t12);
         }
       } else if (if_block1) {
         if_block1.d(1);
@@ -8621,21 +12304,21 @@ function create_if_block_17(ctx) {
       }
       if (
         /*dictFrq*/
-        ctx2[18] > 0
+        ctx2[19] > 0
       ) {
         if (if_block2) {
           if_block2.p(ctx2, dirty);
         } else {
           if_block2 = create_if_block_19(ctx2);
           if_block2.c();
-          if_block2.m(div, t2);
+          if_block2.m(div, t22);
         }
       } else if (if_block2) {
         if_block2.d(1);
         if_block2 = null;
       }
       if (dirty[0] & /*editThemes, doc, themeEditable*/
-      8388673) {
+      16777281) {
         each_value_6 = ensure_array_like(
           /*doc*/
           ctx2[0].themes
@@ -8692,34 +12375,34 @@ function create_if_block_20(ctx) {
   let span;
   let t0_value = "\u2605".repeat(
     /*dictCollins*/
-    ctx[17]
+    ctx[18]
   ) + "";
   let t0;
   let t1_value = "\u2606".repeat(5 - /*dictCollins*/
-  ctx[17]) + "";
-  let t1;
+  ctx[18]) + "";
+  let t12;
   return {
     c() {
       span = element("span");
       t0 = text(t0_value);
-      t1 = text(t1_value);
+      t12 = text(t1_value);
       attr(span, "class", "el-chip");
       attr(span, "title", "Collins \u661F\u7EA7\uFF1A\u8BED\u6599\u5E93\u5E38\u7528\u5EA6\uFF0C5 \u661F\u6700\u9AD8\u9891");
     },
     m(target, anchor) {
       insert(target, span, anchor);
       append(span, t0);
-      append(span, t1);
+      append(span, t12);
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*dictCollins*/
-      131072 && t0_value !== (t0_value = "\u2605".repeat(
+      262144 && t0_value !== (t0_value = "\u2605".repeat(
         /*dictCollins*/
-        ctx2[17]
+        ctx2[18]
       ) + "")) set_data(t0, t0_value);
       if (dirty[0] & /*dictCollins*/
-      131072 && t1_value !== (t1_value = "\u2606".repeat(5 - /*dictCollins*/
-      ctx2[17]) + "")) set_data(t1, t1_value);
+      262144 && t1_value !== (t1_value = "\u2606".repeat(5 - /*dictCollins*/
+      ctx2[18]) + "")) set_data(t12, t1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -8731,14 +12414,14 @@ function create_if_block_20(ctx) {
 function create_if_block_19(ctx) {
   let span;
   let t0;
-  let t1;
+  let t12;
   return {
     c() {
       span = element("span");
       t0 = text("\u8BCD\u9891 ");
-      t1 = text(
+      t12 = text(
         /*dictFrq*/
-        ctx[18]
+        ctx[19]
       );
       attr(span, "class", "el-chip");
       attr(span, "title", "BNC \u8BED\u6599\u8BCD\u9891\u5E8F\uFF0C\u8D8A\u5C0F\u8D8A\u5E38\u7528");
@@ -8746,14 +12429,14 @@ function create_if_block_19(ctx) {
     m(target, anchor) {
       insert(target, span, anchor);
       append(span, t0);
-      append(span, t1);
+      append(span, t12);
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*dictFrq*/
-      262144) set_data(
-        t1,
+      524288) set_data(
+        t12,
         /*dictFrq*/
-        ctx2[18]
+        ctx2[19]
       );
     },
     d(detaching) {
@@ -8768,26 +12451,26 @@ function create_else_block_3(ctx) {
   let t0;
   let t1_value = (
     /*t*/
-    ctx[83] + ""
+    ctx[86] + ""
   );
-  let t1;
+  let t12;
   return {
     c() {
       span = element("span");
       t0 = text("\u{1F4C1} ");
-      t1 = text(t1_value);
+      t12 = text(t1_value);
       attr(span, "class", "el-chip");
       attr(span, "title", "\u6240\u5C5E\u4E3B\u9898");
     },
     m(target, anchor) {
       insert(target, span, anchor);
       append(span, t0);
-      append(span, t1);
+      append(span, t12);
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*doc*/
       1 && t1_value !== (t1_value = /*t*/
-      ctx2[83] + "")) set_data(t1, t1_value);
+      ctx2[86] + "")) set_data(t12, t1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -8801,16 +12484,16 @@ function create_if_block_18(ctx) {
   let t0;
   let t1_value = (
     /*t*/
-    ctx[83] + ""
+    ctx[86] + ""
   );
-  let t1;
+  let t12;
   let mounted;
   let dispose;
   return {
     c() {
       span = element("span");
       t0 = text("\u{1F4C1} ");
-      t1 = text(t1_value);
+      t12 = text(t1_value);
       attr(span, "class", "el-chip");
       attr(span, "title", "\u70B9\u51FB\u4FEE\u6539\u6240\u5C5E\u4E3B\u9898");
       attr(span, "role", "button");
@@ -8820,20 +12503,20 @@ function create_if_block_18(ctx) {
     m(target, anchor) {
       insert(target, span, anchor);
       append(span, t0);
-      append(span, t1);
+      append(span, t12);
       if (!mounted) {
         dispose = [
           listen(
             span,
             "click",
             /*editThemes*/
-            ctx[23]
+            ctx[24]
           ),
           listen(
             span,
             "keydown",
             /*keydown_handler_1*/
-            ctx[43]
+            ctx[44]
           )
         ];
         mounted = true;
@@ -8842,7 +12525,7 @@ function create_if_block_18(ctx) {
     p(ctx2, dirty) {
       if (dirty[0] & /*doc*/
       1 && t1_value !== (t1_value = /*t*/
-      ctx2[83] + "")) set_data(t1, t1_value);
+      ctx2[86] + "")) set_data(t12, t1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -8856,14 +12539,14 @@ function create_if_block_18(ctx) {
 function create_each_block_6(key_1, ctx) {
   let first;
   let if_block_anchor;
-  function select_block_type_1(ctx2, dirty) {
+  function select_block_type(ctx2, dirty) {
     if (
       /*themeEditable*/
       ctx2[6]
     ) return create_if_block_18;
     return create_else_block_3;
   }
-  let current_block_type = select_block_type_1(ctx, [-1, -1, -1]);
+  let current_block_type = select_block_type(ctx, [-1, -1, -1, -1]);
   let if_block = current_block_type(ctx);
   return {
     key: key_1,
@@ -8881,7 +12564,7 @@ function create_each_block_6(key_1, ctx) {
     },
     p(new_ctx, dirty) {
       ctx = new_ctx;
-      if (current_block_type === (current_block_type = select_block_type_1(ctx, dirty)) && if_block) {
+      if (current_block_type === (current_block_type = select_block_type(ctx, dirty)) && if_block) {
         if_block.p(ctx, dirty);
       } else {
         if_block.d(1);
@@ -8919,7 +12602,7 @@ function create_else_block_2(ctx) {
           button,
           "click",
           /*editMemo*/
-          ctx[22]
+          ctx[23]
         );
         mounted = true;
       }
@@ -8937,16 +12620,16 @@ function create_else_block_2(ctx) {
 function create_if_block_16(ctx) {
   let div;
   let t0;
-  let t1;
+  let t12;
   let mounted;
   let dispose;
   return {
     c() {
       div = element("div");
       t0 = text("\u{1F4D6} ");
-      t1 = text(
+      t12 = text(
         /*dictRem*/
-        ctx[16]
+        ctx[17]
       );
       attr(div, "class", "el-memo");
       attr(div, "title", "\u8BCD\u5178\u8BCD\u6839\u62C6\u89E3\uFF0C\u70B9\u51FB\u8BB0\u6210\u81EA\u5DF1\u7684\u52A9\u8BB0");
@@ -8956,20 +12639,20 @@ function create_if_block_16(ctx) {
     m(target, anchor) {
       insert(target, div, anchor);
       append(div, t0);
-      append(div, t1);
+      append(div, t12);
       if (!mounted) {
         dispose = [
           listen(
             div,
             "click",
             /*editMemo*/
-            ctx[22]
+            ctx[23]
           ),
           listen(
             div,
             "keydown",
             /*keydown_handler_3*/
-            ctx[45]
+            ctx[46]
           )
         ];
         mounted = true;
@@ -8977,10 +12660,10 @@ function create_if_block_16(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*dictRem*/
-      65536) set_data(
-        t1,
+      131072) set_data(
+        t12,
         /*dictRem*/
-        ctx2[16]
+        ctx2[17]
       );
     },
     d(detaching) {
@@ -8999,14 +12682,14 @@ function create_if_block_152(ctx) {
     /*doc*/
     ctx[0].memo + ""
   );
-  let t1;
+  let t12;
   let mounted;
   let dispose;
   return {
     c() {
       div = element("div");
       t0 = text("\u{1F4CC} ");
-      t1 = text(t1_value);
+      t12 = text(t1_value);
       attr(div, "class", "el-memo");
       attr(div, "title", "\u4F60\u7684\u52A9\u8BB0\uFF0C\u70B9\u51FB\u4FEE\u6539");
       attr(div, "role", "button");
@@ -9015,20 +12698,20 @@ function create_if_block_152(ctx) {
     m(target, anchor) {
       insert(target, div, anchor);
       append(div, t0);
-      append(div, t1);
+      append(div, t12);
       if (!mounted) {
         dispose = [
           listen(
             div,
             "click",
             /*editMemo*/
-            ctx[22]
+            ctx[23]
           ),
           listen(
             div,
             "keydown",
             /*keydown_handler_2*/
-            ctx[44]
+            ctx[45]
           )
         ];
         mounted = true;
@@ -9037,7 +12720,7 @@ function create_if_block_152(ctx) {
     p(ctx2, dirty) {
       if (dirty[0] & /*doc*/
       1 && t1_value !== (t1_value = /*doc*/
-      ctx2[0].memo + "")) set_data(t1, t1_value);
+      ctx2[0].memo + "")) set_data(t12, t1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -9116,7 +12799,7 @@ function create_if_block_122(ctx) {
 }
 function create_if_block_142(ctx) {
   let span;
-  let t1;
+  let t12;
   let each_1_anchor;
   let each_value_5 = ensure_array_like(
     /*synonyms*/
@@ -9130,7 +12813,7 @@ function create_if_block_142(ctx) {
     c() {
       span = element("span");
       span.textContent = "\u{1F500} \u540C\u4E49";
-      t1 = space();
+      t12 = space();
       for (let i = 0; i < each_blocks.length; i += 1) {
         each_blocks[i].c();
       }
@@ -9139,7 +12822,7 @@ function create_if_block_142(ctx) {
     },
     m(target, anchor) {
       insert(target, span, anchor);
-      insert(target, t1, anchor);
+      insert(target, t12, anchor);
       for (let i = 0; i < each_blocks.length; i += 1) {
         if (each_blocks[i]) {
           each_blocks[i].m(target, anchor);
@@ -9149,8 +12832,8 @@ function create_if_block_142(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*synonyms, libHits*/
-      524292 | dirty[1] & /*relTitle, relClick*/
-      6) {
+      1048580 | dirty[1] & /*relTitle, relClick*/
+      12) {
         each_value_5 = ensure_array_like(
           /*synonyms*/
           ctx2[2]
@@ -9175,7 +12858,7 @@ function create_if_block_142(ctx) {
     d(detaching) {
       if (detaching) {
         detach(span);
-        detach(t1);
+        detach(t12);
         detach(each_1_anchor);
       }
       destroy_each(each_blocks, detaching);
@@ -9187,7 +12870,7 @@ function create_each_block_5(ctx) {
   let span;
   let t_1_value = (
     /*w*/
-    ctx[79] + ""
+    ctx[82] + ""
   );
   let t_1;
   let span_class_value;
@@ -9197,9 +12880,9 @@ function create_each_block_5(ctx) {
   function click_handler_3() {
     return (
       /*click_handler_3*/
-      ctx[46](
+      ctx[47](
         /*w*/
-        ctx[79]
+        ctx[82]
       )
     );
   }
@@ -9209,15 +12892,15 @@ function create_each_block_5(ctx) {
       span = element("span");
       t_1 = text(t_1_value);
       attr(span, "class", span_class_value = /*libHits*/
-      ctx[19].has(
+      ctx[20].has(
         /*w*/
-        ctx[79]
+        ctx[82]
       ) ? "el-rel-card" : "el-rel-new");
       attr(button, "class", "el-related-w");
       attr(button, "title", button_title_value = /*relTitle*/
-      ctx[33](
+      ctx[34](
         /*w*/
-        ctx[79]
+        ctx[82]
       ));
     },
     m(target, anchor) {
@@ -9233,20 +12916,20 @@ function create_each_block_5(ctx) {
       ctx = new_ctx;
       if (dirty[0] & /*synonyms*/
       4 && t_1_value !== (t_1_value = /*w*/
-      ctx[79] + "")) set_data(t_1, t_1_value);
+      ctx[82] + "")) set_data(t_1, t_1_value);
       if (dirty[0] & /*libHits, synonyms*/
-      524292 && span_class_value !== (span_class_value = /*libHits*/
-      ctx[19].has(
+      1048580 && span_class_value !== (span_class_value = /*libHits*/
+      ctx[20].has(
         /*w*/
-        ctx[79]
+        ctx[82]
       ) ? "el-rel-card" : "el-rel-new")) {
         attr(span, "class", span_class_value);
       }
       if (dirty[0] & /*synonyms*/
       4 && button_title_value !== (button_title_value = /*relTitle*/
-      ctx[33](
+      ctx[34](
         /*w*/
-        ctx[79]
+        ctx[82]
       ))) {
         attr(button, "title", button_title_value);
       }
@@ -9262,7 +12945,7 @@ function create_each_block_5(ctx) {
 }
 function create_if_block_132(ctx) {
   let span;
-  let t1;
+  let t12;
   let each_1_anchor;
   let each_value_4 = ensure_array_like(
     /*antonyms*/
@@ -9276,7 +12959,7 @@ function create_if_block_132(ctx) {
     c() {
       span = element("span");
       span.textContent = "\u2194\uFE0F \u53CD\u4E49";
-      t1 = space();
+      t12 = space();
       for (let i = 0; i < each_blocks.length; i += 1) {
         each_blocks[i].c();
       }
@@ -9285,7 +12968,7 @@ function create_if_block_132(ctx) {
     },
     m(target, anchor) {
       insert(target, span, anchor);
-      insert(target, t1, anchor);
+      insert(target, t12, anchor);
       for (let i = 0; i < each_blocks.length; i += 1) {
         if (each_blocks[i]) {
           each_blocks[i].m(target, anchor);
@@ -9295,8 +12978,8 @@ function create_if_block_132(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*antonyms, libHits*/
-      524296 | dirty[1] & /*relTitle, relClick*/
-      6) {
+      1048584 | dirty[1] & /*relTitle, relClick*/
+      12) {
         each_value_4 = ensure_array_like(
           /*antonyms*/
           ctx2[3]
@@ -9321,7 +13004,7 @@ function create_if_block_132(ctx) {
     d(detaching) {
       if (detaching) {
         detach(span);
-        detach(t1);
+        detach(t12);
         detach(each_1_anchor);
       }
       destroy_each(each_blocks, detaching);
@@ -9333,7 +13016,7 @@ function create_each_block_4(ctx) {
   let span;
   let t_1_value = (
     /*w*/
-    ctx[79] + ""
+    ctx[82] + ""
   );
   let t_1;
   let span_class_value;
@@ -9343,9 +13026,9 @@ function create_each_block_4(ctx) {
   function click_handler_4() {
     return (
       /*click_handler_4*/
-      ctx[47](
+      ctx[48](
         /*w*/
-        ctx[79]
+        ctx[82]
       )
     );
   }
@@ -9355,15 +13038,15 @@ function create_each_block_4(ctx) {
       span = element("span");
       t_1 = text(t_1_value);
       attr(span, "class", span_class_value = /*libHits*/
-      ctx[19].has(
+      ctx[20].has(
         /*w*/
-        ctx[79]
+        ctx[82]
       ) ? "el-rel-card" : "el-rel-new");
       attr(button, "class", "el-related-w el-related-ant");
       attr(button, "title", button_title_value = /*relTitle*/
-      ctx[33](
+      ctx[34](
         /*w*/
-        ctx[79]
+        ctx[82]
       ));
     },
     m(target, anchor) {
@@ -9379,20 +13062,20 @@ function create_each_block_4(ctx) {
       ctx = new_ctx;
       if (dirty[0] & /*antonyms*/
       8 && t_1_value !== (t_1_value = /*w*/
-      ctx[79] + "")) set_data(t_1, t_1_value);
+      ctx[82] + "")) set_data(t_1, t_1_value);
       if (dirty[0] & /*libHits, antonyms*/
-      524296 && span_class_value !== (span_class_value = /*libHits*/
-      ctx[19].has(
+      1048584 && span_class_value !== (span_class_value = /*libHits*/
+      ctx[20].has(
         /*w*/
-        ctx[79]
+        ctx[82]
       ) ? "el-rel-card" : "el-rel-new")) {
         attr(span, "class", span_class_value);
       }
       if (dirty[0] & /*antonyms*/
       8 && button_title_value !== (button_title_value = /*relTitle*/
-      ctx[33](
+      ctx[34](
         /*w*/
-        ctx[79]
+        ctx[82]
       ))) {
         attr(button, "title", button_title_value);
       }
@@ -9409,7 +13092,7 @@ function create_each_block_4(ctx) {
 function create_if_block_112(ctx) {
   let div;
   let span;
-  let t1;
+  let t12;
   let each_value_3 = ensure_array_like(
     /*dictRel*/
     ctx[9]
@@ -9423,7 +13106,7 @@ function create_if_block_112(ctx) {
       div = element("div");
       span = element("span");
       span.textContent = "\u{1F331} \u540C\u6839";
-      t1 = space();
+      t12 = space();
       for (let i = 0; i < each_blocks.length; i += 1) {
         each_blocks[i].c();
       }
@@ -9433,7 +13116,7 @@ function create_if_block_112(ctx) {
     m(target, anchor) {
       insert(target, div, anchor);
       append(div, span);
-      append(div, t1);
+      append(div, t12);
       for (let i = 0; i < each_blocks.length; i += 1) {
         if (each_blocks[i]) {
           each_blocks[i].m(div, null);
@@ -9442,8 +13125,8 @@ function create_if_block_112(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*dictRel, libHits*/
-      524800 | dirty[1] & /*relTitle, relClick*/
-      6) {
+      1049088 | dirty[1] & /*relTitle, relClick*/
+      12) {
         each_value_3 = ensure_array_like(
           /*dictRel*/
           ctx2[9]
@@ -9478,7 +13161,7 @@ function create_each_block_3(ctx) {
   let span;
   let t_1_value = (
     /*w*/
-    ctx[79] + ""
+    ctx[82] + ""
   );
   let t_1;
   let span_class_value;
@@ -9488,11 +13171,11 @@ function create_each_block_3(ctx) {
   function click_handler_5() {
     return (
       /*click_handler_5*/
-      ctx[48](
+      ctx[49](
         /*w*/
-        ctx[79],
+        ctx[82],
         /*t*/
-        ctx[83]
+        ctx[86]
       )
     );
   }
@@ -9502,17 +13185,17 @@ function create_each_block_3(ctx) {
       span = element("span");
       t_1 = text(t_1_value);
       attr(span, "class", span_class_value = /*libHits*/
-      ctx[19].has(
+      ctx[20].has(
         /*w*/
-        ctx[79]
+        ctx[82]
       ) ? "el-rel-card" : "el-rel-new");
       attr(button, "class", "el-related-w");
       attr(button, "title", button_title_value = /*relTitle*/
-      ctx[33](
+      ctx[34](
         /*w*/
-        ctx[79],
+        ctx[82],
         /*t*/
-        ctx[83]
+        ctx[86]
       ));
     },
     m(target, anchor) {
@@ -9528,22 +13211,22 @@ function create_each_block_3(ctx) {
       ctx = new_ctx;
       if (dirty[0] & /*dictRel*/
       512 && t_1_value !== (t_1_value = /*w*/
-      ctx[79] + "")) set_data(t_1, t_1_value);
+      ctx[82] + "")) set_data(t_1, t_1_value);
       if (dirty[0] & /*libHits, dictRel*/
-      524800 && span_class_value !== (span_class_value = /*libHits*/
-      ctx[19].has(
+      1049088 && span_class_value !== (span_class_value = /*libHits*/
+      ctx[20].has(
         /*w*/
-        ctx[79]
+        ctx[82]
       ) ? "el-rel-card" : "el-rel-new")) {
         attr(span, "class", span_class_value);
       }
       if (dirty[0] & /*dictRel*/
       512 && button_title_value !== (button_title_value = /*relTitle*/
-      ctx[33](
+      ctx[34](
         /*w*/
-        ctx[79],
+        ctx[82],
         /*t*/
-        ctx[83]
+        ctx[86]
       ))) {
         attr(button, "title", button_title_value);
       }
@@ -9560,22 +13243,22 @@ function create_each_block_3(ctx) {
 function create_if_block_92(ctx) {
   let div;
   let span;
-  let t1;
-  function select_block_type_3(ctx2, dirty) {
+  let t12;
+  function select_block_type_2(ctx2, dirty) {
     if (
       /*dictWf*/
       ctx2[10].lemma
     ) return create_if_block_102;
     return create_else_block_12;
   }
-  let current_block_type = select_block_type_3(ctx, [-1, -1, -1]);
+  let current_block_type = select_block_type_2(ctx, [-1, -1, -1, -1]);
   let if_block = current_block_type(ctx);
   return {
     c() {
       div = element("div");
       span = element("span");
       span.textContent = "\u{1F9E9} \u8BCD\u5F62";
-      t1 = space();
+      t12 = space();
       if_block.c();
       attr(span, "title", "\u8BCD\u5F62\u53D8\u5316\uFF08\u8BCD\u5178\uFF09");
       attr(div, "class", "el-related-row");
@@ -9583,11 +13266,11 @@ function create_if_block_92(ctx) {
     m(target, anchor) {
       insert(target, div, anchor);
       append(div, span);
-      append(div, t1);
+      append(div, t12);
       if_block.m(div, null);
     },
     p(ctx2, dirty) {
-      if (current_block_type === (current_block_type = select_block_type_3(ctx2, dirty)) && if_block) {
+      if (current_block_type === (current_block_type = select_block_type_2(ctx2, dirty)) && if_block) {
         if_block.p(ctx2, dirty);
       } else {
         if_block.d(1);
@@ -9633,8 +13316,8 @@ function create_else_block_12(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*dictWf, libHits*/
-      525312 | dirty[1] & /*relTitle, relClick*/
-      6) {
+      1049600 | dirty[1] & /*relTitle, relClick*/
+      12) {
         each_value_2 = ensure_array_like(
           /*dictWf*/
           ctx2[10].forms
@@ -9685,14 +13368,14 @@ function create_if_block_102(ctx) {
       span1 = element("span");
       span1.textContent = "\u539F\u5F62";
       attr(span0, "class", span0_class_value = /*libHits*/
-      ctx[19].has(
+      ctx[20].has(
         /*dictWf*/
         ctx[10].lemma
       ) ? "el-rel-card" : "el-rel-new");
       attr(span1, "class", "el-wf-tag");
       attr(button, "class", "el-related-w");
       attr(button, "title", button_title_value = `\u672C\u8BCD\u7684\u539F\u5F62\uFF0C${/*relTitle*/
-      ctx[33](
+      ctx[34](
         /*dictWf*/
         ctx[10].lemma
       )}`);
@@ -9707,7 +13390,7 @@ function create_if_block_102(ctx) {
           button,
           "click",
           /*click_handler_6*/
-          ctx[49]
+          ctx[50]
         );
         mounted = true;
       }
@@ -9717,8 +13400,8 @@ function create_if_block_102(ctx) {
       1024 && t0_value !== (t0_value = /*dictWf*/
       ctx2[10].lemma + "")) set_data(t0, t0_value);
       if (dirty[0] & /*libHits, dictWf*/
-      525312 && span0_class_value !== (span0_class_value = /*libHits*/
-      ctx2[19].has(
+      1049600 && span0_class_value !== (span0_class_value = /*libHits*/
+      ctx2[20].has(
         /*dictWf*/
         ctx2[10].lemma
       ) ? "el-rel-card" : "el-rel-new")) {
@@ -9726,7 +13409,7 @@ function create_if_block_102(ctx) {
       }
       if (dirty[0] & /*dictWf*/
       1024 && button_title_value !== (button_title_value = `\u672C\u8BCD\u7684\u539F\u5F62\uFF0C${/*relTitle*/
-      ctx2[33](
+      ctx2[34](
         /*dictWf*/
         ctx2[10].lemma
       )}`)) {
@@ -9747,25 +13430,25 @@ function create_each_block_2(ctx) {
   let span0;
   let t0_value = (
     /*w*/
-    ctx[79] + ""
+    ctx[82] + ""
   );
   let t0;
   let span0_class_value;
   let span1;
   let t1_value = (
     /*label*/
-    ctx[80] + ""
+    ctx[83] + ""
   );
-  let t1;
+  let t12;
   let button_title_value;
   let mounted;
   let dispose;
   function click_handler_7() {
     return (
       /*click_handler_7*/
-      ctx[50](
+      ctx[51](
         /*w*/
-        ctx[79]
+        ctx[82]
       )
     );
   }
@@ -9775,18 +13458,18 @@ function create_each_block_2(ctx) {
       span0 = element("span");
       t0 = text(t0_value);
       span1 = element("span");
-      t1 = text(t1_value);
+      t12 = text(t1_value);
       attr(span0, "class", span0_class_value = /*libHits*/
-      ctx[19].has(
+      ctx[20].has(
         /*w*/
-        ctx[79]
+        ctx[82]
       ) ? "el-rel-card" : "el-rel-new");
       attr(span1, "class", "el-wf-tag");
       attr(button, "class", "el-related-w");
       attr(button, "title", button_title_value = /*relTitle*/
-      ctx[33](
+      ctx[34](
         /*w*/
-        ctx[79]
+        ctx[82]
       ));
     },
     m(target, anchor) {
@@ -9794,7 +13477,7 @@ function create_each_block_2(ctx) {
       append(button, span0);
       append(span0, t0);
       append(button, span1);
-      append(span1, t1);
+      append(span1, t12);
       if (!mounted) {
         dispose = listen(button, "click", click_handler_7);
         mounted = true;
@@ -9804,23 +13487,23 @@ function create_each_block_2(ctx) {
       ctx = new_ctx;
       if (dirty[0] & /*dictWf*/
       1024 && t0_value !== (t0_value = /*w*/
-      ctx[79] + "")) set_data(t0, t0_value);
+      ctx[82] + "")) set_data(t0, t0_value);
       if (dirty[0] & /*libHits, dictWf*/
-      525312 && span0_class_value !== (span0_class_value = /*libHits*/
-      ctx[19].has(
+      1049600 && span0_class_value !== (span0_class_value = /*libHits*/
+      ctx[20].has(
         /*w*/
-        ctx[79]
+        ctx[82]
       ) ? "el-rel-card" : "el-rel-new")) {
         attr(span0, "class", span0_class_value);
       }
       if (dirty[0] & /*dictWf*/
       1024 && t1_value !== (t1_value = /*label*/
-      ctx[80] + "")) set_data(t1, t1_value);
+      ctx[83] + "")) set_data(t12, t1_value);
       if (dirty[0] & /*dictWf*/
       1024 && button_title_value !== (button_title_value = /*relTitle*/
-      ctx[33](
+      ctx[34](
         /*w*/
-        ctx[79]
+        ctx[82]
       ))) {
         attr(button, "title", button_title_value);
       }
@@ -9834,7 +13517,7 @@ function create_each_block_2(ctx) {
     }
   };
 }
-function create_if_block_27(ctx) {
+function create_if_block_26(ctx) {
   let div;
   let each_value = ensure_array_like(
     /*exViews*/
@@ -9861,9 +13544,9 @@ function create_if_block_27(ctx) {
       }
     },
     p(ctx2, dirty) {
-      if (dirty[0] & /*readExample, exViews, exPointerDown, exPointerMove, exPointerCancel, delExample, segsList, tokClick*/
-      2032156928 | dirty[1] & /*exClickCapture*/
-      1) {
+      if (dirty[0] & /*readExample, exViews, exPointerDown, exPointerMove, delExample, exNeural, segsList, tokClick*/
+      1916834048 | dirty[1] & /*exClickCapture, exPointerCancel*/
+      3) {
         each_value = ensure_array_like(
           /*exViews*/
           ctx2[8]
@@ -9896,7 +13579,7 @@ function create_if_block_27(ctx) {
 function create_else_block3(ctx) {
   let t_1_value = (
     /*seg*/
-    ctx[76].t + ""
+    ctx[79].t + ""
   );
   let t_1;
   return {
@@ -9908,8 +13591,8 @@ function create_else_block3(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*segsList*/
-      16384 && t_1_value !== (t_1_value = /*seg*/
-      ctx2[76].t + "")) set_data(t_1, t_1_value);
+      32768 && t_1_value !== (t_1_value = /*seg*/
+      ctx2[79].t + "")) set_data(t_1, t_1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -9922,7 +13605,7 @@ function create_if_block_82(ctx) {
   let span;
   let t_1_value = (
     /*seg*/
-    ctx[76].t + ""
+    ctx[79].t + ""
   );
   let t_1;
   let mounted;
@@ -9930,18 +13613,18 @@ function create_if_block_82(ctx) {
   function click_handler_11() {
     return (
       /*click_handler_11*/
-      ctx[57](
+      ctx[58](
         /*seg*/
-        ctx[76]
+        ctx[79]
       )
     );
   }
   function keydown_handler_7(...args) {
     return (
       /*keydown_handler_7*/
-      ctx[58](
+      ctx[59](
         /*seg*/
-        ctx[76],
+        ctx[79],
         ...args
       )
     );
@@ -9969,8 +13652,8 @@ function create_if_block_82(ctx) {
     p(new_ctx, dirty) {
       ctx = new_ctx;
       if (dirty[0] & /*segsList*/
-      16384 && t_1_value !== (t_1_value = /*seg*/
-      ctx[76].t + "")) set_data(t_1, t_1_value);
+      32768 && t_1_value !== (t_1_value = /*seg*/
+      ctx[79].t + "")) set_data(t_1, t_1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -9985,7 +13668,7 @@ function create_if_block_72(ctx) {
   let span;
   let t_1_value = (
     /*seg*/
-    ctx[76].t + ""
+    ctx[79].t + ""
   );
   let t_1;
   let mounted;
@@ -9993,18 +13676,18 @@ function create_if_block_72(ctx) {
   function click_handler_10() {
     return (
       /*click_handler_10*/
-      ctx[55](
+      ctx[56](
         /*seg*/
-        ctx[76]
+        ctx[79]
       )
     );
   }
   function keydown_handler_6(...args) {
     return (
       /*keydown_handler_6*/
-      ctx[56](
+      ctx[57](
         /*seg*/
-        ctx[76],
+        ctx[79],
         ...args
       )
     );
@@ -10032,8 +13715,8 @@ function create_if_block_72(ctx) {
     p(new_ctx, dirty) {
       ctx = new_ctx;
       if (dirty[0] & /*segsList*/
-      16384 && t_1_value !== (t_1_value = /*seg*/
-      ctx[76].t + "")) set_data(t_1, t_1_value);
+      32768 && t_1_value !== (t_1_value = /*seg*/
+      ctx[79].t + "")) set_data(t_1, t_1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -10048,7 +13731,7 @@ function create_if_block_62(ctx) {
   let span;
   let t_1_value = (
     /*seg*/
-    ctx[76].t + ""
+    ctx[79].t + ""
   );
   let t_1;
   let mounted;
@@ -10056,18 +13739,18 @@ function create_if_block_62(ctx) {
   function click_handler_9() {
     return (
       /*click_handler_9*/
-      ctx[53](
+      ctx[54](
         /*seg*/
-        ctx[76]
+        ctx[79]
       )
     );
   }
   function keydown_handler_5(...args) {
     return (
       /*keydown_handler_5*/
-      ctx[54](
+      ctx[55](
         /*seg*/
-        ctx[76],
+        ctx[79],
         ...args
       )
     );
@@ -10095,8 +13778,8 @@ function create_if_block_62(ctx) {
     p(new_ctx, dirty) {
       ctx = new_ctx;
       if (dirty[0] & /*segsList*/
-      16384 && t_1_value !== (t_1_value = /*seg*/
-      ctx[76].t + "")) set_data(t_1, t_1_value);
+      32768 && t_1_value !== (t_1_value = /*seg*/
+      ctx[79].t + "")) set_data(t_1, t_1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -10111,7 +13794,7 @@ function create_if_block_52(ctx) {
   let span;
   let t_1_value = (
     /*seg*/
-    ctx[76].t + ""
+    ctx[79].t + ""
   );
   let t_1;
   let mounted;
@@ -10119,18 +13802,18 @@ function create_if_block_52(ctx) {
   function click_handler_8() {
     return (
       /*click_handler_8*/
-      ctx[51](
+      ctx[52](
         /*seg*/
-        ctx[76]
+        ctx[79]
       )
     );
   }
   function keydown_handler_4(...args) {
     return (
       /*keydown_handler_4*/
-      ctx[52](
+      ctx[53](
         /*seg*/
-        ctx[76],
+        ctx[79],
         ...args
       )
     );
@@ -10158,8 +13841,8 @@ function create_if_block_52(ctx) {
     p(new_ctx, dirty) {
       ctx = new_ctx;
       if (dirty[0] & /*segsList*/
-      16384 && t_1_value !== (t_1_value = /*seg*/
-      ctx[76].t + "")) set_data(t_1, t_1_value);
+      32768 && t_1_value !== (t_1_value = /*seg*/
+      ctx[79].t + "")) set_data(t_1, t_1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -10172,26 +13855,26 @@ function create_if_block_52(ctx) {
 }
 function create_each_block_12(ctx) {
   let if_block_anchor;
-  function select_block_type_4(ctx2, dirty) {
+  function select_block_type_3(ctx2, dirty) {
     if (
       /*seg*/
-      ctx2[76].kind === "self"
+      ctx2[79].kind === "self"
     ) return create_if_block_52;
     if (
       /*seg*/
-      ctx2[76].kind === "rel"
+      ctx2[79].kind === "rel"
     ) return create_if_block_62;
     if (
       /*seg*/
-      ctx2[76].kind === "lib"
+      ctx2[79].kind === "lib"
     ) return create_if_block_72;
     if (
       /*seg*/
-      ctx2[76].kind === "new"
+      ctx2[79].kind === "new"
     ) return create_if_block_82;
     return create_else_block3;
   }
-  let current_block_type = select_block_type_4(ctx, [-1, -1, -1]);
+  let current_block_type = select_block_type_3(ctx, [-1, -1, -1, -1]);
   let if_block = current_block_type(ctx);
   return {
     c() {
@@ -10203,7 +13886,7 @@ function create_each_block_12(ctx) {
       insert(target, if_block_anchor, anchor);
     },
     p(ctx2, dirty) {
-      if (current_block_type === (current_block_type = select_block_type_4(ctx2, dirty)) && if_block) {
+      if (current_block_type === (current_block_type = select_block_type_3(ctx2, dirty)) && if_block) {
         if_block.p(ctx2, dirty);
       } else {
         if_block.d(1);
@@ -10226,7 +13909,7 @@ function create_if_block_42(ctx) {
   let span;
   let t_1_value = (
     /*v*/
-    ctx[73].e.source + ""
+    ctx[76].e.source + ""
   );
   let t_1;
   return {
@@ -10242,7 +13925,7 @@ function create_if_block_42(ctx) {
     p(ctx2, dirty) {
       if (dirty[0] & /*exViews*/
       256 && t_1_value !== (t_1_value = /*v*/
-      ctx2[73].e.source + "")) set_data(t_1, t_1_value);
+      ctx2[76].e.source + "")) set_data(t_1, t_1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -10255,7 +13938,7 @@ function create_if_block_32(ctx) {
   let div;
   let t_1_value = (
     /*v*/
-    ctx[73].e.translation + ""
+    ctx[76].e.translation + ""
   );
   let t_1;
   return {
@@ -10271,7 +13954,7 @@ function create_if_block_32(ctx) {
     p(ctx2, dirty) {
       if (dirty[0] & /*exViews*/
       256 && t_1_value !== (t_1_value = /*v*/
-      ctx2[73].e.translation + "")) set_data(t_1, t_1_value);
+      ctx2[76].e.translation + "")) set_data(t_1, t_1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -10281,19 +13964,21 @@ function create_if_block_32(ctx) {
   };
 }
 function create_each_block3(ctx) {
-  var _a;
   let div;
   let button0;
+  let span;
+  let icon_action;
+  let button0_title_value;
   let button1;
-  let t2;
+  let t12;
   let mounted;
   let dispose;
   let each_value_1 = ensure_array_like(
     /*segsList*/
-    (_a = ctx[14][
+    ctx[15][
       /*vi*/
-      ctx[75]
-    ]) != null ? _a : []
+      ctx[78]
+    ] ?? []
   );
   let each_blocks = [];
   for (let i = 0; i < each_value_1.length; i += 1) {
@@ -10302,44 +13987,44 @@ function create_each_block3(ctx) {
   function click_handler_12() {
     return (
       /*click_handler_12*/
-      ctx[59](
+      ctx[60](
         /*v*/
-        ctx[73]
+        ctx[76]
       )
     );
   }
   let if_block0 = (
     /*v*/
-    ctx[73].e.source && create_if_block_42(ctx)
+    ctx[76].e.source && create_if_block_42(ctx)
   );
   function click_handler_13() {
     return (
       /*click_handler_13*/
-      ctx[60](
+      ctx[61](
         /*v*/
-        ctx[73]
+        ctx[76]
       )
     );
   }
   let if_block1 = (
     /*v*/
-    ctx[73].e.translation && create_if_block_32(ctx)
+    ctx[76].e.translation && create_if_block_32(ctx)
   );
   function click_handler_14() {
     return (
       /*click_handler_14*/
-      ctx[61](
+      ctx[62](
         /*v*/
-        ctx[73]
+        ctx[76]
       )
     );
   }
   function keydown_handler_8(...args) {
     return (
       /*keydown_handler_8*/
-      ctx[62](
+      ctx[63](
         /*v*/
-        ctx[73],
+        ctx[76],
         ...args
       )
     );
@@ -10351,14 +14036,19 @@ function create_each_block3(ctx) {
         each_blocks[i].c();
       }
       button0 = element("button");
-      button0.textContent = "\u{1F50A}";
+      span = element("span");
       if (if_block0) if_block0.c();
       button1 = element("button");
       button1.textContent = "\u2715";
       if (if_block1) if_block1.c();
-      t2 = space();
+      t12 = space();
+      attr(span, "class", "el-btn-ico");
       attr(button0, "class", "el-example-tts");
-      attr(button0, "title", "\u6717\u8BFB\u4F8B\u53E5");
+      attr(button0, "title", button0_title_value = /*exNeural*/
+      ctx[12][
+        /*v*/
+        ctx[76].e.text
+      ] ? "\u4F8B\u53E5\u6717\u8BFB\uFF08\u795E\u7ECF\u58F0\uFF09" : "\u4F8B\u53E5\u6717\u8BFB\uFF08\u7CFB\u7EDF TTS\uFF09");
       attr(button1, "class", "el-example-del");
       attr(button1, "title", "\u5220\u9664\u8FD9\u6761\u4F8B\u53E5\uFF08\u5199\u56DE\u8BCD\u7B14\u8BB0\uFF09");
       attr(div, "class", "el-example");
@@ -10373,12 +14063,22 @@ function create_each_block3(ctx) {
         }
       }
       append(div, button0);
+      append(button0, span);
       if (if_block0) if_block0.m(div, null);
       append(div, button1);
       if (if_block1) if_block1.m(div, null);
-      append(div, t2);
+      append(div, t12);
       if (!mounted) {
         dispose = [
+          action_destroyer(icon_action = icon.call(
+            null,
+            span,
+            /*exNeural*/
+            ctx[12][
+              /*v*/
+              ctx[76].e.text
+            ] ? "sentence-wave" : "tts-volume"
+          )),
           listen(button0, "click", stop_propagation(click_handler_12)),
           listen(button1, "click", stop_propagation(click_handler_13)),
           listen(div, "click", click_handler_14),
@@ -10386,38 +14086,38 @@ function create_each_block3(ctx) {
             div,
             "click",
             /*exClickCapture*/
-            ctx[31],
+            ctx[32],
             true
           ),
           listen(
             div,
             "pointerdown",
             /*exPointerDown*/
-            ctx[28]
+            ctx[29]
           ),
           listen(
             div,
             "pointermove",
             /*exPointerMove*/
-            ctx[29]
+            ctx[30]
           ),
           listen(
             div,
             "pointerup",
             /*exPointerCancel*/
-            ctx[30]
+            ctx[31]
           ),
           listen(
             div,
             "pointercancel",
             /*exPointerCancel*/
-            ctx[30]
+            ctx[31]
           ),
           listen(
             div,
             "pointerleave",
             /*exPointerCancel*/
-            ctx[30]
+            ctx[31]
           ),
           listen(div, "keydown", keydown_handler_8)
         ];
@@ -10425,16 +14125,15 @@ function create_each_block3(ctx) {
       }
     },
     p(new_ctx, dirty) {
-      var _a2;
       ctx = new_ctx;
       if (dirty[0] & /*tokClick, segsList*/
-      134234112) {
+      268468224) {
         each_value_1 = ensure_array_like(
           /*segsList*/
-          (_a2 = ctx[14][
+          ctx[15][
             /*vi*/
-            ctx[75]
-          ]) != null ? _a2 : []
+            ctx[78]
+          ] ?? []
         );
         let i;
         for (i = 0; i < each_value_1.length; i += 1) {
@@ -10452,9 +14151,26 @@ function create_each_block3(ctx) {
         }
         each_blocks.length = each_value_1.length;
       }
+      if (icon_action && is_function(icon_action.update) && dirty[0] & /*exNeural, exViews*/
+      4352) icon_action.update.call(
+        null,
+        /*exNeural*/
+        ctx[12][
+          /*v*/
+          ctx[76].e.text
+        ] ? "sentence-wave" : "tts-volume"
+      );
+      if (dirty[0] & /*exNeural, exViews*/
+      4352 && button0_title_value !== (button0_title_value = /*exNeural*/
+      ctx[12][
+        /*v*/
+        ctx[76].e.text
+      ] ? "\u4F8B\u53E5\u6717\u8BFB\uFF08\u795E\u7ECF\u58F0\uFF09" : "\u4F8B\u53E5\u6717\u8BFB\uFF08\u7CFB\u7EDF TTS\uFF09")) {
+        attr(button0, "title", button0_title_value);
+      }
       if (
         /*v*/
-        ctx[73].e.source
+        ctx[76].e.source
       ) {
         if (if_block0) {
           if_block0.p(ctx, dirty);
@@ -10469,14 +14185,14 @@ function create_each_block3(ctx) {
       }
       if (
         /*v*/
-        ctx[73].e.translation
+        ctx[76].e.translation
       ) {
         if (if_block1) {
           if_block1.p(ctx, dirty);
         } else {
           if_block1 = create_if_block_32(ctx);
           if_block1.c();
-          if_block1.m(div, t2);
+          if_block1.m(div, t12);
         }
       } else if (if_block1) {
         if_block1.d(1);
@@ -10507,10 +14223,12 @@ function create_fragment4(ctx) {
     ctx[0].word
   );
   let fitText_action;
-  let t1;
-  let t2;
+  let t12;
+  let t22;
   let t3;
   let button;
+  let span;
+  let icon_action;
   let button_title_value;
   let t4;
   let show_if = (
@@ -10522,30 +14240,21 @@ function create_fragment4(ctx) {
     ctx[7]
   );
   let t5;
-  let if_block5_anchor;
+  let if_block4_anchor;
   let current;
   let mounted;
   let dispose;
-  let if_block0 = show_if_1 && create_if_block_26(ctx);
+  let if_block0 = show_if_1 && create_if_block_25(ctx);
   let if_block1 = (
     /*doc*/
-    ctx[0].phonetic && create_if_block_25(ctx)
+    ctx[0].phonetic && create_if_block_24(ctx)
   );
   let if_block2 = (
     /*showAi*/
-    ctx[4] && create_if_block_24(ctx)
+    ctx[4] && create_if_block_23(ctx)
   );
-  function select_block_type(ctx2, dirty) {
-    if (
-      /*hasAudio*/
-      ctx2[11]
-    ) return create_if_block_23;
-    return create_else_block_4;
-  }
-  let current_block_type = select_block_type(ctx, [-1, -1, -1]);
-  let if_block3 = current_block_type(ctx);
-  let if_block4 = show_if && create_if_block_22(ctx);
-  let if_block5 = (
+  let if_block3 = show_if && create_if_block_22(ctx);
+  let if_block4 = (
     /*showBody*/
     ctx[5] && create_if_block3(ctx)
   );
@@ -10554,23 +14263,24 @@ function create_fragment4(ctx) {
       div = element("div");
       t0 = text(t0_value);
       if (if_block0) if_block0.c();
-      t1 = space();
+      t12 = space();
       if (if_block1) if_block1.c();
-      t2 = space();
+      t22 = space();
       if (if_block2) if_block2.c();
       t3 = space();
       button = element("button");
-      if_block3.c();
+      span = element("span");
       t4 = space();
-      if (if_block4) if_block4.c();
+      if (if_block3) if_block3.c();
       t5 = space();
-      if (if_block5) if_block5.c();
-      if_block5_anchor = empty();
+      if (if_block4) if_block4.c();
+      if_block4_anchor = empty();
       attr(div, "class", "el-word el-word-link");
       attr(div, "title", "\u70B9\u51FB\u7F16\u8F91\u8BCD\u7B14\u8BB0");
       attr(div, "role", "button");
       attr(div, "tabindex", "0");
-      attr(button, "class", "el-tts");
+      attr(span, "class", "el-btn-ico");
+      attr(button, "class", "el-tts el-ai-btn");
       attr(button, "title", button_title_value = /*hasAudio*/
       ctx[11] ? "\u6807\u51C6\u53D1\u97F3" : "\u7CFB\u7EDF TTS \u64AD\u653E\uFF0C\u70B9\u51FB\u540E\u81EA\u52A8\u7F13\u5B58\u6807\u51C6\u97F3");
     },
@@ -10578,18 +14288,18 @@ function create_fragment4(ctx) {
       insert(target, div, anchor);
       append(div, t0);
       if (if_block0) if_block0.m(div, null);
-      insert(target, t1, anchor);
+      insert(target, t12, anchor);
       if (if_block1) if_block1.m(target, anchor);
-      insert(target, t2, anchor);
+      insert(target, t22, anchor);
       if (if_block2) if_block2.m(target, anchor);
       insert(target, t3, anchor);
       insert(target, button, anchor);
-      if_block3.m(button, null);
+      append(button, span);
       insert(target, t4, anchor);
-      if (if_block4) if_block4.m(target, anchor);
+      if (if_block3) if_block3.m(target, anchor);
       insert(target, t5, anchor);
-      if (if_block5) if_block5.m(target, anchor);
-      insert(target, if_block5_anchor, anchor);
+      if (if_block4) if_block4.m(target, anchor);
+      insert(target, if_block4_anchor, anchor);
       current = true;
       if (!mounted) {
         dispose = [
@@ -10601,19 +14311,25 @@ function create_fragment4(ctx) {
             div,
             "click",
             /*openWordNote*/
-            ctx[20]
+            ctx[21]
           ),
           listen(
             div,
             "keydown",
             /*keydown_handler*/
-            ctx[39]
+            ctx[40]
           ),
+          action_destroyer(icon_action = icon.call(
+            null,
+            span,
+            /*hasAudio*/
+            ctx[11] ? "human-voice" : "tts-volume"
+          )),
           listen(
             button,
             "click",
             /*click_handler_2*/
-            ctx[42]
+            ctx[43]
           )
         ];
         mounted = true;
@@ -10631,7 +14347,7 @@ function create_fragment4(ctx) {
       if (show_if_1) {
         if (if_block0) {
         } else {
-          if_block0 = create_if_block_26(ctx2);
+          if_block0 = create_if_block_25(ctx2);
           if_block0.c();
           if_block0.m(div, null);
         }
@@ -10651,9 +14367,9 @@ function create_fragment4(ctx) {
         if (if_block1) {
           if_block1.p(ctx2, dirty);
         } else {
-          if_block1 = create_if_block_25(ctx2);
+          if_block1 = create_if_block_24(ctx2);
           if_block1.c();
-          if_block1.m(t2.parentNode, t2);
+          if_block1.m(t22.parentNode, t22);
         }
       } else if (if_block1) {
         if_block1.d(1);
@@ -10666,7 +14382,7 @@ function create_fragment4(ctx) {
         if (if_block2) {
           if_block2.p(ctx2, dirty);
         } else {
-          if_block2 = create_if_block_24(ctx2);
+          if_block2 = create_if_block_23(ctx2);
           if_block2.c();
           if_block2.m(t3.parentNode, t3);
         }
@@ -10674,14 +14390,12 @@ function create_fragment4(ctx) {
         if_block2.d(1);
         if_block2 = null;
       }
-      if (current_block_type !== (current_block_type = select_block_type(ctx2, dirty))) {
-        if_block3.d(1);
-        if_block3 = current_block_type(ctx2);
-        if (if_block3) {
-          if_block3.c();
-          if_block3.m(button, null);
-        }
-      }
+      if (icon_action && is_function(icon_action.update) && dirty[0] & /*hasAudio*/
+      2048) icon_action.update.call(
+        null,
+        /*hasAudio*/
+        ctx2[11] ? "human-voice" : "tts-volume"
+      );
       if (!current || dirty[0] & /*hasAudio*/
       2048 && button_title_value !== (button_title_value = /*hasAudio*/
       ctx2[11] ? "\u6807\u51C6\u53D1\u97F3" : "\u7CFB\u7EDF TTS \u64AD\u653E\uFF0C\u70B9\u51FB\u540E\u81EA\u52A8\u7F13\u5B58\u6807\u51C6\u97F3")) {
@@ -10695,74 +14409,73 @@ function create_fragment4(ctx) {
       ) && /*onBackfill*/
       ctx2[7];
       if (show_if) {
-        if (if_block4) {
-          if_block4.p(ctx2, dirty);
+        if (if_block3) {
+          if_block3.p(ctx2, dirty);
         } else {
-          if_block4 = create_if_block_22(ctx2);
-          if_block4.c();
-          if_block4.m(t5.parentNode, t5);
+          if_block3 = create_if_block_22(ctx2);
+          if_block3.c();
+          if_block3.m(t5.parentNode, t5);
         }
-      } else if (if_block4) {
-        if_block4.d(1);
-        if_block4 = null;
+      } else if (if_block3) {
+        if_block3.d(1);
+        if_block3 = null;
       }
       if (
         /*showBody*/
         ctx2[5]
       ) {
-        if (if_block5) {
-          if_block5.p(ctx2, dirty);
+        if (if_block4) {
+          if_block4.p(ctx2, dirty);
           if (dirty[0] & /*showBody*/
           32) {
-            transition_in(if_block5, 1);
+            transition_in(if_block4, 1);
           }
         } else {
-          if_block5 = create_if_block3(ctx2);
-          if_block5.c();
-          transition_in(if_block5, 1);
-          if_block5.m(if_block5_anchor.parentNode, if_block5_anchor);
+          if_block4 = create_if_block3(ctx2);
+          if_block4.c();
+          transition_in(if_block4, 1);
+          if_block4.m(if_block4_anchor.parentNode, if_block4_anchor);
         }
-      } else if (if_block5) {
+      } else if (if_block4) {
         group_outros();
-        transition_out(if_block5, 1, 1, () => {
-          if_block5 = null;
+        transition_out(if_block4, 1, 1, () => {
+          if_block4 = null;
         });
         check_outros();
       }
     },
     i(local) {
       if (current) return;
-      transition_in(if_block5);
+      transition_in(if_block4);
       current = true;
     },
     o(local) {
-      transition_out(if_block5);
+      transition_out(if_block4);
       current = false;
     },
     d(detaching) {
       if (detaching) {
         detach(div);
-        detach(t1);
-        detach(t2);
+        detach(t12);
+        detach(t22);
         detach(t3);
         detach(button);
         detach(t4);
         detach(t5);
-        detach(if_block5_anchor);
+        detach(if_block4_anchor);
       }
       if (if_block0) if_block0.d();
       if (if_block1) if_block1.d(detaching);
       if (if_block2) if_block2.d(detaching);
-      if_block3.d();
+      if (if_block3) if_block3.d(detaching);
       if (if_block4) if_block4.d(detaching);
-      if (if_block5) if_block5.d(detaching);
       mounted = false;
       run_all(dispose);
     }
   };
 }
 function instance4($$self, $$props, $$invalidate) {
-  var _a;
+  var _a2;
   let { plugin } = $$props;
   let { doc } = $$props;
   let { synonyms = [] } = $$props;
@@ -10786,6 +14499,17 @@ function instance4($$self, $$props, $$invalidate) {
   function readExample(text2) {
     plugin.speakSentence(text2);
   }
+  let exNeural = {};
+  let exSeq = 0;
+  async function checkExNeural(views) {
+    var _a3;
+    const gen = ++exSeq;
+    const synth = plugin.db.settings.sentenceNeural !== false && plugin.sentenceTts.ready();
+    const r = (_a3 = plugin.db.settings.ttsSentenceRate) !== null && _a3 !== void 0 ? _a3 : plugin.db.settings.ttsRate;
+    const out = {};
+    for (const v of views) out[v.e.text] = synth || await plugin.sentenceTts.has(v.e.text, r);
+    if (gen === exSeq) $$invalidate(12, exNeural = out);
+  }
   function editMemo() {
     new MemoModal(plugin.app, plugin, doc, () => $$invalidate(0, doc)).open();
   }
@@ -10801,32 +14525,32 @@ function instance4($$self, $$props, $$invalidate) {
   let aiBusy = false;
   async function aiExamples() {
     if (aiBusy) return;
-    $$invalidate(12, aiBusy = true);
+    $$invalidate(13, aiBusy = true);
     try {
       await plugin.aiExamplesFor(doc);
       $$invalidate(0, doc);
     } finally {
-      $$invalidate(12, aiBusy = false);
+      $$invalidate(13, aiBusy = false);
     }
   }
   let sensesBusy = false;
   async function aiSenses() {
     if (sensesBusy) return;
-    $$invalidate(13, sensesBusy = true);
+    $$invalidate(14, sensesBusy = true);
     try {
       await plugin.aiSensesFor(doc);
       $$invalidate(0, doc);
     } finally {
-      $$invalidate(13, sensesBusy = false);
+      $$invalidate(14, sensesBusy = false);
     }
   }
   let relatedList = [];
   function relatedWords(d) {
-    var _a2;
+    var _a3;
     const set2 = /* @__PURE__ */ new Set();
     for (const t of d.themes) {
       for (const w of plugin.words.themeWords(t)) {
-        if (w !== d.word && !((_a2 = plugin.db.ignored) === null || _a2 === void 0 ? void 0 : _a2[w])) set2.add(w);
+        if (w !== d.word && !((_a3 = plugin.db.ignored) === null || _a3 === void 0 ? void 0 : _a3[w])) set2.add(w);
       }
     }
     return [...set2];
@@ -10858,7 +14582,7 @@ function instance4($$self, $$props, $$invalidate) {
   let exViews = [];
   function tokClick(seg) {
     if (seg.kind === "new") {
-      new AddWordModal(plugin.app, plugin, seg.t, () => $$invalidate(37, libVer += 1), doc.themes[0]).open();
+      new AddWordModal(plugin.app, plugin, seg.t, () => $$invalidate(38, libVer += 1), doc.themes[0]).open();
       return;
     }
     if (seg.kind === "self") {
@@ -10873,11 +14597,11 @@ function instance4($$self, $$props, $$invalidate) {
   let lpFrom = null;
   let lpSuppressClick = false;
   function exPointerDown(ev) {
-    var _a2;
+    var _a3;
     lpSuppressClick = false;
     const primary = ev.pointerType === "touch" || ev.pointerType === "pen" || ev.pointerType === "mouse" && ev.button === 0;
     if (!primary) return;
-    if ((_a2 = ev.target) === null || _a2 === void 0 ? void 0 : _a2.closest("button")) return;
+    if ((_a3 = ev.target) === null || _a3 === void 0 ? void 0 : _a3.closest("button")) return;
     lpFrom = { x: ev.clientX, y: ev.clientY };
     lpTimer = setTimeout(
       () => {
@@ -10903,11 +14627,11 @@ function instance4($$self, $$props, $$invalidate) {
     ev.preventDefault();
   }
   function longPressLookup(x, y) {
-    var _a2;
+    var _a3;
     const range = document.caretRangeFromPoint(x, y);
     const node = range === null || range === void 0 ? void 0 : range.startContainer;
     if (!node || node.nodeType !== Node.TEXT_NODE) return;
-    const text2 = (_a2 = node.textContent) !== null && _a2 !== void 0 ? _a2 : "";
+    const text2 = (_a3 = node.textContent) !== null && _a3 !== void 0 ? _a3 : "";
     const off = range.startOffset;
     let word = null;
     for (const m of text2.matchAll(WORD_RE)) {
@@ -10923,12 +14647,12 @@ function instance4($$self, $$props, $$invalidate) {
       return;
     }
     if (/['’](?:s|t|re|ve|ll|d|m)$/.test(word.toLowerCase())) return;
-    new AddWordModal(plugin.app, plugin, word, () => $$invalidate(37, libVer += 1), doc.themes[0]).open();
+    new AddWordModal(plugin.app, plugin, word, () => $$invalidate(38, libVer += 1), doc.themes[0]).open();
   }
   function relClick(w, t) {
     const d = plugin.words.get(w);
     if (d) plugin.openWordCard(d);
-    else new AddWordModal(plugin.app, plugin, w, () => $$invalidate(37, libVer += 1), doc.themes[0], t).open();
+    else new AddWordModal(plugin.app, plugin, w, () => $$invalidate(38, libVer += 1), doc.themes[0], t).open();
   }
   function relTitle(w, t) {
     const state = libHits.has(w) ? "\u5DF2\u6536\u5F55\uFF0C\u70B9\u51FB\u67E5\u770B\u8BCD\u5361" : "\u672A\u6536\u5F55\uFF0C\u70B9\u51FB\u67E5\u8BCD";
@@ -10942,21 +14666,21 @@ function instance4($$self, $$props, $$invalidate) {
   let dictCollins = 0;
   let dictFrq = 0;
   async function loadDictExtra(word) {
-    var _a2, _b, _c, _d;
+    var _a3, _b, _c, _d;
     $$invalidate(9, dictRel = []);
-    $$invalidate(16, dictRem = "");
+    $$invalidate(17, dictRem = "");
     $$invalidate(10, dictWf = null);
-    $$invalidate(17, dictCollins = 0);
-    $$invalidate(18, dictFrq = 0);
+    $$invalidate(18, dictCollins = 0);
+    $$invalidate(19, dictFrq = 0);
     try {
       const e = await plugin.dict.lookup(word);
       if (doc.word !== word) return;
-      $$invalidate(9, dictRel = (_a2 = e === null || e === void 0 ? void 0 : e.rel) !== null && _a2 !== void 0 ? _a2 : []);
-      $$invalidate(16, dictRem = (_b = e === null || e === void 0 ? void 0 : e.rem) !== null && _b !== void 0 ? _b : "");
+      $$invalidate(9, dictRel = (_a3 = e === null || e === void 0 ? void 0 : e.rel) !== null && _a3 !== void 0 ? _a3 : []);
+      $$invalidate(17, dictRem = (_b = e === null || e === void 0 ? void 0 : e.rem) !== null && _b !== void 0 ? _b : "");
       $$invalidate(10, dictWf = parseWf(word, e === null || e === void 0 ? void 0 : e.wf));
-      $$invalidate(17, dictCollins = (_c = e === null || e === void 0 ? void 0 : e.collins) !== null && _c !== void 0 ? _c : 0);
-      $$invalidate(18, dictFrq = (_d = e === null || e === void 0 ? void 0 : e.frq) !== null && _d !== void 0 ? _d : 0);
-    } catch (_e) {
+      $$invalidate(18, dictCollins = (_c = e === null || e === void 0 ? void 0 : e.collins) !== null && _c !== void 0 ? _c : 0);
+      $$invalidate(19, dictFrq = (_d = e === null || e === void 0 ? void 0 : e.frq) !== null && _d !== void 0 ? _d : 0);
+    } catch (_e2) {
     }
   }
   let libHits = /* @__PURE__ */ new Set();
@@ -10970,7 +14694,7 @@ function instance4($$self, $$props, $$invalidate) {
   const click_handler_3 = (w) => relClick(w);
   const click_handler_4 = (w) => relClick(w);
   const click_handler_5 = (w, t) => relClick(w, t);
-  const click_handler_6 = () => (dictWf == null ? void 0 : dictWf.lemma) && relClick(dictWf.lemma);
+  const click_handler_6 = () => dictWf?.lemma && relClick(dictWf.lemma);
   const click_handler_7 = (w) => relClick(w);
   const click_handler_8 = (seg) => tokClick(seg);
   const keydown_handler_4 = (seg, ev) => ev.key === "Enter" && tokClick(seg);
@@ -10984,7 +14708,7 @@ function instance4($$self, $$props, $$invalidate) {
   const click_handler_13 = (v) => void delExample(v.i);
   const click_handler_14 = (v) => readExample(v.e.text);
   const keydown_handler_8 = (v, ev) => ev.key === "Enter" && readExample(v.e.text);
-  const click_handler_15 = () => $$invalidate(15, showAllEx = !showAllEx);
+  const click_handler_15 = () => $$invalidate(16, showAllEx = !showAllEx);
   $$self.$$set = ($$props2) => {
     if ("plugin" in $$props2) $$invalidate(1, plugin = $$props2.plugin);
     if ("doc" in $$props2) $$invalidate(0, doc = $$props2.doc);
@@ -10994,7 +14718,7 @@ function instance4($$self, $$props, $$invalidate) {
     if ("showBody" in $$props2) $$invalidate(5, showBody = $$props2.showBody);
     if ("themeEditable" in $$props2) $$invalidate(6, themeEditable = $$props2.themeEditable);
     if ("onBackfill" in $$props2) $$invalidate(7, onBackfill = $$props2.onBackfill);
-    if ("onEditThemes" in $$props2) $$invalidate(34, onEditThemes = $$props2.onEditThemes);
+    if ("onEditThemes" in $$props2) $$invalidate(35, onEditThemes = $$props2.onEditThemes);
   };
   $$self.$$.update = () => {
     if ($$self.$$.dirty[0] & /*doc*/
@@ -11003,23 +14727,27 @@ function instance4($$self, $$props, $$invalidate) {
     }
     if ($$self.$$.dirty[0] & /*doc*/
     1) {
-      $: $$invalidate(36, relatedList = relatedWords(doc));
-    }
-    if ($$self.$$.dirty[0] & /*doc*/
-    1) {
       $: $$invalidate(8, exViews = doc.examples.map((e, i) => ({ e, i })).sort((a, b) => a.e.text.length - b.e.text.length));
     }
     if ($$self.$$.dirty[0] & /*exViews*/
+    256) {
+      $: void checkExNeural(exViews);
+    }
+    if ($$self.$$.dirty[0] & /*doc*/
+    1) {
+      $: $$invalidate(37, relatedList = relatedWords(doc));
+    }
+    if ($$self.$$.dirty[0] & /*exViews*/
     256 | $$self.$$.dirty[1] & /*relatedList, libVer*/
-    96) {
-      $: $$invalidate(14, segsList = (relatedList, libVer, exViews.map((v) => splitExample(v.e.text))));
+    192) {
+      $: $$invalidate(15, segsList = (relatedList, libVer, exViews.map((v) => splitExample(v.e.text))));
     }
     if ($$self.$$.dirty[0] & /*doc*/
     1 | $$self.$$.dirty[1] & /*shownWord*/
-    128) {
+    256) {
       $: if (doc.word !== shownWord) {
-        $$invalidate(38, shownWord = doc.word);
-        $$invalidate(15, showAllEx = false);
+        $$invalidate(39, shownWord = doc.word);
+        $$invalidate(16, showAllEx = false);
       }
     }
     if ($$self.$$.dirty[0] & /*doc*/
@@ -11028,13 +14756,13 @@ function instance4($$self, $$props, $$invalidate) {
     }
     if ($$self.$$.dirty[0] & /*synonyms, antonyms, dictRel, dictWf, doc, plugin*/
     1551 | $$self.$$.dirty[1] & /*libVer, _a*/
-    80) {
-      $: $$invalidate(19, libHits = (libVer, new Set([
+    160) {
+      $: $$invalidate(20, libHits = (libVer, new Set([
         ...synonyms,
         ...antonyms,
         ...dictRel.map(([w]) => w),
         ...dictWf ? [
-          $$invalidate(35, _a = dictWf.lemma) !== null && _a !== void 0 ? _a : doc.word,
+          $$invalidate(36, _a2 = dictWf.lemma) !== null && _a2 !== void 0 ? _a2 : doc.word,
           ...dictWf.forms.map(([w]) => w)
         ] : []
       ].filter((w) => !!plugin.words.get(w)))));
@@ -11053,6 +14781,7 @@ function instance4($$self, $$props, $$invalidate) {
     dictRel,
     dictWf,
     hasAudio,
+    exNeural,
     aiBusy,
     sensesBusy,
     segsList,
@@ -11076,7 +14805,7 @@ function instance4($$self, $$props, $$invalidate) {
     relClick,
     relTitle,
     onEditThemes,
-    _a,
+    _a2,
     relatedList,
     libVer,
     shownWord,
@@ -11125,10 +14854,10 @@ var WordFullCard = class extends SvelteComponent {
         showBody: 5,
         themeEditable: 6,
         onBackfill: 7,
-        onEditThemes: 34
+        onEditThemes: 35
       },
       null,
-      [-1, -1, -1]
+      [-1, -1, -1, -1]
     );
   }
 };
@@ -11151,21 +14880,21 @@ function create_if_block_110(ctx) {
       ctx[8]
     ] + ""
   );
-  let t1;
-  let t2;
+  let t12;
+  let t22;
   return {
     c() {
       span = element("span");
       t0 = text("\uFF08");
-      t1 = text(t1_value);
-      t2 = text("\uFF09");
+      t12 = text(t1_value);
+      t22 = text("\uFF09");
       attr(span, "class", "el-opt-note");
     },
     m(target, anchor) {
       insert(target, span, anchor);
       append(span, t0);
-      append(span, t1);
-      append(span, t2);
+      append(span, t12);
+      append(span, t22);
     },
     p(ctx2, dirty) {
       if (dirty & /*quiz*/
@@ -11173,7 +14902,7 @@ function create_if_block_110(ctx) {
       ctx2[0].optionWords[
         /*i*/
         ctx2[8]
-      ] + "")) set_data(t1, t1_value);
+      ] + "")) set_data(t12, t1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -11201,7 +14930,6 @@ function create_if_block4(ctx) {
   };
 }
 function create_each_block4(ctx) {
-  var _a;
   let button;
   let span;
   let t0_value = (
@@ -11209,8 +14937,8 @@ function create_each_block4(ctx) {
     ctx[6] + ""
   );
   let t0;
-  let t1;
-  let t2;
+  let t12;
+  let t22;
   let mounted;
   let dispose;
   let if_block0 = (
@@ -11218,10 +14946,10 @@ function create_each_block4(ctx) {
     ctx[1] === /*i*/
     ctx[8] && !/*correct*/
     ctx[3] && /*quiz*/
-    ((_a = ctx[0].optionWords) == null ? void 0 : _a[
+    ctx[0].optionWords?.[
       /*i*/
       ctx[8]
-    ]) && create_if_block_110(ctx)
+    ] && create_if_block_110(ctx)
   );
   let if_block1 = (
     /*answered*/
@@ -11244,9 +14972,9 @@ function create_each_block4(ctx) {
       span = element("span");
       t0 = text(t0_value);
       if (if_block0) if_block0.c();
-      t1 = space();
+      t12 = space();
       if (if_block1) if_block1.c();
-      t2 = space();
+      t22 = space();
       attr(span, "class", "el-opt-text");
       attr(button, "class", "el-opt");
       button.disabled = /*answered*/
@@ -11273,16 +15001,15 @@ function create_each_block4(ctx) {
       append(button, span);
       append(span, t0);
       if (if_block0) if_block0.m(span, null);
-      append(button, t1);
+      append(button, t12);
       if (if_block1) if_block1.m(button, null);
-      append(button, t2);
+      append(button, t22);
       if (!mounted) {
         dispose = listen(button, "click", click_handler);
         mounted = true;
       }
     },
     p(new_ctx, dirty) {
-      var _a2;
       ctx = new_ctx;
       if (dirty & /*quiz*/
       1 && t0_value !== (t0_value = /*opt*/
@@ -11292,10 +15019,10 @@ function create_each_block4(ctx) {
         ctx[1] === /*i*/
         ctx[8] && !/*correct*/
         ctx[3] && /*quiz*/
-        ((_a2 = ctx[0].optionWords) == null ? void 0 : _a2[
+        ctx[0].optionWords?.[
           /*i*/
           ctx[8]
-        ])
+        ]
       ) {
         if (if_block0) {
           if_block0.p(ctx, dirty);
@@ -11318,7 +15045,7 @@ function create_each_block4(ctx) {
         } else {
           if_block1 = create_if_block4(ctx);
           if_block1.c();
-          if_block1.m(button, t2);
+          if_block1.m(button, t22);
         }
       } else if (if_block1) {
         if_block1.d(1);
@@ -11462,17 +15189,17 @@ function get_if_ctx(ctx) {
     /*cur*/
     child_ctx[11].doc.word
   );
-  child_ctx[141] = constants_0;
+  child_ctx[142] = constants_0;
   return child_ctx;
 }
 function get_each_context5(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[136] = list[i];
+  child_ctx[137] = list[i];
   return child_ctx;
 }
 function get_each_context_13(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[136] = list[i];
+  child_ctx[137] = list[i];
   return child_ctx;
 }
 function create_if_block_212(ctx) {
@@ -11480,12 +15207,12 @@ function create_if_block_212(ctx) {
   let div0;
   let span0;
   let t0;
-  let t1;
+  let t12;
   let t2_value = (
     /*hardMode*/
     ctx[16] ? " \xB7 \u96BE\u8BCD" : ""
   );
-  let t2;
+  let t22;
   let t3;
   let helptip;
   let t4;
@@ -11506,7 +15233,7 @@ function create_if_block_212(ctx) {
   let t9;
   let t10;
   let t11;
-  let t12;
+  let t122;
   let div4;
   let div3;
   let t13;
@@ -11520,11 +15247,11 @@ function create_if_block_212(ctx) {
   let if_block0 = (
     /*idx*/
     ctx[3] > 0 && /*browseFrom*/
-    ctx[4] < 0 && create_if_block_66(ctx)
+    ctx[4] < 0 && create_if_block_64(ctx)
   );
   let if_block1 = (
     /*browseFrom*/
-    ctx[4] < 0 && create_if_block_65(ctx)
+    ctx[4] < 0 && create_if_block_63(ctx)
   );
   const if_block_creators = [
     create_if_block_222,
@@ -11576,11 +15303,11 @@ function create_if_block_212(ctx) {
         /*themeLabel*/
         ctx[43]
       );
-      t1 = text(
+      t12 = text(
         /*roundLabel*/
         ctx[44]
       );
-      t2 = text(t2_value);
+      t22 = text(t2_value);
       t3 = space();
       create_component(helptip.$$.fragment);
       t4 = space();
@@ -11600,7 +15327,7 @@ function create_if_block_212(ctx) {
         /*total*/
         ctx[12]
       );
-      t12 = space();
+      t122 = space();
       div4 = element("div");
       div3 = element("div");
       t13 = space();
@@ -11639,8 +15366,8 @@ function create_if_block_212(ctx) {
       append(div2, div0);
       append(div0, span0);
       append(span0, t0);
-      append(span0, t1);
-      append(span0, t2);
+      append(span0, t12);
+      append(span0, t22);
       append(div0, t3);
       mount_component(helptip, div0, null);
       append(div2, t4);
@@ -11657,7 +15384,7 @@ function create_if_block_212(ctx) {
       append(span1, t9);
       append(span1, t10);
       append(span1, t11);
-      insert(target, t12, anchor);
+      insert(target, t122, anchor);
       insert(target, div4, anchor);
       append(div4, div3);
       insert(target, t13, anchor);
@@ -11668,8 +15395,7 @@ function create_if_block_212(ctx) {
       current = true;
       if (!mounted) {
         dispose = [
-          action_destroyer(icon_action = /*icon*/
-          ctx[47].call(
+          action_destroyer(icon_action = icon.call(
             null,
             button0,
             /*audioMuted*/
@@ -11679,15 +15405,14 @@ function create_if_block_212(ctx) {
             button0,
             "click",
             /*toggleMute*/
-            ctx[48]
+            ctx[47]
           ),
-          action_destroyer(icon_action_1 = /*icon*/
-          ctx[47].call(null, button1, "x")),
+          action_destroyer(icon_action_1 = icon.call(null, button1, "x")),
           listen(
             button1,
             "click",
             /*click_handler_8*/
-            ctx[90]
+            ctx[89]
           )
         ];
         mounted = true;
@@ -11702,13 +15427,13 @@ function create_if_block_212(ctx) {
       );
       if (!current || dirty[1] & /*roundLabel*/
       8192) set_data(
-        t1,
+        t12,
         /*roundLabel*/
         ctx2[44]
       );
       if ((!current || dirty[0] & /*hardMode*/
       65536) && t2_value !== (t2_value = /*hardMode*/
-      ctx2[16] ? " \xB7 \u96BE\u8BCD" : "")) set_data(t2, t2_value);
+      ctx2[16] ? " \xB7 \u96BE\u8BCD" : "")) set_data(t22, t2_value);
       if (
         /*idx*/
         ctx2[3] > 0 && /*browseFrom*/
@@ -11717,7 +15442,7 @@ function create_if_block_212(ctx) {
         if (if_block0) {
           if_block0.p(ctx2, dirty);
         } else {
-          if_block0 = create_if_block_66(ctx2);
+          if_block0 = create_if_block_64(ctx2);
           if_block0.c();
           if_block0.m(div1, t5);
         }
@@ -11756,7 +15481,7 @@ function create_if_block_212(ctx) {
         if (if_block1) {
           if_block1.p(ctx2, dirty);
         } else {
-          if_block1 = create_if_block_65(ctx2);
+          if_block1 = create_if_block_63(ctx2);
           if_block1.c();
           if_block1.m(div1, t7);
         }
@@ -11825,7 +15550,7 @@ function create_if_block_212(ctx) {
     d(detaching) {
       if (detaching) {
         detach(div2);
-        detach(t12);
+        detach(t122);
         detach(div4);
         detach(t13);
         detach(if_block2_anchor);
@@ -11846,12 +15571,12 @@ function create_if_block_93(ctx) {
   let t0;
   let div0;
   let span0;
-  let t1;
+  let t12;
   let t2_value = (
     /*stats*/
     ctx[18].rev + ""
   );
-  let t2;
+  let t22;
   let t3;
   let span1;
   let t4;
@@ -11876,7 +15601,7 @@ function create_if_block_93(ctx) {
   let t10;
   let span3;
   let t11;
-  let t12;
+  let t122;
   let t13;
   let t14;
   let span4;
@@ -11891,7 +15616,7 @@ function create_if_block_93(ctx) {
   let t19;
   let t20;
   let t21;
-  let t22;
+  let t222;
   let t23;
   let div1;
   let t24;
@@ -11965,8 +15690,8 @@ function create_if_block_93(ctx) {
       t0 = space();
       div0 = element("div");
       span0 = element("span");
-      t1 = text("\u590D\u4E60 ");
-      t2 = text(t2_value);
+      t12 = text("\u590D\u4E60 ");
+      t22 = text(t2_value);
       t3 = space();
       span1 = element("span");
       t4 = text("\u65B0\u5B66 ");
@@ -11980,7 +15705,7 @@ function create_if_block_93(ctx) {
       t10 = space();
       span3 = element("span");
       t11 = text("\u7528\u65F6 ");
-      t12 = text(
+      t122 = text(
         /*sessionMinutes*/
         ctx[31]
       );
@@ -11998,7 +15723,7 @@ function create_if_block_93(ctx) {
       if (if_block4) if_block4.c();
       t21 = space();
       if (if_block5) if_block5.c();
-      t22 = space();
+      t222 = space();
       if (if_block6) if_block6.c();
       t23 = space();
       div1 = element("div");
@@ -12020,8 +15745,8 @@ function create_if_block_93(ctx) {
       append(div2, t0);
       append(div2, div0);
       append(div0, span0);
-      append(span0, t1);
-      append(span0, t2);
+      append(span0, t12);
+      append(span0, t22);
       append(div0, t3);
       append(div0, span1);
       append(span1, t4);
@@ -12035,7 +15760,7 @@ function create_if_block_93(ctx) {
       append(div0, t10);
       append(div0, span3);
       append(span3, t11);
-      append(span3, t12);
+      append(span3, t122);
       append(span3, t13);
       append(div0, t14);
       append(div0, span4);
@@ -12050,7 +15775,7 @@ function create_if_block_93(ctx) {
       if (if_block4) if_block4.m(div2, null);
       append(div2, t21);
       if (if_block5) if_block5.m(div2, null);
-      append(div2, t22);
+      append(div2, t222);
       if (if_block6) if_block6.m(div2, null);
       append(div2, t23);
       append(div2, div1);
@@ -12066,7 +15791,7 @@ function create_if_block_93(ctx) {
           button,
           "click",
           /*back*/
-          ctx[81]
+          ctx[80]
         );
         mounted = true;
       }
@@ -12084,7 +15809,7 @@ function create_if_block_93(ctx) {
       }
       if (dirty[0] & /*stats*/
       262144 && t2_value !== (t2_value = /*stats*/
-      ctx2[18].rev + "")) set_data(t2, t2_value);
+      ctx2[18].rev + "")) set_data(t22, t2_value);
       if (dirty[0] & /*stats*/
       262144 && t5_value !== (t5_value = /*stats*/
       ctx2[18].new + "")) set_data(t5, t5_value);
@@ -12112,7 +15837,7 @@ function create_if_block_93(ctx) {
       ctx2[18].quizBad}` : "\u2014")) set_data(t9, t9_value);
       if (dirty[1] & /*sessionMinutes*/
       1) set_data(
-        t12,
+        t122,
         /*sessionMinutes*/
         ctx2[31]
       );
@@ -12177,7 +15902,7 @@ function create_if_block_93(ctx) {
         } else {
           if_block5 = create_if_block_153(ctx2);
           if_block5.c();
-          if_block5.m(div2, t22);
+          if_block5.m(div2, t222);
         }
       } else if (if_block5) {
         if_block5.d(1);
@@ -12266,13 +15991,13 @@ function create_if_block_93(ctx) {
 function create_if_block_43(ctx) {
   let div2;
   let div0;
-  let t1;
-  let t2;
+  let t12;
+  let t22;
   let div1;
   let t3;
   let show_if = (
     /*hardInThemeLive*/
-    ctx[73]() > 0
+    ctx[72]() > 0
   );
   let t4;
   let button;
@@ -12294,16 +16019,16 @@ function create_if_block_43(ctx) {
   let if_block1 = !/*hardMode*/
   ctx[16] && /*doneFresh*/
   ctx[27] > 0 && /*dailyLimit*/
-  ctx[26] > 0 && create_if_block_67(ctx);
+  ctx[26] > 0 && create_if_block_65(ctx);
   let if_block2 = show_if && create_if_block_510(ctx);
   return {
     c() {
       div2 = element("div");
       div0 = element("div");
       div0.textContent = "\u2705";
-      t1 = space();
+      t12 = space();
       if_block0.c();
-      t2 = space();
+      t22 = space();
       div1 = element("div");
       if (if_block1) if_block1.c();
       t3 = space();
@@ -12318,9 +16043,9 @@ function create_if_block_43(ctx) {
     m(target, anchor) {
       insert(target, div2, anchor);
       append(div2, div0);
-      append(div2, t1);
+      append(div2, t12);
       if_block0.m(div2, null);
-      append(div2, t2);
+      append(div2, t22);
       append(div2, div1);
       if (if_block1) if_block1.m(div1, null);
       append(div1, t3);
@@ -12332,7 +16057,7 @@ function create_if_block_43(ctx) {
           button,
           "click",
           /*back*/
-          ctx[81]
+          ctx[80]
         );
         mounted = true;
       }
@@ -12345,7 +16070,7 @@ function create_if_block_43(ctx) {
         if_block0 = current_block_type(ctx2);
         if (if_block0) {
           if_block0.c();
-          if_block0.m(div2, t2);
+          if_block0.m(div2, t22);
         }
       }
       if (!/*hardMode*/
@@ -12355,7 +16080,7 @@ function create_if_block_43(ctx) {
         if (if_block1) {
           if_block1.p(ctx2, dirty);
         } else {
-          if_block1 = create_if_block_67(ctx2);
+          if_block1 = create_if_block_65(ctx2);
           if_block1.c();
           if_block1.m(div1, t3);
         }
@@ -12382,9 +16107,9 @@ function create_if_block_43(ctx) {
 function create_if_block_33(ctx) {
   let div3;
   let div0;
-  let t1;
-  let h2;
-  let t2;
+  let t12;
+  let h22;
+  let t22;
   let t3;
   let t4;
   let t5;
@@ -12399,9 +16124,9 @@ function create_if_block_33(ctx) {
       div3 = element("div");
       div0 = element("div");
       div0.textContent = "\u{1F5C2}\uFE0F";
-      t1 = space();
-      h2 = element("h2");
-      t2 = text("\u4E3B\u9898\u300C");
+      t12 = space();
+      h22 = element("h2");
+      t22 = text("\u4E3B\u9898\u300C");
       t3 = text(
         /*themeName*/
         ctx[9]
@@ -12423,11 +16148,11 @@ function create_if_block_33(ctx) {
     m(target, anchor) {
       insert(target, div3, anchor);
       append(div3, div0);
-      append(div3, t1);
-      append(div3, h2);
-      append(h2, t2);
-      append(h2, t3);
-      append(h2, t4);
+      append(div3, t12);
+      append(div3, h22);
+      append(h22, t22);
+      append(h22, t3);
+      append(h22, t4);
       append(div3, t5);
       append(div3, div1);
       append(div3, t7);
@@ -12438,7 +16163,7 @@ function create_if_block_33(ctx) {
           button,
           "click",
           /*back*/
-          ctx[81]
+          ctx[80]
         );
         mounted = true;
       }
@@ -12462,16 +16187,16 @@ function create_if_block_33(ctx) {
     }
   };
 }
-function create_if_block_28(ctx) {
+function create_if_block_27(ctx) {
   let div3;
   let div0;
-  let t1;
-  let h2;
+  let t12;
+  let h22;
   let t2_value = (
     /*hardMode*/
     ctx[16] ? "\u6CA1\u6709\u9700\u8981\u4E13\u9879\u8BAD\u7EC3\u7684\u96BE\u8BCD" : "\u8FD8\u6CA1\u6709\u53EF\u5B66\u7684\u8BCD"
   );
-  let t2;
+  let t22;
   let t3;
   let div1;
   let t5;
@@ -12484,9 +16209,9 @@ function create_if_block_28(ctx) {
       div3 = element("div");
       div0 = element("div");
       div0.textContent = "\u{1F5C2}\uFE0F";
-      t1 = space();
-      h2 = element("h2");
-      t2 = text(t2_value);
+      t12 = space();
+      h22 = element("h2");
+      t22 = text(t2_value);
       t3 = space();
       div1 = element("div");
       div1.textContent = "\u5148\u5728\u4E3B\u9898\u5E93\u65B0\u5EFA\u4E3B\u9898\uFF0C\u518D\u6269\u8BCD\u6216\u5BFC\u5165\u8BCD\u8868\u3002";
@@ -12503,9 +16228,9 @@ function create_if_block_28(ctx) {
     m(target, anchor) {
       insert(target, div3, anchor);
       append(div3, div0);
-      append(div3, t1);
-      append(div3, h2);
-      append(h2, t2);
+      append(div3, t12);
+      append(div3, h22);
+      append(h22, t22);
       append(div3, t3);
       append(div3, div1);
       append(div3, t5);
@@ -12516,7 +16241,7 @@ function create_if_block_28(ctx) {
           button,
           "click",
           /*back*/
-          ctx[81]
+          ctx[80]
         );
         mounted = true;
       }
@@ -12524,7 +16249,7 @@ function create_if_block_28(ctx) {
     p(ctx2, dirty) {
       if (dirty[0] & /*hardMode*/
       65536 && t2_value !== (t2_value = /*hardMode*/
-      ctx2[16] ? "\u6CA1\u6709\u9700\u8981\u4E13\u9879\u8BAD\u7EC3\u7684\u96BE\u8BCD" : "\u8FD8\u6CA1\u6709\u53EF\u5B66\u7684\u8BCD")) set_data(t2, t2_value);
+      ctx2[16] ? "\u6CA1\u6709\u9700\u8981\u4E13\u9879\u8BAD\u7EC3\u7684\u96BE\u8BCD" : "\u8FD8\u6CA1\u6709\u53EF\u5B66\u7684\u8BCD")) set_data(t22, t2_value);
     },
     i: noop,
     o: noop,
@@ -12540,8 +16265,8 @@ function create_if_block_28(ctx) {
 function create_if_block_111(ctx) {
   let div3;
   let div0;
-  let t1;
-  let h2;
+  let t12;
+  let h22;
   let t3;
   let div1;
   let t4;
@@ -12557,9 +16282,9 @@ function create_if_block_111(ctx) {
       div3 = element("div");
       div0 = element("div");
       div0.textContent = "\u26A0\uFE0F";
-      t1 = space();
-      h2 = element("h2");
-      h2.textContent = "\u5B66\u4E60\u4F1A\u8BDD\u52A0\u8F7D\u5931\u8D25";
+      t12 = space();
+      h22 = element("h2");
+      h22.textContent = "\u5B66\u4E60\u4F1A\u8BDD\u52A0\u8F7D\u5931\u8D25";
       t3 = space();
       div1 = element("div");
       t4 = text(
@@ -12582,8 +16307,8 @@ function create_if_block_111(ctx) {
     m(target, anchor) {
       insert(target, div3, anchor);
       append(div3, div0);
-      append(div3, t1);
-      append(div3, h2);
+      append(div3, t12);
+      append(div3, h22);
       append(div3, t3);
       append(div3, div1);
       append(div1, t4);
@@ -12598,13 +16323,13 @@ function create_if_block_111(ctx) {
             button0,
             "click",
             /*click_handler*/
-            ctx[82]
+            ctx[81]
           ),
           listen(
             button1,
             "click",
             /*back*/
-            ctx[81]
+            ctx[80]
           )
         ];
         mounted = true;
@@ -12650,7 +16375,7 @@ function create_if_block5(ctx) {
     }
   };
 }
-function create_if_block_66(ctx) {
+function create_if_block_64(ctx) {
   let button;
   let mounted;
   let dispose;
@@ -12668,7 +16393,7 @@ function create_if_block_66(ctx) {
           button,
           "click",
           /*goBack*/
-          ctx[50]
+          ctx[49]
         );
         mounted = true;
       }
@@ -12683,7 +16408,7 @@ function create_if_block_66(ctx) {
     }
   };
 }
-function create_if_block_65(ctx) {
+function create_if_block_63(ctx) {
   let button;
   let icon_action;
   let mounted;
@@ -12699,13 +16424,12 @@ function create_if_block_65(ctx) {
       insert(target, button, anchor);
       if (!mounted) {
         dispose = [
-          action_destroyer(icon_action = /*icon*/
-          ctx[47].call(null, button, "trash-2")),
+          action_destroyer(icon_action = icon.call(null, button, "trash-2")),
           listen(
             button,
             "click",
             /*deleteCurrent*/
-            ctx[80]
+            ctx[79]
           )
         ];
         mounted = true;
@@ -12724,9 +16448,9 @@ function create_if_block_65(ctx) {
 function create_if_block_47(ctx) {
   let div;
   let t0;
-  let t1;
+  let t12;
   let quizoptions;
-  let t2;
+  let t22;
   let if_block2_anchor;
   let current;
   function select_block_type_12(ctx2, dirty) {
@@ -12737,13 +16461,13 @@ function create_if_block_47(ctx) {
     if (
       /*cur*/
       ctx2[11].quiz.kind === "cloze"
-    ) return create_if_block_61;
+    ) return create_if_block_59;
     if (
       /*cur*/
       ctx2[11].quiz.question === /*cur*/
       ctx2[11].doc.word
-    ) return create_if_block_622;
-    return create_else_block_11;
+    ) return create_if_block_60;
+    return create_else_block_9;
   }
   function select_block_ctx(ctx2, type) {
     if (type === create_if_block_51) return get_if_ctx(ctx2);
@@ -12776,17 +16500,17 @@ function create_if_block_47(ctx) {
       ),
       onpick: (
         /*pick*/
-        ctx[71]
+        ctx[70]
       )
     }
   });
-  function select_block_type_17(ctx2, dirty) {
+  function select_block_type_15(ctx2, dirty) {
     if (!/*quizAnswered*/
     ctx2[40]) return create_if_block_48;
     if (!/*quizCorrect*/
     ctx2[13]) return create_if_block_49;
   }
-  let current_block_type_1 = select_block_type_17(ctx, [-1, -1, -1, -1, -1]);
+  let current_block_type_1 = select_block_type_15(ctx, [-1, -1, -1, -1, -1]);
   let if_block2 = current_block_type_1 && current_block_type_1(ctx);
   return {
     c() {
@@ -12794,9 +16518,9 @@ function create_if_block_47(ctx) {
       if_block0.c();
       t0 = space();
       if (if_block1) if_block1.c();
-      t1 = space();
+      t12 = space();
       create_component(quizoptions.$$.fragment);
-      t2 = space();
+      t22 = space();
       if (if_block2) if_block2.c();
       if_block2_anchor = empty();
       attr(div, "class", "el-card");
@@ -12806,9 +16530,9 @@ function create_if_block_47(ctx) {
       if_block0.m(div, null);
       append(div, t0);
       if (if_block1) if_block1.m(div, null);
-      insert(target, t1, anchor);
+      insert(target, t12, anchor);
       mount_component(quizoptions, target, anchor);
-      insert(target, t2, anchor);
+      insert(target, t22, anchor);
       if (if_block2) if_block2.m(target, anchor);
       insert(target, if_block2_anchor, anchor);
       current = true;
@@ -12863,7 +16587,7 @@ function create_if_block_47(ctx) {
       8192) quizoptions_changes.correct = /*quizCorrect*/
       ctx2[13];
       quizoptions.$set(quizoptions_changes);
-      if (current_block_type_1 === (current_block_type_1 = select_block_type_17(ctx2, dirty)) && if_block2) {
+      if (current_block_type_1 === (current_block_type_1 = select_block_type_15(ctx2, dirty)) && if_block2) {
         if_block2.p(ctx2, dirty);
       } else {
         if (if_block2) if_block2.d(1);
@@ -12888,8 +16612,8 @@ function create_if_block_47(ctx) {
     d(detaching) {
       if (detaching) {
         detach(div);
-        detach(t1);
-        detach(t2);
+        detach(t12);
+        detach(t22);
         detach(if_block2_anchor);
       }
       if_block0.d();
@@ -12906,7 +16630,7 @@ function create_if_block_40(ctx) {
   let current_block_type_index;
   let if_block0;
   let t0;
-  let t1;
+  let t12;
   let if_block2_anchor;
   let current;
   const if_block_creators = [create_if_block_432, create_else_block_7];
@@ -12935,7 +16659,7 @@ function create_if_block_40(ctx) {
       if_block0.c();
       t0 = space();
       if (if_block1) if_block1.c();
-      t1 = space();
+      t12 = space();
       if_block2.c();
       if_block2_anchor = empty();
       attr(div, "class", "el-card");
@@ -12945,7 +16669,7 @@ function create_if_block_40(ctx) {
       if_blocks[current_block_type_index].m(div, null);
       insert(target, t0, anchor);
       if (if_block1) if_block1.m(target, anchor);
-      insert(target, t1, anchor);
+      insert(target, t12, anchor);
       if_block2.m(target, anchor);
       insert(target, if_block2_anchor, anchor);
       current = true;
@@ -12983,7 +16707,7 @@ function create_if_block_40(ctx) {
           if_block1 = create_if_block_422(ctx2);
           if_block1.c();
           transition_in(if_block1, 1);
-          if_block1.m(t1.parentNode, t1);
+          if_block1.m(t12.parentNode, t12);
         }
       } else if (if_block1) {
         group_outros();
@@ -13018,7 +16742,7 @@ function create_if_block_40(ctx) {
       if (detaching) {
         detach(div);
         detach(t0);
-        detach(t1);
+        detach(t12);
         detach(if_block2_anchor);
       }
       if_blocks[current_block_type_index].d();
@@ -13147,7 +16871,7 @@ function create_if_block_252(ctx) {
   let div;
   let wordfullcard;
   let t0;
-  let t1;
+  let t12;
   let if_block1_anchor;
   let current;
   wordfullcard = new WordFullCard_default({
@@ -13181,7 +16905,7 @@ function create_if_block_252(ctx) {
   let if_block0 = (
     /*cur*/
     ctx[11].kind === "restudy" && !/*revealed*/
-    ctx[5] && create_if_block_282(ctx)
+    ctx[5] && create_if_block_28(ctx)
   );
   function select_block_type_5(ctx2, dirty) {
     if (
@@ -13203,7 +16927,7 @@ function create_if_block_252(ctx) {
       create_component(wordfullcard.$$.fragment);
       t0 = space();
       if (if_block0) if_block0.c();
-      t1 = space();
+      t12 = space();
       if (if_block1) if_block1.c();
       if_block1_anchor = empty();
       attr(div, "class", "el-card");
@@ -13213,7 +16937,7 @@ function create_if_block_252(ctx) {
       mount_component(wordfullcard, div, null);
       append(div, t0);
       if (if_block0) if_block0.m(div, null);
-      insert(target, t1, anchor);
+      insert(target, t12, anchor);
       if (if_block1) if_block1.m(target, anchor);
       insert(target, if_block1_anchor, anchor);
       current = true;
@@ -13247,7 +16971,7 @@ function create_if_block_252(ctx) {
         if (if_block0) {
           if_block0.p(ctx2, dirty);
         } else {
-          if_block0 = create_if_block_282(ctx2);
+          if_block0 = create_if_block_28(ctx2);
           if_block0.c();
           if_block0.m(div, null);
         }
@@ -13278,7 +17002,7 @@ function create_if_block_252(ctx) {
     d(detaching) {
       if (detaching) {
         detach(div);
-        detach(t1);
+        detach(t12);
         detach(if_block1_anchor);
       }
       destroy_component(wordfullcard);
@@ -13297,8 +17021,8 @@ function create_if_block_242(ctx) {
   let button0;
   let span0;
   let icon_action;
-  let t1;
-  let t2;
+  let t12;
+  let t22;
   let button1;
   let t4;
   let button2;
@@ -13330,8 +17054,8 @@ function create_if_block_242(ctx) {
       div1 = element("div");
       button0 = element("button");
       span0 = element("span");
-      t1 = text("\u592A\u7B80\u5355");
-      t2 = space();
+      t12 = text("\u592A\u7B80\u5355");
+      t22 = space();
       button1 = element("button");
       button1.textContent = "\u8BA4\u8BC6";
       t4 = space();
@@ -13353,8 +17077,8 @@ function create_if_block_242(ctx) {
       insert(target, div1, anchor);
       append(div1, button0);
       append(button0, span0);
-      append(button0, t1);
-      append(div1, t2);
+      append(button0, t12);
+      append(div1, t22);
       append(div1, button1);
       append(div1, t4);
       append(div1, button2);
@@ -13363,27 +17087,25 @@ function create_if_block_242(ctx) {
       current = true;
       if (!mounted) {
         dispose = [
-          action_destroyer(icon_action = /*icon*/
-          ctx[47].call(null, span0, ICON_EASY)),
+          action_destroyer(icon_action = icon.call(null, span0, ICON_EASY)),
           listen(
             button0,
             "click",
             /*tooEasy*/
-            ctx[52]
+            ctx[51]
           ),
           listen(
             button1,
             "click",
             /*knowIt*/
-            ctx[53]
+            ctx[52]
           ),
-          action_destroyer(icon_action_1 = /*icon*/
-          ctx[47].call(null, span1, ICON_UNKNOWN)),
+          action_destroyer(icon_action_1 = icon.call(null, span1, ICON_UNKNOWN)),
           listen(
             button2,
             "click",
             /*unknownWord*/
-            ctx[57]
+            ctx[56]
           )
         ];
         mounted = true;
@@ -13425,7 +17147,7 @@ function create_if_block_222(ctx) {
   let wordfullcard;
   let t0;
   let div1;
-  let t1;
+  let t12;
   let button;
   let current;
   let mounted;
@@ -13461,7 +17183,7 @@ function create_if_block_222(ctx) {
       t0 = space();
       div1 = element("div");
       if (if_block) if_block.c();
-      t1 = space();
+      t12 = space();
       button = element("button");
       button.textContent = "\u7EE7\u7EED";
       attr(div0, "class", "el-card");
@@ -13474,7 +17196,7 @@ function create_if_block_222(ctx) {
       insert(target, t0, anchor);
       insert(target, div1, anchor);
       if (if_block) if_block.m(div1, null);
-      append(div1, t1);
+      append(div1, t12);
       append(div1, button);
       current = true;
       if (!mounted) {
@@ -13482,7 +17204,7 @@ function create_if_block_222(ctx) {
           button,
           "click",
           /*goForward*/
-          ctx[51]
+          ctx[50]
         );
         mounted = true;
       }
@@ -13511,7 +17233,7 @@ function create_if_block_222(ctx) {
         } else {
           if_block = create_if_block_232(ctx2);
           if_block.c();
-          if_block.m(div1, t1);
+          if_block.m(div1, t12);
         }
       } else if (if_block) {
         if_block.d(1);
@@ -13540,54 +17262,54 @@ function create_if_block_222(ctx) {
     }
   };
 }
-function create_else_block_11(ctx) {
+function create_else_block_9(ctx) {
   let div0;
-  let t1;
+  let t12;
   let div1;
   let t2_value = (
     /*cur*/
     ctx[11].quiz.question + ""
   );
-  let t2;
+  let t22;
   return {
     c() {
       div0 = element("div");
       div0.textContent = "\u9009\u51FA\u5BF9\u5E94\u7684\u5355\u8BCD";
-      t1 = space();
+      t12 = space();
       div1 = element("div");
-      t2 = text(t2_value);
+      t22 = text(t2_value);
       attr(div0, "class", "el-hint");
       attr(div1, "class", "el-quiz-question");
     },
     m(target, anchor) {
       insert(target, div0, anchor);
-      insert(target, t1, anchor);
+      insert(target, t12, anchor);
       insert(target, div1, anchor);
-      append(div1, t2);
+      append(div1, t22);
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*cur*/
       2048 && t2_value !== (t2_value = /*cur*/
-      ctx2[11].quiz.question + "")) set_data(t2, t2_value);
+      ctx2[11].quiz.question + "")) set_data(t22, t2_value);
     },
     d(detaching) {
       if (detaching) {
         detach(div0);
-        detach(t1);
+        detach(t12);
         detach(div1);
       }
     }
   };
 }
-function create_if_block_622(ctx) {
+function create_if_block_60(ctx) {
   let div0;
-  let t1;
+  let t12;
   let div1;
   let t2_value = (
     /*cur*/
     ctx[11].quiz.question + ""
   );
-  let t2;
+  let t22;
   let show_if = isPhrase(
     /*cur*/
     ctx[11].doc.word
@@ -13597,18 +17319,18 @@ function create_if_block_622(ctx) {
   let if_block1_anchor;
   let mounted;
   let dispose;
-  let if_block0 = show_if && create_if_block_64(ctx);
+  let if_block0 = show_if && create_if_block_622(ctx);
   let if_block1 = (
     /*cur*/
-    ctx[11].quiz.phonetic && create_if_block_63(ctx)
+    ctx[11].quiz.phonetic && create_if_block_61(ctx)
   );
   return {
     c() {
       div0 = element("div");
       div0.textContent = "\u9009\u51FA\u6B63\u786E\u91CA\u4E49";
-      t1 = space();
+      t12 = space();
       div1 = element("div");
-      t2 = text(t2_value);
+      t22 = text(t2_value);
       if (if_block0) if_block0.c();
       t3 = space();
       if (if_block1) if_block1.c();
@@ -13619,9 +17341,9 @@ function create_if_block_622(ctx) {
     },
     m(target, anchor) {
       insert(target, div0, anchor);
-      insert(target, t1, anchor);
+      insert(target, t12, anchor);
       insert(target, div1, anchor);
-      append(div1, t2);
+      append(div1, t22);
       if (if_block0) if_block0.m(div1, null);
       insert(target, t3, anchor);
       if (if_block1) if_block1.m(target, anchor);
@@ -13637,7 +17359,7 @@ function create_if_block_622(ctx) {
     p(ctx2, dirty) {
       if (dirty[0] & /*cur*/
       2048 && t2_value !== (t2_value = /*cur*/
-      ctx2[11].quiz.question + "")) set_data(t2, t2_value);
+      ctx2[11].quiz.question + "")) set_data(t22, t2_value);
       if (dirty[0] & /*cur*/
       2048) show_if = isPhrase(
         /*cur*/
@@ -13646,7 +17368,7 @@ function create_if_block_622(ctx) {
       if (show_if) {
         if (if_block0) {
         } else {
-          if_block0 = create_if_block_64(ctx2);
+          if_block0 = create_if_block_622(ctx2);
           if_block0.c();
           if_block0.m(div1, null);
         }
@@ -13666,7 +17388,7 @@ function create_if_block_622(ctx) {
         if (if_block1) {
           if_block1.p(ctx2, dirty);
         } else {
-          if_block1 = create_if_block_63(ctx2);
+          if_block1 = create_if_block_61(ctx2);
           if_block1.c();
           if_block1.m(if_block1_anchor.parentNode, if_block1_anchor);
         }
@@ -13678,7 +17400,7 @@ function create_if_block_622(ctx) {
     d(detaching) {
       if (detaching) {
         detach(div0);
-        detach(t1);
+        detach(t12);
         detach(div1);
         detach(t3);
         detach(if_block1_anchor);
@@ -13690,40 +17412,40 @@ function create_if_block_622(ctx) {
     }
   };
 }
-function create_if_block_61(ctx) {
+function create_if_block_59(ctx) {
   let div0;
-  let t1;
+  let t12;
   let div1;
   let t2_value = (
     /*cur*/
     ctx[11].quiz.question + ""
   );
-  let t2;
+  let t22;
   return {
     c() {
       div0 = element("div");
       div0.textContent = "\u9009\u51FA\u586B\u5165\u7A7A\u683C\u7684\u8BCD";
-      t1 = space();
+      t12 = space();
       div1 = element("div");
-      t2 = text(t2_value);
+      t22 = text(t2_value);
       attr(div0, "class", "el-hint");
       attr(div1, "class", "el-quiz-question");
     },
     m(target, anchor) {
       insert(target, div0, anchor);
-      insert(target, t1, anchor);
+      insert(target, t12, anchor);
       insert(target, div1, anchor);
-      append(div1, t2);
+      append(div1, t22);
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*cur*/
       2048 && t2_value !== (t2_value = /*cur*/
-      ctx2[11].quiz.question + "")) set_data(t2, t2_value);
+      ctx2[11].quiz.question + "")) set_data(t22, t2_value);
     },
     d(detaching) {
       if (detaching) {
         detach(div0);
-        detach(t1);
+        detach(t12);
         detach(div1);
       }
     }
@@ -13736,20 +17458,20 @@ function create_if_block_51(ctx) {
     if (
       /*cur*/
       ctx2[11].quiz.audioOnly
-    ) return create_if_block_59;
-    return create_else_block_10;
+    ) return create_if_block_58;
+    return create_else_block_8;
   }
   let current_block_type = select_block_type_13(ctx, [-1, -1, -1, -1, -1]);
   let if_block0 = current_block_type(ctx);
-  function select_block_type_15(ctx2, dirty) {
+  function select_block_type_14(ctx2, dirty) {
     if (!/*quizAnswered*/
     ctx2[40]) return create_if_block_522;
     if (
       /*quizCorrect*/
       ctx2[13]
-    ) return create_if_block_58;
+    ) return create_if_block_57;
   }
-  let current_block_type_1 = select_block_type_15(ctx, [-1, -1, -1, -1, -1]);
+  let current_block_type_1 = select_block_type_14(ctx, [-1, -1, -1, -1, -1]);
   let if_block1 = current_block_type_1 && current_block_type_1(ctx);
   return {
     c() {
@@ -13775,7 +17497,7 @@ function create_if_block_51(ctx) {
           if_block0.m(t.parentNode, t);
         }
       }
-      if (current_block_type_1 === (current_block_type_1 = select_block_type_15(ctx2, dirty)) && if_block1) {
+      if (current_block_type_1 === (current_block_type_1 = select_block_type_14(ctx2, dirty)) && if_block1) {
         if_block1.p(ctx2, dirty);
       } else {
         if (if_block1) if_block1.d(1);
@@ -13798,7 +17520,7 @@ function create_if_block_51(ctx) {
     }
   };
 }
-function create_if_block_64(ctx) {
+function create_if_block_622(ctx) {
   let span;
   return {
     c() {
@@ -13816,7 +17538,7 @@ function create_if_block_64(ctx) {
     }
   };
 }
-function create_if_block_63(ctx) {
+function create_if_block_61(ctx) {
   let div;
   let t_value = (
     /*cur*/
@@ -13845,12 +17567,12 @@ function create_if_block_63(ctx) {
     }
   };
 }
-function create_else_block_10(ctx) {
+function create_else_block_8(ctx) {
   let div;
   return {
     c() {
       div = element("div");
-      div.textContent = "\u62FC\u51FA\u8FD9\u4E2A\u5355\u8BCD\uFF08\u56DE\u8F66\u63D0\u4EA4\uFF09";
+      div.textContent = "\u62FC\u51FA\u8FD9\u4E2A\u5355\u8BCD";
       attr(div, "class", "el-hint");
     },
     m(target, anchor) {
@@ -13864,28 +17586,21 @@ function create_else_block_10(ctx) {
     }
   };
 }
-function create_if_block_59(ctx) {
+function create_if_block_58(ctx) {
   let div;
-  let t1;
+  let t12;
   let button;
+  let span;
+  let icon_action;
   let button_title_value;
   let mounted;
   let dispose;
-  function select_block_type_14(ctx2, dirty) {
-    if (
-      /*hasAudio*/
-      ctx2[36]
-    ) return create_if_block_60;
-    return create_else_block_9;
-  }
-  let current_block_type = select_block_type_14(ctx, [-1, -1, -1, -1, -1]);
-  let if_block = current_block_type(ctx);
   function click_handler_12() {
     return (
       /*click_handler_12*/
-      ctx[94](
+      ctx[93](
         /*word*/
-        ctx[141]
+        ctx[142]
       )
     );
   }
@@ -13893,34 +17608,41 @@ function create_if_block_59(ctx) {
     c() {
       div = element("div");
       div.textContent = "\u542C\u97F3\u62FC\u5199\uFF1A\u70B9\u5587\u53ED\u542C\u53D1\u97F3\uFF0C\u62FC\u51FA\u4F60\u542C\u5230\u7684\u8BCD";
-      t1 = space();
+      t12 = space();
       button = element("button");
-      if_block.c();
+      span = element("span");
       attr(div, "class", "el-hint");
+      attr(span, "class", "el-btn-ico");
       attr(button, "class", "el-spell-audio");
       attr(button, "title", button_title_value = /*hasAudio*/
       ctx[36] ? "\u6807\u51C6\u53D1\u97F3 \xB7 \u518D\u542C\u4E00\u904D" : "\u7CFB\u7EDF TTS \xB7 \u518D\u542C\u4E00\u904D");
     },
     m(target, anchor) {
       insert(target, div, anchor);
-      insert(target, t1, anchor);
+      insert(target, t12, anchor);
       insert(target, button, anchor);
-      if_block.m(button, null);
+      append(button, span);
       if (!mounted) {
-        dispose = listen(button, "click", click_handler_12);
+        dispose = [
+          action_destroyer(icon_action = icon.call(
+            null,
+            span,
+            /*hasAudio*/
+            ctx[36] ? "human-voice" : "tts-volume"
+          )),
+          listen(button, "click", click_handler_12)
+        ];
         mounted = true;
       }
     },
     p(new_ctx, dirty) {
       ctx = new_ctx;
-      if (current_block_type !== (current_block_type = select_block_type_14(ctx, dirty))) {
-        if_block.d(1);
-        if_block = current_block_type(ctx);
-        if (if_block) {
-          if_block.c();
-          if_block.m(button, null);
-        }
-      }
+      if (icon_action && is_function(icon_action.update) && dirty[1] & /*hasAudio*/
+      32) icon_action.update.call(
+        null,
+        /*hasAudio*/
+        ctx[36] ? "human-voice" : "tts-volume"
+      );
       if (dirty[1] & /*hasAudio*/
       32 && button_title_value !== (button_title_value = /*hasAudio*/
       ctx[36] ? "\u6807\u51C6\u53D1\u97F3 \xB7 \u518D\u542C\u4E00\u904D" : "\u7CFB\u7EDF TTS \xB7 \u518D\u542C\u4E00\u904D")) {
@@ -13930,73 +17652,38 @@ function create_if_block_59(ctx) {
     d(detaching) {
       if (detaching) {
         detach(div);
-        detach(t1);
+        detach(t12);
         detach(button);
       }
-      if_block.d();
       mounted = false;
-      dispose();
+      run_all(dispose);
     }
   };
 }
-function create_else_block_9(ctx) {
-  let t;
-  return {
-    c() {
-      t = text("\u{1F50A}");
-    },
-    m(target, anchor) {
-      insert(target, t, anchor);
-    },
-    d(detaching) {
-      if (detaching) {
-        detach(t);
-      }
-    }
-  };
-}
-function create_if_block_60(ctx) {
-  let span;
-  return {
-    c() {
-      span = element("span");
-      span.textContent = "\u{1F464}";
-      attr(span, "class", "el-ico-human");
-    },
-    m(target, anchor) {
-      insert(target, span, anchor);
-    },
-    d(detaching) {
-      if (detaching) {
-        detach(span);
-      }
-    }
-  };
-}
-function create_if_block_58(ctx) {
+function create_if_block_57(ctx) {
   let div;
   let t0;
   let t1_value = (
     /*cur*/
     ctx[11].quiz.reveal + ""
   );
-  let t1;
+  let t12;
   return {
     c() {
       div = element("div");
       t0 = text("\u2705 \u62FC\u5199\u6B63\u786E\uFF1A");
-      t1 = text(t1_value);
+      t12 = text(t1_value);
       attr(div, "class", "el-quiz-reveal");
     },
     m(target, anchor) {
       insert(target, div, anchor);
       append(div, t0);
-      append(div, t1);
+      append(div, t12);
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*cur*/
       2048 && t1_value !== (t1_value = /*cur*/
-      ctx2[11].quiz.reveal + "")) set_data(t1, t1_value);
+      ctx2[11].quiz.reveal + "")) set_data(t12, t1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -14007,11 +17694,11 @@ function create_if_block_58(ctx) {
 }
 function create_if_block_522(ctx) {
   let t0;
-  let t1;
+  let t12;
   let div;
   let input;
   let focusOnMount_action;
-  let t2;
+  let t22;
   let t3;
   let button0;
   let t5;
@@ -14032,11 +17719,11 @@ function create_if_block_522(ctx) {
   let if_block0 = (
     /*cur*/
     ctx[11].quiz.audioOnly && !/*spellShowQ*/
-    ctx[39] && create_if_block_57(ctx)
+    ctx[39] && create_if_block_56(ctx)
   );
   let if_block1 = (!/*cur*/
   ctx[11].quiz.audioOnly || /*spellShowQ*/
-  ctx[39]) && create_if_block_55(ctx);
+  ctx[39]) && create_if_block_54(ctx);
   let if_block2 = !/*cur*/
   ctx[11].quiz.audioOnly && create_if_block_53(ctx);
   return {
@@ -14044,10 +17731,10 @@ function create_if_block_522(ctx) {
       if (if_block0) if_block0.c();
       t0 = space();
       if (if_block1) if_block1.c();
-      t1 = space();
+      t12 = space();
       div = element("div");
       input = element("input");
-      t2 = space();
+      t22 = space();
       if (if_block2) if_block2.c();
       t3 = space();
       button0 = element("button");
@@ -14069,7 +17756,7 @@ function create_if_block_522(ctx) {
       if (if_block0) if_block0.m(target, anchor);
       insert(target, t0, anchor);
       if (if_block1) if_block1.m(target, anchor);
-      insert(target, t1, anchor);
+      insert(target, t12, anchor);
       insert(target, div, anchor);
       append(div, input);
       set_input_value(
@@ -14077,7 +17764,7 @@ function create_if_block_522(ctx) {
         /*spellInput*/
         ctx[37]
       );
-      append(div, t2);
+      append(div, t22);
       if (if_block2) if_block2.m(div, null);
       append(div, t3);
       append(div, button0);
@@ -14090,26 +17777,26 @@ function create_if_block_522(ctx) {
             input,
             "input",
             /*input_input_handler*/
-            ctx[96]
+            ctx[95]
           ),
           action_destroyer(focusOnMount_action = focusOnMount.call(null, input)),
           listen(
             input,
             "keydown",
             /*spellKeydown*/
-            ctx[69]
+            ctx[68]
           ),
           listen(
             button0,
             "click",
             /*submitSpell*/
-            ctx[70]
+            ctx[69]
           ),
           listen(
             button1,
             "click",
             /*click_handler_15*/
-            ctx[98]
+            ctx[97]
           )
         ];
         mounted = true;
@@ -14124,7 +17811,7 @@ function create_if_block_522(ctx) {
         if (if_block0) {
           if_block0.p(ctx2, dirty);
         } else {
-          if_block0 = create_if_block_57(ctx2);
+          if_block0 = create_if_block_56(ctx2);
           if_block0.c();
           if_block0.m(t0.parentNode, t0);
         }
@@ -14138,9 +17825,9 @@ function create_if_block_522(ctx) {
         if (if_block1) {
           if_block1.p(ctx2, dirty);
         } else {
-          if_block1 = create_if_block_55(ctx2);
+          if_block1 = create_if_block_54(ctx2);
           if_block1.c();
-          if_block1.m(t1.parentNode, t1);
+          if_block1.m(t12.parentNode, t12);
         }
       } else if (if_block1) {
         if_block1.d(1);
@@ -14182,7 +17869,7 @@ function create_if_block_522(ctx) {
     d(detaching) {
       if (detaching) {
         detach(t0);
-        detach(t1);
+        detach(t12);
         detach(div);
         detach(t5);
         detach(button1);
@@ -14195,7 +17882,7 @@ function create_if_block_522(ctx) {
     }
   };
 }
-function create_if_block_57(ctx) {
+function create_if_block_56(ctx) {
   let button;
   let mounted;
   let dispose;
@@ -14212,7 +17899,7 @@ function create_if_block_57(ctx) {
           button,
           "click",
           /*click_handler_13*/
-          ctx[95]
+          ctx[94]
         );
         mounted = true;
       }
@@ -14227,24 +17914,24 @@ function create_if_block_57(ctx) {
     }
   };
 }
-function create_if_block_55(ctx) {
+function create_if_block_54(ctx) {
   let div;
   let t0_value = (
     /*cur*/
     ctx[11].quiz.question + ""
   );
   let t0;
-  let t1;
+  let t12;
   let if_block_anchor;
   let if_block = (
     /*cur*/
-    ctx[11].quiz.phonetic && create_if_block_56(ctx)
+    ctx[11].quiz.phonetic && create_if_block_55(ctx)
   );
   return {
     c() {
       div = element("div");
       t0 = text(t0_value);
-      t1 = space();
+      t12 = space();
       if (if_block) if_block.c();
       if_block_anchor = empty();
       attr(div, "class", "el-quiz-question");
@@ -14252,7 +17939,7 @@ function create_if_block_55(ctx) {
     m(target, anchor) {
       insert(target, div, anchor);
       append(div, t0);
-      insert(target, t1, anchor);
+      insert(target, t12, anchor);
       if (if_block) if_block.m(target, anchor);
       insert(target, if_block_anchor, anchor);
     },
@@ -14267,7 +17954,7 @@ function create_if_block_55(ctx) {
         if (if_block) {
           if_block.p(ctx2, dirty);
         } else {
-          if_block = create_if_block_56(ctx2);
+          if_block = create_if_block_55(ctx2);
           if_block.c();
           if_block.m(if_block_anchor.parentNode, if_block_anchor);
         }
@@ -14279,14 +17966,14 @@ function create_if_block_55(ctx) {
     d(detaching) {
       if (detaching) {
         detach(div);
-        detach(t1);
+        detach(t12);
         detach(if_block_anchor);
       }
       if (if_block) if_block.d(detaching);
     }
   };
 }
-function create_if_block_56(ctx) {
+function create_if_block_55(ctx) {
   let div;
   let t_value = (
     /*cur*/
@@ -14317,53 +18004,53 @@ function create_if_block_56(ctx) {
 }
 function create_if_block_53(ctx) {
   let button;
+  let span;
+  let icon_action;
   let button_title_value;
   let mounted;
   let dispose;
-  function select_block_type_16(ctx2, dirty) {
-    if (
-      /*hasAudio*/
-      ctx2[36]
-    ) return create_if_block_54;
-    return create_else_block_8;
-  }
-  let current_block_type = select_block_type_16(ctx, [-1, -1, -1, -1, -1]);
-  let if_block = current_block_type(ctx);
   function click_handler_14() {
     return (
       /*click_handler_14*/
-      ctx[97](
+      ctx[96](
         /*word*/
-        ctx[141]
+        ctx[142]
       )
     );
   }
   return {
     c() {
       button = element("button");
-      if_block.c();
+      span = element("span");
+      attr(span, "class", "el-btn-ico");
       attr(button, "class", "el-tts");
       attr(button, "title", button_title_value = /*hasAudio*/
       ctx[36] ? "\u6807\u51C6\u53D1\u97F3\u63D0\u793A\uFF08\u7B97\u4F5C\u63D0\u793A\uFF0C\u4E0D\u6CC4\u62FC\u5199\uFF09" : "TTS \u53D1\u97F3\u63D0\u793A\uFF08\u7B97\u4F5C\u63D0\u793A\uFF0C\u4E0D\u6CC4\u62FC\u5199\uFF09");
     },
     m(target, anchor) {
       insert(target, button, anchor);
-      if_block.m(button, null);
+      append(button, span);
       if (!mounted) {
-        dispose = listen(button, "click", click_handler_14);
+        dispose = [
+          action_destroyer(icon_action = icon.call(
+            null,
+            span,
+            /*hasAudio*/
+            ctx[36] ? "human-voice" : "tts-volume"
+          )),
+          listen(button, "click", click_handler_14)
+        ];
         mounted = true;
       }
     },
     p(new_ctx, dirty) {
       ctx = new_ctx;
-      if (current_block_type !== (current_block_type = select_block_type_16(ctx, dirty))) {
-        if_block.d(1);
-        if_block = current_block_type(ctx);
-        if (if_block) {
-          if_block.c();
-          if_block.m(button, null);
-        }
-      }
+      if (icon_action && is_function(icon_action.update) && dirty[1] & /*hasAudio*/
+      32) icon_action.update.call(
+        null,
+        /*hasAudio*/
+        ctx[36] ? "human-voice" : "tts-volume"
+      );
       if (dirty[1] & /*hasAudio*/
       32 && button_title_value !== (button_title_value = /*hasAudio*/
       ctx[36] ? "\u6807\u51C6\u53D1\u97F3\u63D0\u793A\uFF08\u7B97\u4F5C\u63D0\u793A\uFF0C\u4E0D\u6CC4\u62FC\u5199\uFF09" : "TTS \u53D1\u97F3\u63D0\u793A\uFF08\u7B97\u4F5C\u63D0\u793A\uFF0C\u4E0D\u6CC4\u62FC\u5199\uFF09")) {
@@ -14374,43 +18061,8 @@ function create_if_block_53(ctx) {
       if (detaching) {
         detach(button);
       }
-      if_block.d();
       mounted = false;
-      dispose();
-    }
-  };
-}
-function create_else_block_8(ctx) {
-  let t;
-  return {
-    c() {
-      t = text("\u{1F50A}");
-    },
-    m(target, anchor) {
-      insert(target, t, anchor);
-    },
-    d(detaching) {
-      if (detaching) {
-        detach(t);
-      }
-    }
-  };
-}
-function create_if_block_54(ctx) {
-  let span;
-  return {
-    c() {
-      span = element("span");
-      span.textContent = "\u{1F464}";
-      attr(span, "class", "el-ico-human");
-    },
-    m(target, anchor) {
-      insert(target, span, anchor);
-    },
-    d(detaching) {
-      if (detaching) {
-        detach(span);
-      }
+      run_all(dispose);
     }
   };
 }
@@ -14421,8 +18073,8 @@ function create_if_block_50(ctx) {
     /*cur*/
     ctx[11].quiz.reveal + ""
   );
-  let t1;
-  let t2;
+  let t12;
+  let t22;
   let wordfullcard;
   let t3;
   let div1;
@@ -14451,8 +18103,8 @@ function create_if_block_50(ctx) {
     c() {
       div0 = element("div");
       t0 = text("\u274C \u6B63\u786E\u7B54\u6848\uFF1A");
-      t1 = text(t1_value);
-      t2 = space();
+      t12 = text(t1_value);
+      t22 = space();
       create_component(wordfullcard.$$.fragment);
       t3 = space();
       div1 = element("div");
@@ -14464,8 +18116,8 @@ function create_if_block_50(ctx) {
     m(target, anchor) {
       insert(target, div0, anchor);
       append(div0, t0);
-      append(div0, t1);
-      insert(target, t2, anchor);
+      append(div0, t12);
+      insert(target, t22, anchor);
       mount_component(wordfullcard, target, anchor);
       insert(target, t3, anchor);
       insert(target, div1, anchor);
@@ -14474,7 +18126,7 @@ function create_if_block_50(ctx) {
     p(ctx2, dirty) {
       if ((!current || dirty[0] & /*cur*/
       2048) && t1_value !== (t1_value = /*cur*/
-      ctx2[11].quiz.reveal + "")) set_data(t1, t1_value);
+      ctx2[11].quiz.reveal + "")) set_data(t12, t1_value);
       const wordfullcard_changes = {};
       if (dirty[0] & /*plugin*/
       1) wordfullcard_changes.plugin = /*plugin*/
@@ -14502,7 +18154,7 @@ function create_if_block_50(ctx) {
     d(detaching) {
       if (detaching) {
         detach(div0);
-        detach(t2);
+        detach(t22);
         detach(t3);
         detach(div1);
       }
@@ -14517,7 +18169,7 @@ function create_if_block_49(ctx) {
   return {
     c() {
       button = element("button");
-      button.textContent = "\u7EE7\u7EED\uFF08\u7A7A\u683C\uFF09";
+      button.textContent = "\u7EE7\u7EED";
       attr(button, "class", "el-reveal");
     },
     m(target, anchor) {
@@ -14527,7 +18179,7 @@ function create_if_block_49(ctx) {
           button,
           "click",
           /*advance*/
-          ctx[49]
+          ctx[48]
         );
         mounted = true;
       }
@@ -14559,7 +18211,7 @@ function create_if_block_48(ctx) {
           button,
           "click",
           /*quizGiveUp*/
-          ctx[72]
+          ctx[71]
         );
         mounted = true;
       }
@@ -14576,13 +18228,13 @@ function create_if_block_48(ctx) {
 }
 function create_else_block_7(ctx) {
   let div0;
-  let t1;
+  let t12;
   let div1;
   let t2_value = (
     /*cur*/
     ctx[11].quiz.question + ""
   );
-  let t2;
+  let t22;
   let show_if = isPhrase(
     /*cur*/
     ctx[11].doc.word
@@ -14607,9 +18259,9 @@ function create_else_block_7(ctx) {
     c() {
       div0 = element("div");
       div0.textContent = "\u9009\u51FA\u6B63\u786E\u91CA\u4E49";
-      t1 = space();
+      t12 = space();
       div1 = element("div");
-      t2 = text(t2_value);
+      t22 = text(t2_value);
       if (if_block0) if_block0.c();
       t3 = space();
       if (if_block1) if_block1.c();
@@ -14622,9 +18274,9 @@ function create_else_block_7(ctx) {
     },
     m(target, anchor) {
       insert(target, div0, anchor);
-      insert(target, t1, anchor);
+      insert(target, t12, anchor);
       insert(target, div1, anchor);
-      append(div1, t2);
+      append(div1, t22);
       if (if_block0) if_block0.m(div1, null);
       insert(target, t3, anchor);
       if (if_block1) if_block1.m(target, anchor);
@@ -14642,7 +18294,7 @@ function create_else_block_7(ctx) {
     p(ctx2, dirty) {
       if (dirty[0] & /*cur*/
       2048 && t2_value !== (t2_value = /*cur*/
-      ctx2[11].quiz.question + "")) set_data(t2, t2_value);
+      ctx2[11].quiz.question + "")) set_data(t22, t2_value);
       if (dirty[0] & /*cur*/
       2048) show_if = isPhrase(
         /*cur*/
@@ -14701,7 +18353,7 @@ function create_else_block_7(ctx) {
     d(detaching) {
       if (detaching) {
         detach(div0);
-        detach(t1);
+        detach(t12);
         detach(div1);
         detach(t3);
         detach(t4);
@@ -14843,15 +18495,15 @@ function create_if_block_44(ctx) {
     /*cur*/
     ctx[11].quiz.reveal + ""
   );
-  let t1;
-  let t2;
+  let t12;
+  let t22;
   let div1;
   return {
     c() {
       div0 = element("div");
       t0 = text("\u274C \u6B63\u786E\u7B54\u6848\uFF1A");
-      t1 = text(t1_value);
-      t2 = space();
+      t12 = text(t1_value);
+      t22 = space();
       div1 = element("div");
       div1.textContent = "\u8FDB\u5165\u5B66\u4E60\u8BE6\u60C5\uFF0C\u5B66\u5B8C\u8FD9\u8BCD\u518D\u7EE7\u7EED";
       attr(div0, "class", "el-quiz-reveal");
@@ -14861,19 +18513,19 @@ function create_if_block_44(ctx) {
     m(target, anchor) {
       insert(target, div0, anchor);
       append(div0, t0);
-      append(div0, t1);
-      insert(target, t2, anchor);
+      append(div0, t12);
+      insert(target, t22, anchor);
       insert(target, div1, anchor);
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*cur*/
       2048 && t1_value !== (t1_value = /*cur*/
-      ctx2[11].quiz.reveal + "")) set_data(t1, t1_value);
+      ctx2[11].quiz.reveal + "")) set_data(t12, t1_value);
     },
     d(detaching) {
       if (detaching) {
         detach(div0);
-        detach(t2);
+        detach(t22);
         detach(div1);
       }
     }
@@ -14902,7 +18554,7 @@ function create_if_block_422(ctx) {
       ),
       onpick: (
         /*checkPick*/
-        ctx[54]
+        ctx[53]
       )
     }
   });
@@ -14951,7 +18603,7 @@ function create_else_block_6(ctx) {
   return {
     c() {
       button = element("button");
-      button.textContent = "\u7EE7\u7EED\uFF08\u7A7A\u683C\uFF09";
+      button.textContent = "\u7EE7\u7EED";
       attr(button, "class", "el-reveal");
       toggle_class(
         button,
@@ -14967,7 +18619,7 @@ function create_else_block_6(ctx) {
           button,
           "click",
           /*advance*/
-          ctx[49]
+          ctx[48]
         );
         mounted = true;
       }
@@ -14998,11 +18650,11 @@ function create_if_block_41(ctx) {
   let span0;
   let icon_action;
   let t0;
-  let t1;
+  let t12;
   let button1;
   let span1;
   let icon_action_1;
-  let t2;
+  let t22;
   let mounted;
   let dispose;
   return {
@@ -15011,10 +18663,10 @@ function create_if_block_41(ctx) {
       button0 = element("button");
       span0 = element("span");
       t0 = text("\u4E0D\u4F1A");
-      t1 = space();
+      t12 = space();
       button1 = element("button");
       span1 = element("span");
-      t2 = text("\u592A\u7B80\u5355");
+      t22 = text("\u592A\u7B80\u5355");
       attr(span0, "class", "el-btn-ico");
       attr(button0, "class", "el-grade el-grade-sub");
       attr(span1, "class", "el-btn-ico");
@@ -15026,27 +18678,25 @@ function create_if_block_41(ctx) {
       append(div, button0);
       append(button0, span0);
       append(button0, t0);
-      append(div, t1);
+      append(div, t12);
       append(div, button1);
       append(button1, span1);
-      append(button1, t2);
+      append(button1, t22);
       if (!mounted) {
         dispose = [
-          action_destroyer(icon_action = /*icon*/
-          ctx[47].call(null, span0, ICON_UNKNOWN)),
+          action_destroyer(icon_action = icon.call(null, span0, ICON_UNKNOWN)),
           listen(
             button0,
             "click",
             /*checkUnknown*/
-            ctx[55]
+            ctx[54]
           ),
-          action_destroyer(icon_action_1 = /*icon*/
-          ctx[47].call(null, span1, ICON_EASY)),
+          action_destroyer(icon_action_1 = icon.call(null, span1, ICON_EASY)),
           listen(
             button1,
             "click",
             /*checkEasy*/
-            ctx[56]
+            ctx[55]
           )
         ];
         mounted = true;
@@ -15166,13 +18816,13 @@ function create_else_block_5(ctx) {
 }
 function create_if_block_37(ctx) {
   let div0;
-  let t1;
+  let t12;
   let div1;
   let t2_value = (sensesOf(
     /*cur*/
     ctx[11].doc
   )[0] || "\uFF08\u91CA\u4E49\u5F85\u8865\u5145\uFF09") + "";
-  let t2;
+  let t22;
   let t3;
   let if_block_anchor;
   let if_block = (
@@ -15183,9 +18833,9 @@ function create_if_block_37(ctx) {
     c() {
       div0 = element("div");
       div0.textContent = "\u56DE\u5FC6\u5BF9\u5E94\u7684\u82F1\u6587\u5355\u8BCD";
-      t1 = space();
+      t12 = space();
       div1 = element("div");
-      t2 = text(t2_value);
+      t22 = text(t2_value);
       t3 = space();
       if (if_block) if_block.c();
       if_block_anchor = empty();
@@ -15194,9 +18844,9 @@ function create_if_block_37(ctx) {
     },
     m(target, anchor) {
       insert(target, div0, anchor);
-      insert(target, t1, anchor);
+      insert(target, t12, anchor);
       insert(target, div1, anchor);
-      append(div1, t2);
+      append(div1, t22);
       insert(target, t3, anchor);
       if (if_block) if_block.m(target, anchor);
       insert(target, if_block_anchor, anchor);
@@ -15206,7 +18856,7 @@ function create_if_block_37(ctx) {
       2048 && t2_value !== (t2_value = (sensesOf(
         /*cur*/
         ctx2[11].doc
-      )[0] || "\uFF08\u91CA\u4E49\u5F85\u8865\u5145\uFF09") + "")) set_data(t2, t2_value);
+      )[0] || "\uFF08\u91CA\u4E49\u5F85\u8865\u5145\uFF09") + "")) set_data(t22, t2_value);
       if (
         /*reverseHint*/
         ctx2[42]
@@ -15228,7 +18878,7 @@ function create_if_block_37(ctx) {
     d(detaching) {
       if (detaching) {
         detach(div0);
-        detach(t1);
+        detach(t12);
         detach(div1);
         detach(t3);
         detach(if_block_anchor);
@@ -15245,7 +18895,7 @@ function create_if_block_322(ctx) {
       ctx2[11].check.question === /*cur*/
       ctx2[11].doc.word
     ) return create_if_block_332;
-    return create_else_block_42;
+    return create_else_block_4;
   }
   let current_block_type = select_block_type_7(ctx, [-1, -1, -1, -1, -1]);
   let if_block = current_block_type(ctx);
@@ -15351,15 +19001,15 @@ function create_if_block_38(ctx) {
     }
   };
 }
-function create_else_block_42(ctx) {
+function create_else_block_4(ctx) {
   let div0;
-  let t1;
+  let t12;
   let div1;
   let t2_value = (
     /*cur*/
     ctx[11].check.question + ""
   );
-  let t2;
+  let t22;
   let t3;
   let if_block_anchor;
   let if_block = (
@@ -15370,9 +19020,9 @@ function create_else_block_42(ctx) {
     c() {
       div0 = element("div");
       div0.textContent = "\u9009\u51FA\u5BF9\u5E94\u7684\u5355\u8BCD";
-      t1 = space();
+      t12 = space();
       div1 = element("div");
-      t2 = text(t2_value);
+      t22 = text(t2_value);
       t3 = space();
       if (if_block) if_block.c();
       if_block_anchor = empty();
@@ -15381,9 +19031,9 @@ function create_else_block_42(ctx) {
     },
     m(target, anchor) {
       insert(target, div0, anchor);
-      insert(target, t1, anchor);
+      insert(target, t12, anchor);
       insert(target, div1, anchor);
-      append(div1, t2);
+      append(div1, t22);
       insert(target, t3, anchor);
       if (if_block) if_block.m(target, anchor);
       insert(target, if_block_anchor, anchor);
@@ -15391,7 +19041,7 @@ function create_else_block_42(ctx) {
     p(ctx2, dirty) {
       if (dirty[0] & /*cur*/
       2048 && t2_value !== (t2_value = /*cur*/
-      ctx2[11].check.question + "")) set_data(t2, t2_value);
+      ctx2[11].check.question + "")) set_data(t22, t2_value);
       if (
         /*reverseHint*/
         ctx2[42]
@@ -15411,7 +19061,7 @@ function create_else_block_42(ctx) {
     d(detaching) {
       if (detaching) {
         detach(div0);
-        detach(t1);
+        detach(t12);
         detach(div1);
         detach(t3);
         detach(if_block_anchor);
@@ -15422,13 +19072,13 @@ function create_else_block_42(ctx) {
 }
 function create_if_block_332(ctx) {
   let div0;
-  let t1;
+  let t12;
   let div1;
   let t2_value = (
     /*cur*/
     ctx[11].check.question + ""
   );
-  let t2;
+  let t22;
   let show_if = isPhrase(
     /*cur*/
     ctx[11].doc.word
@@ -15447,9 +19097,9 @@ function create_if_block_332(ctx) {
     c() {
       div0 = element("div");
       div0.textContent = "\u9009\u51FA\u6B63\u786E\u91CA\u4E49";
-      t1 = space();
+      t12 = space();
       div1 = element("div");
-      t2 = text(t2_value);
+      t22 = text(t2_value);
       if (if_block0) if_block0.c();
       t3 = space();
       if (if_block1) if_block1.c();
@@ -15460,9 +19110,9 @@ function create_if_block_332(ctx) {
     },
     m(target, anchor) {
       insert(target, div0, anchor);
-      insert(target, t1, anchor);
+      insert(target, t12, anchor);
       insert(target, div1, anchor);
-      append(div1, t2);
+      append(div1, t22);
       if (if_block0) if_block0.m(div1, null);
       insert(target, t3, anchor);
       if (if_block1) if_block1.m(target, anchor);
@@ -15478,7 +19128,7 @@ function create_if_block_332(ctx) {
     p(ctx2, dirty) {
       if (dirty[0] & /*cur*/
       2048 && t2_value !== (t2_value = /*cur*/
-      ctx2[11].check.question + "")) set_data(t2, t2_value);
+      ctx2[11].check.question + "")) set_data(t22, t2_value);
       if (dirty[0] & /*cur*/
       2048) show_if = isPhrase(
         /*cur*/
@@ -15519,7 +19169,7 @@ function create_if_block_332(ctx) {
     d(detaching) {
       if (detaching) {
         detach(div0);
-        detach(t1);
+        detach(t12);
         detach(div1);
         detach(t3);
         detach(if_block1_anchor);
@@ -15613,7 +19263,7 @@ function create_if_block_34(ctx) {
 function create_else_block_32(ctx) {
   let div;
   let button0;
-  let t1;
+  let t12;
   let button1;
   let t3;
   let button2;
@@ -15629,7 +19279,7 @@ function create_else_block_32(ctx) {
       div = element("div");
       button0 = element("button");
       button0.textContent = "\u5FD8\u8BB0";
-      t1 = space();
+      t12 = space();
       button1 = element("button");
       button1.textContent = "\u6A21\u7CCA";
       t3 = space();
@@ -15650,7 +19300,7 @@ function create_else_block_32(ctx) {
     m(target, anchor) {
       insert(target, div, anchor);
       append(div, button0);
-      append(div, t1);
+      append(div, t12);
       append(div, button1);
       append(div, t3);
       append(div, button2);
@@ -15664,27 +19314,26 @@ function create_else_block_32(ctx) {
             button0,
             "click",
             /*click_handler_9*/
-            ctx[91]
+            ctx[90]
           ),
           listen(
             button1,
             "click",
             /*click_handler_10*/
-            ctx[92]
+            ctx[91]
           ),
           listen(
             button2,
             "click",
             /*click_handler_11*/
-            ctx[93]
+            ctx[92]
           ),
-          action_destroyer(icon_action = /*icon*/
-          ctx[47].call(null, span, ICON_EASY)),
+          action_destroyer(icon_action = icon.call(null, span, ICON_EASY)),
           listen(
             button3,
             "click",
             /*reviewEasy*/
-            ctx[67]
+            ctx[66]
           )
         ];
         mounted = true;
@@ -15774,7 +19423,7 @@ function create_else_block_22(ctx) {
   return {
     c() {
       button = element("button");
-      button.textContent = "\u663E\u793A\u7B54\u6848\uFF08\u7A7A\u683C\uFF09";
+      button.textContent = "\u663E\u793A\u7B54\u6848";
       attr(button, "class", "el-reveal el-reveal-ok");
     },
     m(target, anchor) {
@@ -15784,7 +19433,7 @@ function create_else_block_22(ctx) {
           button,
           "click",
           /*reveal*/
-          ctx[63]
+          ctx[62]
         );
         mounted = true;
       }
@@ -15807,7 +19456,7 @@ function create_if_block_31(ctx) {
   let button;
   let span;
   let icon_action;
-  let t1;
+  let t12;
   let current;
   let mounted;
   let dispose;
@@ -15831,7 +19480,7 @@ function create_if_block_31(ctx) {
       ),
       onpick: (
         /*reviewPick*/
-        ctx[64]
+        ctx[63]
       )
     }
   });
@@ -15841,7 +19490,7 @@ function create_if_block_31(ctx) {
       t0 = space();
       button = element("button");
       span = element("span");
-      t1 = text("\u4E0D\u4F1A");
+      t12 = text("\u4E0D\u4F1A");
       attr(span, "class", "el-btn-ico");
       attr(button, "class", "el-grade el-grade-sub");
     },
@@ -15850,17 +19499,16 @@ function create_if_block_31(ctx) {
       insert(target, t0, anchor);
       insert(target, button, anchor);
       append(button, span);
-      append(button, t1);
+      append(button, t12);
       current = true;
       if (!mounted) {
         dispose = [
-          action_destroyer(icon_action = /*icon*/
-          ctx[47].call(null, span, ICON_UNKNOWN)),
+          action_destroyer(icon_action = icon.call(null, span, ICON_UNKNOWN)),
           listen(
             button,
             "click",
             /*reviewUnknown*/
-            ctx[65]
+            ctx[64]
           )
         ];
         mounted = true;
@@ -15902,7 +19550,7 @@ function create_if_block_31(ctx) {
     }
   };
 }
-function create_if_block_282(ctx) {
+function create_if_block_28(ctx) {
   let div;
   let button;
   let mounted;
@@ -15911,7 +19559,7 @@ function create_if_block_282(ctx) {
     c() {
       div = element("div");
       button = element("button");
-      button.textContent = "\u663E\u793A\u7B54\u6848\uFF08\u7A7A\u683C\uFF09";
+      button.textContent = "\u663E\u793A\u7B54\u6848";
       attr(button, "class", "el-reveal el-reveal-ok");
       attr(div, "class", "el-card-actions");
     },
@@ -15923,7 +19571,7 @@ function create_if_block_282(ctx) {
           button,
           "click",
           /*reveal*/
-          ctx[63]
+          ctx[62]
         );
         mounted = true;
       }
@@ -15944,7 +19592,7 @@ function create_if_block_272(ctx) {
   let span0;
   let icon_action;
   let t0;
-  let t1;
+  let t12;
   let button1;
   let t3;
   let button2;
@@ -15959,9 +19607,9 @@ function create_if_block_272(ctx) {
       button0 = element("button");
       span0 = element("span");
       t0 = text("\u592A\u7B80\u5355");
-      t1 = space();
+      t12 = space();
       button1 = element("button");
-      button1.textContent = "\u7EE7\u7EED\uFF08\u7A7A\u683C\uFF09";
+      button1.textContent = "\u7EE7\u7EED";
       t3 = space();
       button2 = element("button");
       span1 = element("span");
@@ -15978,7 +19626,7 @@ function create_if_block_272(ctx) {
       append(div, button0);
       append(button0, span0);
       append(button0, t0);
-      append(div, t1);
+      append(div, t12);
       append(div, button1);
       append(div, t3);
       append(div, button2);
@@ -15986,27 +19634,25 @@ function create_if_block_272(ctx) {
       append(button2, t4);
       if (!mounted) {
         dispose = [
-          action_destroyer(icon_action = /*icon*/
-          ctx[47].call(null, span0, ICON_EASY)),
+          action_destroyer(icon_action = icon.call(null, span0, ICON_EASY)),
           listen(
             button0,
             "click",
             /*studyEasy*/
-            ctx[60]
+            ctx[59]
           ),
           listen(
             button1,
             "click",
             /*confirmContinue*/
-            ctx[61]
+            ctx[60]
           ),
-          action_destroyer(icon_action_1 = /*icon*/
-          ctx[47].call(null, span1, ICON_UNKNOWN)),
+          action_destroyer(icon_action_1 = icon.call(null, span1, ICON_UNKNOWN)),
           listen(
             button2,
             "click",
             /*confirmNo*/
-            ctx[62]
+            ctx[61]
           )
         ];
         mounted = true;
@@ -16028,7 +19674,7 @@ function create_if_block_262(ctx) {
   let span;
   let icon_action;
   let t0;
-  let t1;
+  let t12;
   let button1;
   let t3;
   let button2;
@@ -16040,9 +19686,9 @@ function create_if_block_262(ctx) {
       button0 = element("button");
       span = element("span");
       t0 = text("\u592A\u7B80\u5355");
-      t1 = space();
+      t12 = space();
       button1 = element("button");
-      button1.textContent = "\u8BB0\u4F4F\u4E86\uFF08Enter\uFF09";
+      button1.textContent = "\u8BB0\u4F4F\u4E86";
       t3 = space();
       button2 = element("button");
       button2.textContent = "\u518D\u5B66\u4E00\u6B21";
@@ -16057,31 +19703,30 @@ function create_if_block_262(ctx) {
       append(div, button0);
       append(button0, span);
       append(button0, t0);
-      append(div, t1);
+      append(div, t12);
       append(div, button1);
       append(div, t3);
       append(div, button2);
       if (!mounted) {
         dispose = [
-          action_destroyer(icon_action = /*icon*/
-          ctx[47].call(null, span, ICON_EASY)),
+          action_destroyer(icon_action = icon.call(null, span, ICON_EASY)),
           listen(
             button0,
             "click",
             /*studyEasy*/
-            ctx[60]
+            ctx[59]
           ),
           listen(
             button1,
             "click",
             /*studied*/
-            ctx[58]
+            ctx[57]
           ),
           listen(
             button2,
             "click",
             /*restudy*/
-            ctx[59]
+            ctx[58]
           )
         ];
         mounted = true;
@@ -16114,7 +19759,7 @@ function create_if_block_232(ctx) {
           button,
           "click",
           /*goBack*/
-          ctx[50]
+          ctx[49]
         );
         mounted = true;
       }
@@ -16131,8 +19776,8 @@ function create_if_block_232(ctx) {
 }
 function create_else_block_13(ctx) {
   let div;
-  let t1;
-  let h2;
+  let t12;
+  let h22;
   let t2_value = (
     /*hardMode*/
     ctx[16] || /*themeName*/
@@ -16143,21 +19788,21 @@ function create_else_block_13(ctx) {
       ctx[16]
     )}\u5B66\u4E60\u5B8C\u6210` : "\u4ECA\u65E5\u5B66\u4E60\u5B8C\u6210"
   );
-  let t2;
+  let t22;
   return {
     c() {
       div = element("div");
       div.textContent = "\u{1F389}";
-      t1 = space();
-      h2 = element("h2");
-      t2 = text(t2_value);
+      t12 = space();
+      h22 = element("h2");
+      t22 = text(t2_value);
       attr(div, "class", "el-end-emoji");
     },
     m(target, anchor) {
       insert(target, div, anchor);
-      insert(target, t1, anchor);
-      insert(target, h2, anchor);
-      append(h2, t2);
+      insert(target, t12, anchor);
+      insert(target, h22, anchor);
+      append(h22, t22);
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*hardMode, themeName*/
@@ -16168,45 +19813,45 @@ function create_else_block_13(ctx) {
         ctx2[9],
         /*hardMode*/
         ctx2[16]
-      )}\u5B66\u4E60\u5B8C\u6210` : "\u4ECA\u65E5\u5B66\u4E60\u5B8C\u6210")) set_data(t2, t2_value);
+      )}\u5B66\u4E60\u5B8C\u6210` : "\u4ECA\u65E5\u5B66\u4E60\u5B8C\u6210")) set_data(t22, t2_value);
     },
     d(detaching) {
       if (detaching) {
         detach(div);
-        detach(t1);
-        detach(h2);
+        detach(t12);
+        detach(h22);
       }
     }
   };
 }
 function create_if_block_202(ctx) {
   let div;
-  let t1;
-  let h2;
+  let t12;
+  let h22;
   let t2_value = sessionLabel(
     /*themeName*/
     ctx[9],
     /*hardMode*/
     ctx[16]
   ) + "";
-  let t2;
+  let t22;
   let t3;
   return {
     c() {
       div = element("div");
       div.textContent = "\u23F8";
-      t1 = space();
-      h2 = element("h2");
-      t2 = text(t2_value);
+      t12 = space();
+      h22 = element("h2");
+      t22 = text(t2_value);
       t3 = text("\u5DF2\u6682\u505C");
       attr(div, "class", "el-end-emoji");
     },
     m(target, anchor) {
       insert(target, div, anchor);
-      insert(target, t1, anchor);
-      insert(target, h2, anchor);
-      append(h2, t2);
-      append(h2, t3);
+      insert(target, t12, anchor);
+      insert(target, h22, anchor);
+      append(h22, t22);
+      append(h22, t3);
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*themeName, hardMode*/
@@ -16215,13 +19860,13 @@ function create_if_block_202(ctx) {
         ctx2[9],
         /*hardMode*/
         ctx2[16]
-      ) + "")) set_data(t2, t2_value);
+      ) + "")) set_data(t22, t2_value);
     },
     d(detaching) {
       if (detaching) {
         detach(div);
-        detach(t1);
-        detach(h2);
+        detach(t12);
+        detach(h22);
       }
     }
   };
@@ -16233,22 +19878,22 @@ function create_if_block_192(ctx) {
     /*stats*/
     ctx[18].easy + ""
   );
-  let t1;
+  let t12;
   return {
     c() {
       span = element("span");
       t0 = text("\u592A\u7B80\u5355 ");
-      t1 = text(t1_value);
+      t12 = text(t1_value);
     },
     m(target, anchor) {
       insert(target, span, anchor);
       append(span, t0);
-      append(span, t1);
+      append(span, t12);
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*stats*/
       262144 && t1_value !== (t1_value = /*stats*/
-      ctx2[18].easy + "")) set_data(t1, t1_value);
+      ctx2[18].easy + "")) set_data(t12, t1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -16264,8 +19909,8 @@ function create_if_block_182(ctx) {
     /*todayTotals*/
     ctx[30].new + ""
   );
-  let t1;
-  let t2;
+  let t12;
+  let t22;
   let t3_value = (
     /*todayTotals*/
     ctx[30].rev + ""
@@ -16275,8 +19920,8 @@ function create_if_block_182(ctx) {
     c() {
       div = element("div");
       t0 = text("\u4ECA\u65E5\u5168\u5E93\u7D2F\u8BA1\uFF1A\u65B0\u5B66 ");
-      t1 = text(t1_value);
-      t2 = text(" \xB7 \u590D\u4E60 ");
+      t12 = text(t1_value);
+      t22 = text(" \xB7 \u590D\u4E60 ");
       t3 = text(t3_value);
       attr(div, "class", "el-muted");
       set_style(div, "margin-top", "2px");
@@ -16284,14 +19929,14 @@ function create_if_block_182(ctx) {
     m(target, anchor) {
       insert(target, div, anchor);
       append(div, t0);
-      append(div, t1);
-      append(div, t2);
+      append(div, t12);
+      append(div, t22);
       append(div, t3);
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*todayTotals*/
       1073741824 && t1_value !== (t1_value = /*todayTotals*/
-      ctx2[30].new + "")) set_data(t1, t1_value);
+      ctx2[30].new + "")) set_data(t12, t1_value);
       if (dirty[0] & /*todayTotals*/
       1073741824 && t3_value !== (t3_value = /*todayTotals*/
       ctx2[30].rev + "")) set_data(t3, t3_value);
@@ -16368,7 +20013,7 @@ function create_each_block_13(ctx) {
   let button;
   let t_value = (
     /*w*/
-    ctx[136] + ""
+    ctx[137] + ""
   );
   let t;
   let mounted;
@@ -16376,9 +20021,9 @@ function create_each_block_13(ctx) {
   function click_handler_3() {
     return (
       /*click_handler_3*/
-      ctx[85](
+      ctx[84](
         /*w*/
-        ctx[136]
+        ctx[137]
       )
     );
   }
@@ -16401,7 +20046,7 @@ function create_each_block_13(ctx) {
       ctx = new_ctx;
       if (dirty[0] & /*masteredNow*/
       524288 && t_value !== (t_value = /*w*/
-      ctx[136] + "")) set_data(t, t_value);
+      ctx[137] + "")) set_data(t, t_value);
     },
     d(detaching) {
       if (detaching) {
@@ -16477,7 +20122,7 @@ function create_each_block5(ctx) {
   let button;
   let t_value = (
     /*w*/
-    ctx[136] + ""
+    ctx[137] + ""
   );
   let t;
   let mounted;
@@ -16485,9 +20130,9 @@ function create_each_block5(ctx) {
   function click_handler_4() {
     return (
       /*click_handler_4*/
-      ctx[86](
+      ctx[85](
         /*w*/
-        ctx[136]
+        ctx[137]
       )
     );
   }
@@ -16510,7 +20155,7 @@ function create_each_block5(ctx) {
       ctx = new_ctx;
       if (dirty[0] & /*weakNow*/
       1048576 && t_value !== (t_value = /*w*/
-      ctx[136] + "")) set_data(t, t_value);
+      ctx[137] + "")) set_data(t, t_value);
     },
     d(detaching) {
       if (detaching) {
@@ -16529,27 +20174,27 @@ function create_if_block_153(ctx) {
     ctx[17] - /*stats*/
     ctx[18].rev + ""
   );
-  let t1;
-  let t2;
+  let t12;
+  let t22;
   return {
     c() {
       div = element("div");
       t0 = text("\u8FD8\u6709 ");
-      t1 = text(t1_value);
-      t2 = text(" \u4E2A\u5F85\u590D\u4E60\uFF08\u53D7\u6BCF\u65E5\u4E0A\u9650\u6216\u65B0\u8BCD\u914D\u989D\u9650\u5236\uFF09");
+      t12 = text(t1_value);
+      t22 = text(" \u4E2A\u5F85\u590D\u4E60\uFF08\u53D7\u6BCF\u65E5\u4E0A\u9650\u6216\u65B0\u8BCD\u914D\u989D\u9650\u5236\uFF09");
       attr(div, "class", "el-muted");
     },
     m(target, anchor) {
       insert(target, div, anchor);
       append(div, t0);
-      append(div, t1);
-      append(div, t2);
+      append(div, t12);
+      append(div, t22);
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*dueTotal, stats*/
       393216 && t1_value !== (t1_value = /*dueTotal*/
       ctx2[17] - /*stats*/
-      ctx2[18].rev + "")) set_data(t1, t1_value);
+      ctx2[18].rev + "")) set_data(t12, t1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -16561,29 +20206,29 @@ function create_if_block_153(ctx) {
 function create_if_block_143(ctx) {
   let div;
   let t0;
-  let t1;
-  let t2;
+  let t12;
+  let t22;
   return {
     c() {
       div = element("div");
       t0 = text("\u660E\u5929\u5C06\u6709 ");
-      t1 = text(
+      t12 = text(
         /*tomorrowDue*/
         ctx[29]
       );
-      t2 = text(" \u4E2A\u8BCD\u5230\u671F\u590D\u4E60");
+      t22 = text(" \u4E2A\u8BCD\u5230\u671F\u590D\u4E60");
       attr(div, "class", "el-muted");
     },
     m(target, anchor) {
       insert(target, div, anchor);
       append(div, t0);
-      append(div, t1);
-      append(div, t2);
+      append(div, t12);
+      append(div, t22);
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*tomorrowDue*/
       536870912) set_data(
-        t1,
+        t12,
         /*tomorrowDue*/
         ctx2[29]
       );
@@ -16598,32 +20243,32 @@ function create_if_block_143(ctx) {
 function create_if_block_133(ctx) {
   let button;
   let t0;
-  let t1;
-  let t2;
+  let t12;
+  let t22;
   let mounted;
   let dispose;
   return {
     c() {
       button = element("button");
       t0 = text("\u518D\u6765\u4E00\u8F6E\uFF08");
-      t1 = text(
+      t12 = text(
         /*remaining*/
         ctx[21]
       );
-      t2 = text("\uFF09");
+      t22 = text("\uFF09");
       attr(button, "class", "mod-cta");
     },
     m(target, anchor) {
       insert(target, button, anchor);
       append(button, t0);
-      append(button, t1);
-      append(button, t2);
+      append(button, t12);
+      append(button, t22);
       if (!mounted) {
         dispose = listen(
           button,
           "click",
           /*click_handler_5*/
-          ctx[87]
+          ctx[86]
         );
         mounted = true;
       }
@@ -16631,7 +20276,7 @@ function create_if_block_133(ctx) {
     p(ctx2, dirty) {
       if (dirty[0] & /*remaining*/
       2097152) set_data(
-        t1,
+        t12,
         /*remaining*/
         ctx2[21]
       );
@@ -16653,30 +20298,30 @@ function create_if_block_123(ctx) {
     ctx[2].length - /*idx*/
     ctx[3] + ""
   );
-  let t1;
-  let t2;
+  let t12;
+  let t22;
   let mounted;
   let dispose;
   return {
     c() {
       button = element("button");
       t0 = text("\u7EE7\u7EED\u5B66\u4E60\uFF08\u5269 ");
-      t1 = text(t1_value);
-      t2 = text(" \u5F20\uFF09");
+      t12 = text(t1_value);
+      t22 = text(" \u5F20\uFF09");
       attr(button, "class", "mod-cta");
       attr(button, "title", "\u4ECE\u6682\u505C\u7684\u4F4D\u7F6E\u7EE7\u7EED\uFF0C\u961F\u5217\u4E0D\u53D8");
     },
     m(target, anchor) {
       insert(target, button, anchor);
       append(button, t0);
-      append(button, t1);
-      append(button, t2);
+      append(button, t12);
+      append(button, t22);
       if (!mounted) {
         dispose = listen(
           button,
           "click",
           /*resume*/
-          ctx[77]
+          ctx[76]
         );
         mounted = true;
       }
@@ -16685,7 +20330,7 @@ function create_if_block_123(ctx) {
       if (dirty[0] & /*cards, idx*/
       12 && t1_value !== (t1_value = /*cards*/
       ctx2[2].length - /*idx*/
-      ctx2[3] + "")) set_data(t1, t1_value);
+      ctx2[3] + "")) set_data(t12, t1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -16705,30 +20350,30 @@ function create_if_block_113(ctx) {
     /*dailyLimit*/
     ctx[26]
   ) + "";
-  let t1;
-  let t2;
+  let t12;
+  let t22;
   let mounted;
   let dispose;
   return {
     c() {
       button = element("button");
       t0 = text("\u518D\u6765\u4E00\u6279\uFF08");
-      t1 = text(t1_value);
-      t2 = text("\uFF09");
+      t12 = text(t1_value);
+      t22 = text("\uFF09");
       attr(button, "class", "mod-cta");
       attr(button, "title", "\u65E0\u89C6\u6BCF\u65E5\u65B0\u8BCD\u914D\u989D\uFF0C\u7ACB\u5373\u52A0\u5B66\u4E00\u6279\u65B0\u8BCD");
     },
     m(target, anchor) {
       insert(target, button, anchor);
       append(button, t0);
-      append(button, t1);
-      append(button, t2);
+      append(button, t12);
+      append(button, t22);
       if (!mounted) {
         dispose = listen(
           button,
           "click",
           /*click_handler_6*/
-          ctx[88]
+          ctx[87]
         );
         mounted = true;
       }
@@ -16740,7 +20385,7 @@ function create_if_block_113(ctx) {
         ctx2[28],
         /*dailyLimit*/
         ctx2[26]
-      ) + "")) set_data(t1, t1_value);
+      ) + "")) set_data(t12, t1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -16754,32 +20399,32 @@ function create_if_block_113(ctx) {
 function create_if_block_103(ctx) {
   let button;
   let t0;
-  let t1;
-  let t2;
+  let t12;
+  let t22;
   let mounted;
   let dispose;
   return {
     c() {
       button = element("button");
       t0 = text("\u96BE\u8BCD\u590D\u4E60\uFF08");
-      t1 = text(
+      t12 = text(
         /*hardInTheme*/
         ctx[35]
       );
-      t2 = text("\uFF09");
+      t22 = text("\uFF09");
       attr(button, "class", "mod-warning");
     },
     m(target, anchor) {
       insert(target, button, anchor);
       append(button, t0);
-      append(button, t1);
-      append(button, t2);
+      append(button, t12);
+      append(button, t22);
       if (!mounted) {
         dispose = listen(
           button,
           "click",
           /*click_handler_7*/
-          ctx[89]
+          ctx[88]
         );
         mounted = true;
       }
@@ -16787,7 +20432,7 @@ function create_if_block_103(ctx) {
     p(ctx2, dirty) {
       if (dirty[1] & /*hardInTheme*/
       16) set_data(
-        t1,
+        t12,
         /*hardInTheme*/
         ctx2[35]
       );
@@ -16802,21 +20447,21 @@ function create_if_block_103(ctx) {
   };
 }
 function create_else_block4(ctx) {
-  let h2;
-  let t1;
+  let h22;
+  let t12;
   let div;
-  let t2;
+  let t22;
   let t3;
   let t4;
   let t5;
   let t6;
   return {
     c() {
-      h2 = element("h2");
-      h2.textContent = "\u4ECA\u65E5\u4EFB\u52A1\u5DF2\u5B8C\u6210";
-      t1 = space();
+      h22 = element("h2");
+      h22.textContent = "\u4ECA\u65E5\u4EFB\u52A1\u5DF2\u5B8C\u6210";
+      t12 = space();
       div = element("div");
-      t2 = text("\u4ECA\u65E5\u65B0\u8BCD ");
+      t22 = text("\u4ECA\u65E5\u65B0\u8BCD ");
       t3 = text(
         /*todayNew*/
         ctx[25]
@@ -16830,10 +20475,10 @@ function create_else_block4(ctx) {
       attr(div, "class", "el-muted");
     },
     m(target, anchor) {
-      insert(target, h2, anchor);
-      insert(target, t1, anchor);
+      insert(target, h22, anchor);
+      insert(target, t12, anchor);
       insert(target, div, anchor);
-      append(div, t2);
+      append(div, t22);
       append(div, t3);
       append(div, t4);
       append(div, t5);
@@ -16855,47 +20500,47 @@ function create_else_block4(ctx) {
     },
     d(detaching) {
       if (detaching) {
-        detach(h2);
-        detach(t1);
+        detach(h22);
+        detach(t12);
         detach(div);
       }
     }
   };
 }
 function create_if_block_83(ctx) {
-  let h2;
+  let h22;
   let t0;
-  let t1;
-  let t2;
+  let t12;
+  let t22;
   let t3;
   let div0;
   let t6;
   let div1;
   return {
     c() {
-      h2 = element("h2");
+      h22 = element("h2");
       t0 = text("\u4E3B\u9898\u300C");
-      t1 = text(
+      t12 = text(
         /*themeName*/
         ctx[9]
       );
-      t2 = text("\u300D\u73B0\u5728\u6CA1\u6709\u8981\u5B66\u7684\u8BCD");
+      t22 = text("\u300D\u73B0\u5728\u6CA1\u6709\u8981\u5B66\u7684\u8BCD");
       t3 = space();
       div0 = element("div");
       div0.textContent = `${/*themeIdleText*/
-      ctx[74]()}\u3002`;
+      ctx[73]()}\u3002`;
       t6 = space();
       div1 = element("div");
       div1.textContent = `${/*todayQuotaText*/
-      ctx[75]()}\u3002`;
+      ctx[74]()}\u3002`;
       attr(div0, "class", "el-muted");
       attr(div1, "class", "el-muted");
     },
     m(target, anchor) {
-      insert(target, h2, anchor);
-      append(h2, t0);
-      append(h2, t1);
-      append(h2, t2);
+      insert(target, h22, anchor);
+      append(h22, t0);
+      append(h22, t12);
+      append(h22, t22);
       insert(target, t3, anchor);
       insert(target, div0, anchor);
       insert(target, t6, anchor);
@@ -16904,14 +20549,14 @@ function create_if_block_83(ctx) {
     p(ctx2, dirty) {
       if (dirty[0] & /*themeName*/
       512) set_data(
-        t1,
+        t12,
         /*themeName*/
         ctx2[9]
       );
     },
     d(detaching) {
       if (detaching) {
-        detach(h2);
+        detach(h22);
         detach(t3);
         detach(div0);
         detach(t6);
@@ -16921,24 +20566,24 @@ function create_if_block_83(ctx) {
   };
 }
 function create_if_block_73(ctx) {
-  let h2;
+  let h22;
   return {
     c() {
-      h2 = element("h2");
-      h2.textContent = "\u6CA1\u6709\u9700\u8981\u4E13\u9879\u8BAD\u7EC3\u7684\u96BE\u8BCD";
+      h22 = element("h2");
+      h22.textContent = "\u6CA1\u6709\u9700\u8981\u4E13\u9879\u8BAD\u7EC3\u7684\u96BE\u8BCD";
     },
     m(target, anchor) {
-      insert(target, h2, anchor);
+      insert(target, h22, anchor);
     },
     p: noop,
     d(detaching) {
       if (detaching) {
-        detach(h2);
+        detach(h22);
       }
     }
   };
 }
-function create_if_block_67(ctx) {
+function create_if_block_65(ctx) {
   let button;
   let t0;
   let t1_value = Math.min(
@@ -16947,30 +20592,30 @@ function create_if_block_67(ctx) {
     /*dailyLimit*/
     ctx[26]
   ) + "";
-  let t1;
-  let t2;
+  let t12;
+  let t22;
   let mounted;
   let dispose;
   return {
     c() {
       button = element("button");
       t0 = text("\u518D\u6765\u4E00\u6279\uFF08");
-      t1 = text(t1_value);
-      t2 = text("\uFF09");
+      t12 = text(t1_value);
+      t22 = text("\uFF09");
       attr(button, "class", "mod-cta");
       attr(button, "title", "\u65E0\u89C6\u6BCF\u65E5\u65B0\u8BCD\u914D\u989D\uFF0C\u7ACB\u5373\u52A0\u5B66\u4E00\u6279\u65B0\u8BCD");
     },
     m(target, anchor) {
       insert(target, button, anchor);
       append(button, t0);
-      append(button, t1);
-      append(button, t2);
+      append(button, t12);
+      append(button, t22);
       if (!mounted) {
         dispose = listen(
           button,
           "click",
           /*click_handler_1*/
-          ctx[83]
+          ctx[82]
         );
         mounted = true;
       }
@@ -16982,7 +20627,7 @@ function create_if_block_67(ctx) {
         ctx2[27],
         /*dailyLimit*/
         ctx2[26]
-      ) + "")) set_data(t1, t1_value);
+      ) + "")) set_data(t12, t1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -17001,7 +20646,7 @@ function create_if_block_510(ctx) {
     c() {
       button = element("button");
       button.textContent = `\u96BE\u8BCD\u590D\u4E60\uFF08${/*hardInThemeLive*/
-      ctx[73]()}\uFF09`;
+      ctx[72]()}\uFF09`;
       attr(button, "class", "mod-warning");
     },
     m(target, anchor) {
@@ -17011,7 +20656,7 @@ function create_if_block_510(ctx) {
           button,
           "click",
           /*click_handler_2*/
-          ctx[84]
+          ctx[83]
         );
         mounted = true;
       }
@@ -17037,7 +20682,7 @@ function create_fragment6(ctx) {
   const if_block_creators = [
     create_if_block5,
     create_if_block_111,
-    create_if_block_28,
+    create_if_block_27,
     create_if_block_33,
     create_if_block_43,
     create_if_block_93,
@@ -17096,10 +20741,10 @@ function create_fragment6(ctx) {
             window_1,
             "keydown",
             /*onKey*/
-            ctx[79]
+            ctx[78]
           ),
           action_destroyer(fitViewport_action = /*fitViewport*/
-          ctx[68].call(null, div))
+          ctx[67].call(null, div))
         ];
         mounted = true;
       }
@@ -17231,10 +20876,6 @@ function instance6($$self, $$props, $$invalidate) {
   let sessionMinutes = 0;
   let loadError = "";
   let audioMuted = plugin.muted;
-  function icon(node, name) {
-    (0, import_obsidian11.setIcon)(node, name);
-    return { update: (n) => (0, import_obsidian11.setIcon)(node, n) };
-  }
   function toggleMute() {
     plugin.toggleMute();
   }
@@ -17284,16 +20925,28 @@ function instance6($$self, $$props, $$invalidate) {
   }
   const audioTried = /* @__PURE__ */ new Set();
   function prefetchAudio() {
-    var _a;
+    var _a2;
     if (plugin.db.settings.enrichOnLearn === false) return;
     let n = 0;
     for (let i = idx; i < cards.length && n < AUDIO_AHEAD; i++) {
-      const w = (_a = cards[i]) === null || _a === void 0 ? void 0 : _a.doc.word;
+      const w = (_a2 = cards[i]) === null || _a2 === void 0 ? void 0 : _a2.doc.word;
       if (!w || audioTried.has(w)) continue;
       audioTried.add(w);
       void plugin.audio.prefetch(w).then((ok) => {
         if (!ok) audioTried.delete(w);
       });
+      n++;
+    }
+  }
+  const sentTried = /* @__PURE__ */ new Set();
+  function prefetchSentences() {
+    var _a2;
+    let n = 0;
+    for (let i = idx; i < cards.length && n < AUDIO_AHEAD; i++) {
+      const d = (_a2 = cards[i]) === null || _a2 === void 0 ? void 0 : _a2.doc;
+      if (!(d === null || d === void 0 ? void 0 : d.word) || sentTried.has(d.word)) continue;
+      sentTried.add(d.word);
+      plugin.prefetchWordSentences(d);
       n++;
     }
   }
@@ -17312,8 +20965,8 @@ function instance6($$self, $$props, $$invalidate) {
   });
   onDestroy(plugin.audio.onCached(() => void checkAudio(cur === null || cur === void 0 ? void 0 : cur.doc.word)));
   onMount(async () => {
-    var _a, _b, _c;
-    $$invalidate(9, themeName = (_a = plugin.sessionTheme) !== null && _a !== void 0 ? _a : "");
+    var _a2, _b, _c;
+    $$invalidate(9, themeName = (_a2 = plugin.sessionTheme) !== null && _a2 !== void 0 ? _a2 : "");
     $$invalidate(16, hardMode = plugin.sessionHard);
     $$invalidate(0, plugin.sessionActive = true, plugin);
     let s;
@@ -17366,16 +21019,16 @@ function instance6($$self, $$props, $$invalidate) {
       }));
       if (!changed) return;
       studiedDocs = studiedDocs.map((x) => {
-        var _a;
-        return (_a = plugin.words.get(x.word)) !== null && _a !== void 0 ? _a : x;
+        var _a2;
+        return (_a2 = plugin.words.get(x.word)) !== null && _a2 !== void 0 ? _a2 : x;
       });
       quizPool = quizPool.map((x) => {
-        var _a;
-        return (_a = plugin.words.get(x.word)) !== null && _a !== void 0 ? _a : x;
+        var _a2;
+        return (_a2 = plugin.words.get(x.word)) !== null && _a2 !== void 0 ? _a2 : x;
       });
       sessionPool = sessionPool.map((x) => {
-        var _a;
-        return (_a = plugin.words.get(x.word)) !== null && _a !== void 0 ? _a : x;
+        var _a2;
+        return (_a2 = plugin.words.get(x.word)) !== null && _a2 !== void 0 ? _a2 : x;
       });
     })();
   });
@@ -17443,9 +21096,9 @@ function instance6($$self, $$props, $$invalidate) {
     }
   }
   function flipPending() {
-    var _a;
+    var _a2;
     if (peeking) return false;
-    const k = (_a = cards[idx]) === null || _a === void 0 ? void 0 : _a.kind;
+    const k = (_a2 = cards[idx]) === null || _a2 === void 0 ? void 0 : _a2.kind;
     return (k === "quiz" || k === "check") && quizAnswered && quizCorrect;
   }
   function armFlip() {
@@ -17562,16 +21215,16 @@ function instance6($$self, $$props, $$invalidate) {
   }
   const studyTries = /* @__PURE__ */ new Map();
   function studied() {
-    var _a;
+    var _a2;
     if ((cur === null || cur === void 0 ? void 0 : cur.kind) !== "study" && (cur === null || cur === void 0 ? void 0 : cur.kind) !== "restudy") return;
     finishGrade(plugin.recordGrade(cur.doc.word, 1));
-    if (((_a = studyTries.get(cur.doc.word)) !== null && _a !== void 0 ? _a : 0) >= 2) plugin.bumpStruggle(cur.doc.word);
+    if (((_a2 = studyTries.get(cur.doc.word)) !== null && _a2 !== void 0 ? _a2 : 0) >= 2) plugin.bumpStruggle(cur.doc.word);
     advance();
   }
   function restudy() {
-    var _a;
+    var _a2;
     if ((cur === null || cur === void 0 ? void 0 : cur.kind) !== "study" && (cur === null || cur === void 0 ? void 0 : cur.kind) !== "restudy") return;
-    studyTries.set(cur.doc.word, ((_a = studyTries.get(cur.doc.word)) !== null && _a !== void 0 ? _a : 0) + 1);
+    studyTries.set(cur.doc.word, ((_a2 = studyTries.get(cur.doc.word)) !== null && _a2 !== void 0 ? _a2 : 0) + 1);
     cards.splice(idx + 3, 0, { kind: "restudy", doc: cur.doc });
     $$invalidate(2, cards);
     advance();
@@ -17674,9 +21327,9 @@ function instance6($$self, $$props, $$invalidate) {
     };
   }
   function spellKeydown(ev) {
-    var _a;
+    var _a2;
     if (ev.key === "Enter") submitSpell();
-    else if (ev.key === "Escape") (_a = ev.currentTarget) === null || _a === void 0 ? void 0 : _a.blur();
+    else if (ev.key === "Escape") (_a2 = ev.currentTarget) === null || _a2 === void 0 ? void 0 : _a2.blur();
   }
   function submitSpell() {
     if ((cur === null || cur === void 0 ? void 0 : cur.kind) !== "quiz" || cur.quiz.kind !== "spell" || quizAnswered) return;
@@ -17695,7 +21348,7 @@ function instance6($$self, $$props, $$invalidate) {
     }
   }
   function quizWrong(doc, fallback) {
-    var _a;
+    var _a2;
     $$invalidate(18, stats.quizBad++, stats);
     if (!weakNow.includes(doc.word)) weakNow.push(doc.word);
     autoSpeak();
@@ -17704,7 +21357,7 @@ function instance6($$self, $$props, $$invalidate) {
       cards.push({
         kind: "quiz",
         doc,
-        quiz: (_a = buildQuiz(doc, quizPool, quizOpts())) !== null && _a !== void 0 ? _a : fallback
+        quiz: (_a2 = buildQuiz(doc, quizPool, quizOpts())) !== null && _a2 !== void 0 ? _a2 : fallback
       });
       $$invalidate(2, cards);
     }
@@ -17739,9 +21392,9 @@ function instance6($$self, $$props, $$invalidate) {
     if (r.masteredNow) masteredNow.push(cur.doc.word);
   }
   function quizOpts() {
-    var _a, _b;
+    var _a2, _b;
     return {
-      spellChance: (_a = plugin.db.settings.spellChance) !== null && _a !== void 0 ? _a : 0.3,
+      spellChance: (_a2 = plugin.db.settings.spellChance) !== null && _a2 !== void 0 ? _a2 : 0.3,
       audioChance: (_b = plugin.db.settings.audioChance) !== null && _b !== void 0 ? _b : 0.4
     };
   }
@@ -17796,7 +21449,7 @@ function instance6($$self, $$props, $$invalidate) {
     return `\u4ECA\u65E5\u5168\u5E93\u5DF2\u5B66\u65B0\u8BCD ${todayNew}/${dailyLimit}${over}`;
   }
   function finish(early = false) {
-    var _a;
+    var _a2;
     if (finished) return;
     cancelFlip();
     plugin.stopSpeaking();
@@ -17805,7 +21458,7 @@ function instance6($$self, $$props, $$invalidate) {
     $$invalidate(4, browseFrom = -1);
     $$invalidate(0, plugin.sessionActive = false, plugin);
     $$invalidate(31, sessionMinutes = Math.max(1, Math.round((Date.now() - startedAt) / 6e4)));
-    $$invalidate(30, todayTotals = (_a = plugin.db.stats.days[fmtDate(Date.now())]) !== null && _a !== void 0 ? _a : { new: 0, rev: 0 });
+    $$invalidate(30, todayTotals = (_a2 = plugin.db.stats.days[fmtDate(Date.now())]) !== null && _a2 !== void 0 ? _a2 : { new: 0, rev: 0 });
     $$invalidate(35, hardInTheme = hardInThemeLive());
     $$invalidate(28, finishFresh = freshLeftCount());
     const now2 = Date.now();
@@ -17825,7 +21478,7 @@ function instance6($$self, $$props, $$invalidate) {
     try {
       const s = await plugin.buildSession(themeName || null, false);
       $$invalidate(21, remaining = s.queue.length);
-    } catch (_a) {
+    } catch (_a2) {
       $$invalidate(21, remaining = 0);
     }
   }
@@ -17848,7 +21501,7 @@ function instance6($$self, $$props, $$invalidate) {
     try {
       s = await plugin.buildSession(themeName || null, false, extraNew);
     } catch (e) {
-      new import_obsidian11.Notice(`\u52A0\u8F7D\u65B0\u4E00\u8F6E\u5931\u8D25\uFF1A${e instanceof Error ? e.message : e}`);
+      new import_obsidian12.Notice(`\u52A0\u8F7D\u65B0\u4E00\u8F6E\u5931\u8D25\uFF1A${e instanceof Error ? e.message : e}`);
       return;
     }
     if (destroyed) return;
@@ -17898,7 +21551,7 @@ function instance6($$self, $$props, $$invalidate) {
     if (k === "?") {
       const tip = document.querySelector(".el-learn .el-helptip");
       if (tip) showTipBubble(tip, KEYS_TIP);
-      else new import_obsidian11.Notice(KEYS_TIP, 8e3);
+      else new import_obsidian12.Notice(KEYS_TIP, 8e3);
       return;
     }
     if (k === "Escape") {
@@ -17996,12 +21649,12 @@ function instance6($$self, $$props, $$invalidate) {
       $$invalidate(38, spellHinted = false);
       $$invalidate(39, spellShowQ = false);
       if (!finished) settleTail();
-      plugin.deleteWord(w).then(() => new import_obsidian11.Notice(`\u5DF2\u5220\u9664\u300C${w}\u300D`)).catch((e) => new import_obsidian11.Notice(`\u5220\u9664\u5931\u8D25\uFF08\u300C${w}\u300D\u53EF\u80FD\u8FD8\u5728\u8BCD\u5E93\uFF09\uFF1A${e instanceof Error ? e.message : e}`));
+      plugin.deleteWord(w).then(() => new import_obsidian12.Notice(`\u5DF2\u5220\u9664\u300C${w}\u300D`)).catch((e) => new import_obsidian12.Notice(`\u5220\u9664\u5931\u8D25\uFF08\u300C${w}\u300D\u53EF\u80FD\u8FD8\u5728\u8BCD\u5E93\uFF09\uFF1A${e instanceof Error ? e.message : e}`));
     });
   }
   function back() {
-    var _a;
-    (_a = plugin.app.workspace.getLeavesOfType(LEARN_VIEW_TYPE)[0]) === null || _a === void 0 ? void 0 : _a.detach();
+    var _a2;
+    (_a2 = plugin.app.workspace.getLeavesOfType(LEARN_VIEW_TYPE)[0]) === null || _a2 === void 0 ? void 0 : _a2.detach();
     void plugin.activateView(THEME_VIEW_TYPE);
   }
   const click_handler = () => location.reload();
@@ -18078,7 +21731,10 @@ function instance6($$self, $$props, $$invalidate) {
     }
     if ($$self.$$.dirty[0] & /*cur*/
     2048) {
-      $: if (cur) prefetchAudio();
+      $: if (cur) {
+        prefetchAudio();
+        prefetchSentences();
+      }
     }
     if ($$self.$$.dirty[0] & /*cur*/
     2048) {
@@ -18133,7 +21789,6 @@ function instance6($$self, $$props, $$invalidate) {
     roundLabel,
     pct,
     muteTip,
-    icon,
     toggleMute,
     advance,
     goBack,
@@ -18196,7 +21851,7 @@ var LearnSession = class extends SvelteComponent {
 var LearnSession_default = LearnSession;
 
 // src/ui/learn-view.ts
-var LearnView = class extends import_obsidian12.ItemView {
+var LearnView = class extends import_obsidian13.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
@@ -18214,13 +21869,11 @@ var LearnView = class extends import_obsidian12.ItemView {
     this.mount();
   }
   async onClose() {
-    var _a;
-    (_a = this.comp) == null ? void 0 : _a.$destroy();
+    this.comp?.$destroy();
   }
   /** 重建组件：视图常驻时再次 startSession（换主题/学完再来）必须重载会话，否则显示旧页 */
   restart() {
-    var _a;
-    (_a = this.comp) == null ? void 0 : _a.$destroy();
+    this.comp?.$destroy();
     this.mount();
   }
   mount() {
@@ -18230,10 +21883,10 @@ var LearnView = class extends import_obsidian12.ItemView {
 };
 
 // src/ui/theme-view.ts
-var import_obsidian14 = require("obsidian");
+var import_obsidian15 = require("obsidian");
 
 // src/components/ThemePanel.svelte
-var import_obsidian13 = require("obsidian");
+var import_obsidian14 = require("obsidian");
 function get_each_context6(ctx, list, i) {
   const child_ctx = ctx.slice();
   child_ctx[55] = list[i];
@@ -18275,20 +21928,20 @@ function create_if_block_154(ctx) {
     ctx[5] > 0 ? `\uFF08${/*todayPending*/
     ctx[5]}\uFF09` : ""
   );
-  let t1;
+  let t12;
   let mounted;
   let dispose;
   return {
     c() {
       button = element("button");
       t0 = text("\u5B66\u4E60");
-      t1 = text(t1_value);
+      t12 = text(t1_value);
       attr(button, "class", "mod-cta");
     },
     m(target, anchor) {
       insert(target, button, anchor);
       append(button, t0);
-      append(button, t1);
+      append(button, t12);
       if (!mounted) {
         dispose = listen(
           button,
@@ -18303,7 +21956,7 @@ function create_if_block_154(ctx) {
       if (dirty[0] & /*todayPending*/
       32 && t1_value !== (t1_value = /*todayPending*/
       ctx2[5] > 0 ? `\uFF08${/*todayPending*/
-      ctx2[5]}\uFF09` : "")) set_data(t1, t1_value);
+      ctx2[5]}\uFF09` : "")) set_data(t12, t1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -18317,7 +21970,7 @@ function create_if_block_154(ctx) {
 function create_if_block_144(ctx) {
   let div;
   let span;
-  let t1;
+  let t12;
   let button0;
   let t3;
   let button1;
@@ -18328,7 +21981,7 @@ function create_if_block_144(ctx) {
       div = element("div");
       span = element("span");
       span.textContent = "\u2728 \u914D\u7F6E AI \u6E90\uFF0C\u89E3\u9501\u4F8B\u53E5 / \u6269\u8BCD / \u52A9\u8BB0";
-      t1 = space();
+      t12 = space();
       button0 = element("button");
       button0.textContent = "\u53BB\u914D\u7F6E";
       t3 = space();
@@ -18343,7 +21996,7 @@ function create_if_block_144(ctx) {
     m(target, anchor) {
       insert(target, div, anchor);
       append(div, span);
-      append(div, t1);
+      append(div, t12);
       append(div, button0);
       append(div, t3);
       append(div, button1);
@@ -18378,30 +22031,30 @@ function create_if_block_144(ctx) {
 function create_if_block_134(ctx) {
   let t0;
   let span;
-  let t1;
+  let t12;
   let t2_value = (
     /*totals*/
     ctx[4].hard + ""
   );
-  let t2;
+  let t22;
   return {
     c() {
       t0 = text("\xB7 ");
       span = element("span");
-      t1 = text("\u96BE\u8BCD ");
-      t2 = text(t2_value);
+      t12 = text("\u96BE\u8BCD ");
+      t22 = text(t2_value);
       set_style(span, "color", "var(--text-error)");
     },
     m(target, anchor) {
       insert(target, t0, anchor);
       insert(target, span, anchor);
-      append(span, t1);
-      append(span, t2);
+      append(span, t12);
+      append(span, t22);
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*totals*/
       16 && t2_value !== (t2_value = /*totals*/
-      ctx2[4].hard + "")) set_data(t2, t2_value);
+      ctx2[4].hard + "")) set_data(t22, t2_value);
     },
     d(detaching) {
       if (detaching) {
@@ -18415,7 +22068,7 @@ function create_if_block_84(ctx) {
   let div3;
   let div0;
   let span0;
-  let t1;
+  let t12;
   let span1;
   let t3;
   let span2;
@@ -18459,7 +22112,7 @@ function create_if_block_84(ctx) {
       div0 = element("div");
       span0 = element("span");
       span0.innerHTML = `<i class="swatch sw-new"></i>\u65B0\u5B66`;
-      t1 = space();
+      t12 = space();
       span1 = element("span");
       span1.innerHTML = `<i class="swatch sw-rev"></i>\u590D\u4E60`;
       t3 = space();
@@ -18493,7 +22146,7 @@ function create_if_block_84(ctx) {
       insert(target, div3, anchor);
       append(div3, div0);
       append(div0, span0);
-      append(div0, t1);
+      append(div0, t12);
       append(div0, span1);
       append(div0, t3);
       append(div0, span2);
@@ -18949,7 +22602,7 @@ function create_if_block_94(ctx) {
     ].date + ""
   );
   let t0;
-  let t1;
+  let t12;
   let t2_value = (
     /*days*/
     ctx[2][
@@ -18957,7 +22610,7 @@ function create_if_block_94(ctx) {
       ctx[9]
     ].new + ""
   );
-  let t2;
+  let t22;
   let t3;
   let t4_value = (
     /*days*/
@@ -18971,8 +22624,8 @@ function create_if_block_94(ctx) {
     c() {
       div = element("div");
       t0 = text(t0_value);
-      t1 = text("\uFF1A\u65B0\u5B66 ");
-      t2 = text(t2_value);
+      t12 = text("\uFF1A\u65B0\u5B66 ");
+      t22 = text(t2_value);
       t3 = text(" \xB7 \u590D\u4E60 ");
       t4 = text(t4_value);
       attr(div, "class", "el-chart-tip");
@@ -18982,8 +22635,8 @@ function create_if_block_94(ctx) {
     m(target, anchor) {
       insert(target, div, anchor);
       append(div, t0);
-      append(div, t1);
-      append(div, t2);
+      append(div, t12);
+      append(div, t22);
       append(div, t3);
       append(div, t4);
     },
@@ -18999,7 +22652,7 @@ function create_if_block_94(ctx) {
       ctx2[2][
         /*tipDay*/
         ctx2[9]
-      ].new + "")) set_data(t2, t2_value);
+      ].new + "")) set_data(t22, t2_value);
       if (dirty[0] & /*days, tipDay*/
       516 && t4_value !== (t4_value = /*days*/
       ctx2[2][
@@ -19118,9 +22771,9 @@ function create_if_block_74(ctx) {
   let t0;
   let span1;
   let div0_aria_label_value;
-  let t1;
+  let t12;
   let span2;
-  let t2;
+  let t22;
   let t3_value = (
     /*t*/
     ctx[61].count - /*t*/
@@ -19146,9 +22799,9 @@ function create_if_block_74(ctx) {
       span0 = element("span");
       t0 = space();
       span1 = element("span");
-      t1 = space();
+      t12 = space();
       span2 = element("span");
-      t2 = text("\u5DF2\u5B66 ");
+      t22 = text("\u5DF2\u5B66 ");
       t3 = text(t3_value);
       t4 = text("/");
       t5 = text(t5_value);
@@ -19189,9 +22842,9 @@ function create_if_block_74(ctx) {
       append(div0, span0);
       append(div0, t0);
       append(div0, span1);
-      append(div1, t1);
+      append(div1, t12);
       append(div1, span2);
-      append(span2, t2);
+      append(span2, t22);
       append(span2, t3);
       append(span2, t4);
       append(span2, t5);
@@ -19248,31 +22901,31 @@ function create_if_block_74(ctx) {
     }
   };
 }
-function create_if_block_68(ctx) {
+function create_if_block_66(ctx) {
   let t0;
   let t1_value = (
     /*t*/
     ctx[61].learn + ""
   );
-  let t1;
+  let t12;
   return {
     c() {
       t0 = text("\xB7 \u5B66\u4E60\u4E2D ");
-      t1 = text(t1_value);
+      t12 = text(t1_value);
     },
     m(target, anchor) {
       insert(target, t0, anchor);
-      insert(target, t1, anchor);
+      insert(target, t12, anchor);
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*rows*/
       8 && t1_value !== (t1_value = /*t*/
-      ctx2[61].learn + "")) set_data(t1, t1_value);
+      ctx2[61].learn + "")) set_data(t12, t1_value);
     },
     d(detaching) {
       if (detaching) {
         detach(t0);
-        detach(t1);
+        detach(t12);
       }
     }
   };
@@ -19284,7 +22937,7 @@ function create_if_block_511(ctx) {
     /*t*/
     ctx[61].hard + ""
   );
-  let t1;
+  let t12;
   let span_title_value;
   let mounted;
   let dispose;
@@ -19311,7 +22964,7 @@ function create_if_block_511(ctx) {
     c() {
       span = element("span");
       t0 = text("\xB7 \u96BE\u8BCD ");
-      t1 = text(t1_value);
+      t12 = text(t1_value);
       set_style(span, "color", "var(--text-error)");
       set_style(span, "cursor", "pointer");
       attr(span, "title", span_title_value = "\u70B9\u51FB\u5F00\u59CB\u300C" + /*t*/
@@ -19322,7 +22975,7 @@ function create_if_block_511(ctx) {
     m(target, anchor) {
       insert(target, span, anchor);
       append(span, t0);
-      append(span, t1);
+      append(span, t12);
       if (!mounted) {
         dispose = [
           listen(span, "click", stop_propagation(click_handler_4)),
@@ -19335,7 +22988,7 @@ function create_if_block_511(ctx) {
       ctx = new_ctx;
       if (dirty[0] & /*rows*/
       8 && t1_value !== (t1_value = /*t*/
-      ctx[61].hard + "")) set_data(t1, t1_value);
+      ctx[61].hard + "")) set_data(t12, t1_value);
       if (dirty[0] & /*rows*/
       8 && span_title_value !== (span_title_value = "\u70B9\u51FB\u5F00\u59CB\u300C" + /*t*/
       ctx[61].name + "\u300D\u96BE\u8BCD\u4E13\u9879")) {
@@ -19441,9 +23094,9 @@ function create_each_block_22(key_1, ctx) {
   let div5;
   let div0;
   let button0;
-  let t1;
+  let t12;
   let button1;
-  let t2;
+  let t22;
   let button1_title_value;
   let t3;
   let div3;
@@ -19469,7 +23122,7 @@ function create_each_block_22(key_1, ctx) {
   );
   let t10;
   let t11;
-  let t12;
+  let t122;
   let t13_value = (
     /*t*/
     ctx[61].fresh + ""
@@ -19484,7 +23137,7 @@ function create_each_block_22(key_1, ctx) {
   let button3;
   let t20;
   let button4;
-  let t22;
+  let t222;
   let mounted;
   let dispose;
   function click_handler_2() {
@@ -19511,7 +23164,7 @@ function create_each_block_22(key_1, ctx) {
   );
   let if_block1 = (
     /*t*/
-    ctx[61].learn > 0 && create_if_block_68(ctx)
+    ctx[61].learn > 0 && create_if_block_66(ctx)
   );
   let if_block2 = (
     /*t*/
@@ -19575,9 +23228,9 @@ function create_each_block_22(key_1, ctx) {
       div0 = element("div");
       button0 = element("button");
       button0.textContent = "\u{1F6AB}";
-      t1 = space();
+      t12 = space();
       button1 = element("button");
-      t2 = text("\u{1F4CC}");
+      t22 = text("\u{1F4CC}");
       t3 = space();
       div3 = element("div");
       div1 = element("div");
@@ -19592,7 +23245,7 @@ function create_each_block_22(key_1, ctx) {
       t10 = text(t10_value);
       t11 = space();
       if (if_block1) if_block1.c();
-      t12 = text(" \xB7 \u672A\u5B66 ");
+      t122 = text(" \xB7 \u672A\u5B66 ");
       t13 = text(t13_value);
       t14 = space();
       if (if_block2) if_block2.c();
@@ -19608,7 +23261,7 @@ function create_each_block_22(key_1, ctx) {
       t20 = space();
       button4 = element("button");
       button4.textContent = "\u7F16\u8F91";
-      t22 = space();
+      t222 = space();
       attr(button0, "type", "button");
       attr(button0, "class", "el-theme-toggle");
       attr(button0, "title", "\u505C\u7528\u4E3B\u9898\uFF08\u9690\u85CF\u4E14\u4E0D\u53C2\u4E0E\u5B66\u4E60\uFF0C\u53EF\u5728\u300C\u65B0\u5EFA\u4E3B\u9898\u300D\u5F39\u7A97\u6062\u590D\uFF09");
@@ -19638,9 +23291,9 @@ function create_each_block_22(key_1, ctx) {
       insert(target, div5, anchor);
       append(div5, div0);
       append(div0, button0);
-      append(div0, t1);
+      append(div0, t12);
       append(div0, button1);
-      append(button1, t2);
+      append(button1, t22);
       append(div5, t3);
       append(div5, div3);
       append(div3, div1);
@@ -19655,7 +23308,7 @@ function create_each_block_22(key_1, ctx) {
       append(div2, t10);
       append(div2, t11);
       if (if_block1) if_block1.m(div2, null);
-      append(div2, t12);
+      append(div2, t122);
       append(div2, t13);
       append(div2, t14);
       if (if_block2) if_block2.m(div2, null);
@@ -19668,7 +23321,7 @@ function create_each_block_22(key_1, ctx) {
       append(div4, button3);
       append(div4, t20);
       append(div4, button4);
-      append(div5, t22);
+      append(div5, t222);
       if (!mounted) {
         dispose = [
           listen(button0, "click", click_handler_2),
@@ -19729,9 +23382,9 @@ function create_each_block_22(key_1, ctx) {
         if (if_block1) {
           if_block1.p(ctx, dirty);
         } else {
-          if_block1 = create_if_block_68(ctx);
+          if_block1 = create_if_block_66(ctx);
           if_block1.c();
-          if_block1.m(div2, t12);
+          if_block1.m(div2, t122);
         }
       } else if (if_block1) {
         if_block1.d(1);
@@ -19789,8 +23442,8 @@ function create_if_block6(ctx) {
   let div0;
   let span0;
   let t0;
-  let t1;
-  let t2;
+  let t12;
+  let t22;
   let t3;
   let span1;
   let t9;
@@ -19802,13 +23455,10 @@ function create_if_block6(ctx) {
     /*heat*/
     ctx[10]
   );
-  const get_key = (ctx2) => {
-    var _a;
-    return (
-      /*w*/
-      (_a = ctx2[55].cells[0]) == null ? void 0 : _a.date
-    );
-  };
+  const get_key = (ctx2) => (
+    /*w*/
+    ctx2[55].cells[0]?.date
+  );
   for (let i = 0; i < each_value.length; i += 1) {
     let child_ctx = get_each_context6(ctx, each_value, i);
     let key = get_key(child_ctx);
@@ -19820,11 +23470,11 @@ function create_if_block6(ctx) {
       div0 = element("div");
       span0 = element("span");
       t0 = text("\u8FD1 12 \u5468\u5171 ");
-      t1 = text(
+      t12 = text(
         /*heatSum*/
         ctx[11]
       );
-      t2 = text(" \u6B21");
+      t22 = text(" \u6B21");
       t3 = space();
       span1 = element("span");
       span1.innerHTML = `\u5C11<i class="el-heat-sw h0"></i><i class="el-heat-sw h1"></i>4<i class="el-heat-sw h2"></i>9<i class="el-heat-sw h3"></i>19<i class="el-heat-sw h4"></i>20+`;
@@ -19847,8 +23497,8 @@ function create_if_block6(ctx) {
       append(div2, div0);
       append(div0, span0);
       append(span0, t0);
-      append(span0, t1);
-      append(span0, t2);
+      append(span0, t12);
+      append(span0, t22);
       append(div0, t3);
       append(div0, span1);
       append(div2, t9);
@@ -19862,7 +23512,7 @@ function create_if_block6(ctx) {
     p(ctx2, dirty) {
       if (dirty[0] & /*heatSum*/
       2048) set_data(
-        t1,
+        t12,
         /*heatSum*/
         ctx2[11]
       );
@@ -20072,10 +23722,10 @@ function create_each_block6(key_1, ctx) {
     ctx[55].month + ""
   );
   let t0;
-  let t1;
+  let t12;
   let each_blocks = [];
   let each_1_lookup = /* @__PURE__ */ new Map();
-  let t2;
+  let t22;
   let each_value_1 = ensure_array_like(
     /*w*/
     ctx[55].cells
@@ -20096,11 +23746,11 @@ function create_each_block6(key_1, ctx) {
       div1 = element("div");
       div0 = element("div");
       t0 = text(t0_value);
-      t1 = space();
+      t12 = space();
       for (let i = 0; i < each_blocks.length; i += 1) {
         each_blocks[i].c();
       }
-      t2 = space();
+      t22 = space();
       attr(div0, "class", "el-heat-mon");
       attr(div1, "class", "el-heat-col");
       this.first = div1;
@@ -20109,13 +23759,13 @@ function create_each_block6(key_1, ctx) {
       insert(target, div1, anchor);
       append(div1, div0);
       append(div0, t0);
-      append(div1, t1);
+      append(div1, t12);
       for (let i = 0; i < each_blocks.length; i += 1) {
         if (each_blocks[i]) {
           each_blocks[i].m(div1, null);
         }
       }
-      append(div1, t2);
+      append(div1, t22);
     },
     p(new_ctx, dirty) {
       ctx = new_ctx;
@@ -20128,7 +23778,7 @@ function create_each_block6(key_1, ctx) {
           /*w*/
           ctx[55].cells
         );
-        each_blocks = update_keyed_each(each_blocks, dirty, get_key, 1, ctx, each_value_1, each_1_lookup, div1, destroy_block, create_each_block_14, t2, get_each_context_14);
+        each_blocks = update_keyed_each(each_blocks, dirty, get_key, 1, ctx, each_value_1, each_1_lookup, div1, destroy_block, create_each_block_14, t22, get_each_context_14);
       }
     },
     d(detaching) {
@@ -20145,11 +23795,11 @@ function create_fragment7(ctx) {
   let div3;
   let div1;
   let h3;
-  let t1;
+  let t12;
   let div0;
   let button0;
   let icon_action;
-  let t2;
+  let t22;
   let button1;
   let t4;
   let button2;
@@ -20162,7 +23812,7 @@ function create_fragment7(ctx) {
   let t10;
   let t11;
   let div2;
-  let t12;
+  let t122;
   let t13;
   let t14;
   let t15;
@@ -20180,7 +23830,7 @@ function create_fragment7(ctx) {
     ctx[4].learn + ""
   );
   let t21;
-  let t22;
+  let t222;
   let t23_value = (
     /*totals*/
     ctx[4].mastered + ""
@@ -20242,10 +23892,10 @@ function create_fragment7(ctx) {
       div1 = element("div");
       h3 = element("h3");
       h3.textContent = "\u4E3B\u9898\u8BCD\u5E93";
-      t1 = space();
+      t12 = space();
       div0 = element("div");
       button0 = element("button");
-      t2 = space();
+      t22 = space();
       button1 = element("button");
       button1.textContent = "\u67E5\u8BCD";
       t4 = space();
@@ -20262,7 +23912,7 @@ function create_fragment7(ctx) {
       if (if_block1) if_block1.c();
       t11 = space();
       div2 = element("div");
-      t12 = text("\u4ECA\u65E5 \u65B0\u5B66 ");
+      t122 = text("\u4ECA\u65E5 \u65B0\u5B66 ");
       t13 = text(
         /*todayCount*/
         ctx[6]
@@ -20281,7 +23931,7 @@ function create_fragment7(ctx) {
       t19 = text(t19_value);
       t20 = text(" \xB7 \u5B66\u4E60\u4E2D ");
       t21 = text(t21_value);
-      t22 = text(" \xB7 \u638C\u63E1\n    ");
+      t222 = text(" \xB7 \u638C\u63E1\n    ");
       t23 = text(t23_value);
       t24 = text("/");
       t25 = text(t25_value);
@@ -20321,10 +23971,10 @@ function create_fragment7(ctx) {
       insert(target, div3, anchor);
       append(div3, div1);
       append(div1, h3);
-      append(div1, t1);
+      append(div1, t12);
       append(div1, div0);
       append(div0, button0);
-      append(div0, t2);
+      append(div0, t22);
       append(div0, button1);
       append(div0, t4);
       append(div0, button2);
@@ -20338,7 +23988,7 @@ function create_fragment7(ctx) {
       if (if_block1) if_block1.m(div3, null);
       append(div3, t11);
       append(div3, div2);
-      append(div2, t12);
+      append(div2, t122);
       append(div2, t13);
       append(div2, t14);
       append(div2, t15);
@@ -20348,7 +23998,7 @@ function create_fragment7(ctx) {
       append(div2, t19);
       append(div2, t20);
       append(div2, t21);
-      append(div2, t22);
+      append(div2, t222);
       append(div2, t23);
       append(div2, t24);
       append(div2, t25);
@@ -20590,9 +24240,9 @@ function instance7($$self, $$props, $$invalidate) {
   let todayRev = 0;
   let loading = true;
   let audioMuted = plugin.muted;
-  function icon(node, name) {
-    (0, import_obsidian13.setIcon)(node, name);
-    return { update: (n) => (0, import_obsidian13.setIcon)(node, n) };
+  function icon2(node, name) {
+    (0, import_obsidian14.setIcon)(node, name);
+    return { update: (n) => (0, import_obsidian14.setIcon)(node, n) };
   }
   function toggleMute() {
     plugin.toggleMute();
@@ -20609,7 +24259,7 @@ function instance7($$self, $$props, $$invalidate) {
     return v <= 0 ? 0 : Math.max(3, Math.round(v / maxDay * CHART_H));
   }
   function buildDays() {
-    var _a, _b;
+    var _a2, _b;
     $$invalidate(2, days = []);
     for (let i = 13; i >= 0; i--) {
       const d = /* @__PURE__ */ new Date();
@@ -20618,7 +24268,7 @@ function instance7($$self, $$props, $$invalidate) {
       days.push({
         date: fmtDate(d),
         label: `${d.getMonth() + 1}/${d.getDate()}`,
-        rev: (_a = s === null || s === void 0 ? void 0 : s.rev) !== null && _a !== void 0 ? _a : 0,
+        rev: (_a2 = s === null || s === void 0 ? void 0 : s.rev) !== null && _a2 !== void 0 ? _a2 : 0,
         new: (_b = s === null || s === void 0 ? void 0 : s.new) !== null && _b !== void 0 ? _b : 0
       });
     }
@@ -20629,7 +24279,7 @@ function instance7($$self, $$props, $$invalidate) {
   const heatLevel = (n) => n <= 0 ? 0 : n <= 4 ? 1 : n <= 9 ? 2 : n <= 19 ? 3 : 4;
   const cellTip = (c) => `${c.date}\uFF1A\u65B0\u5B66 ${c.newCount} \xB7 \u590D\u4E60 ${c.revCount}`;
   function buildHeat() {
-    var _a, _b;
+    var _a2, _b;
     const today = /* @__PURE__ */ new Date();
     today.setHours(12, 0, 0, 0);
     const todayIso = fmtDate(today);
@@ -20649,7 +24299,7 @@ function instance7($$self, $$props, $$invalidate) {
           continue;
         }
         const s = plugin.db.stats.days[fmtDate(cur)];
-        const newCount = (_a = s === null || s === void 0 ? void 0 : s.new) !== null && _a !== void 0 ? _a : 0;
+        const newCount = (_a2 = s === null || s === void 0 ? void 0 : s.new) !== null && _a2 !== void 0 ? _a2 : 0;
         const revCount = (_b = s === null || s === void 0 ? void 0 : s.rev) !== null && _b !== void 0 ? _b : 0;
         const n = newCount + revCount;
         sum += n;
@@ -20691,7 +24341,7 @@ function instance7($$self, $$props, $$invalidate) {
     const todayIso = fmtDate(now2);
     const progress = plugin.db.progress;
     return Object.values(plugin.db.themes).filter((t) => t.enabled !== false).map((t) => {
-      var _a, _b;
+      var _a2, _b;
       const words = plugin.words.byTheme(t.name);
       let due = 0;
       let fresh = 0;
@@ -20715,7 +24365,7 @@ function instance7($$self, $$props, $$invalidate) {
       return {
         name: t.name,
         pinned: !!t.pinned,
-        pinnedAt: (_a = t.pinnedAt) !== null && _a !== void 0 ? _a : 0,
+        pinnedAt: (_a2 = t.pinnedAt) !== null && _a2 !== void 0 ? _a2 : 0,
         keywords: (_b = t.keywords) !== null && _b !== void 0 ? _b : [],
         count: words.length,
         due,
@@ -20728,7 +24378,7 @@ function instance7($$self, $$props, $$invalidate) {
     });
   }
   async function refresh(silent = false) {
-    var _a;
+    var _a2;
     if (!silent) $$invalidate(8, loading = true);
     await plugin.words.scan();
     const now2 = Date.now();
@@ -20752,7 +24402,7 @@ function instance7($$self, $$props, $$invalidate) {
       }
     }
     $$invalidate(4, totals = { words, due, fresh, mastered, hard, learn });
-    const day = (_a = plugin.db.stats.days[fmtDate(now2)]) !== null && _a !== void 0 ? _a : { new: 0, rev: 0 };
+    const day = (_a2 = plugin.db.stats.days[fmtDate(now2)]) !== null && _a2 !== void 0 ? _a2 : { new: 0, rev: 0 };
     $$invalidate(6, todayCount = day.new);
     $$invalidate(7, todayRev = day.rev);
     const quota = Math.max(0, plugin.db.settings.dailyNew - todayCount);
@@ -20777,17 +24427,17 @@ function instance7($$self, $$props, $$invalidate) {
     plugin.store.touch();
     void refresh(true);
     void plugin.refreshStatusBar();
-    new import_obsidian13.Notice(`\u5DF2\u505C\u7528\u300C${name}\u300D\uFF0C\u53EF\u5728\u300C\u65B0\u5EFA\u4E3B\u9898\u300D\u5F39\u7A97\u4E2D\u91CD\u65B0\u542F\u7528`, 6e3);
+    new import_obsidian14.Notice(`\u5DF2\u505C\u7528\u300C${name}\u300D\uFF0C\u53EF\u5728\u300C\u65B0\u5EFA\u4E3B\u9898\u300D\u5F39\u7A97\u4E2D\u91CD\u65B0\u542F\u7528`, 6e3);
   }
   function openCreate() {
     new CreateThemeModal(
       plugin.app,
       plugin,
       (created) => {
-        var _a, _b;
+        var _a2, _b;
         void refresh();
         if (created && plugin.words.byTheme(created).length === 0) {
-          const hasKw = ((_b = (_a = plugin.db.themes[created]) === null || _a === void 0 ? void 0 : _a.keywords) !== null && _b !== void 0 ? _b : []).length > 0;
+          const hasKw = ((_b = (_a2 = plugin.db.themes[created]) === null || _a2 === void 0 ? void 0 : _a2.keywords) !== null && _b !== void 0 ? _b : []).length > 0;
           openExpand(created, hasKw ? void 0 : "import", hasKw);
         }
       }
@@ -20812,7 +24462,7 @@ function instance7($$self, $$props, $$invalidate) {
     new TranslateModal(plugin.app, plugin, () => void refresh()).open();
   }
   function openMore(ev) {
-    const menu = new import_obsidian13.Menu();
+    const menu = new import_obsidian14.Menu();
     if (totals.hard > 0) {
       menu.addItem((mi) => mi.setTitle(`\u96BE\u8BCD\u4E13\u9879 ${totals.hard}`).setIcon("target").onClick(() => start(null, true)));
     }
@@ -20833,8 +24483,8 @@ function instance7($$self, $$props, $$invalidate) {
   const click_handler_6 = (t) => start(t.name);
   const click_handler_7 = (t) => openExpand(t.name);
   const click_handler_8 = (t) => openEdit(t.name);
-  const click_handler_9 = (c) => new import_obsidian13.Notice(cellTip(c), 4e3);
-  const keydown_handler_3 = (c, e) => e.key === "Enter" && new import_obsidian13.Notice(cellTip(c), 4e3);
+  const click_handler_9 = (c) => new import_obsidian14.Notice(cellTip(c), 4e3);
+  const keydown_handler_3 = (c, e) => e.key === "Enter" && new import_obsidian14.Notice(cellTip(c), 4e3);
   $$self.$$set = ($$props2) => {
     if ("plugin" in $$props2) $$invalidate(0, plugin = $$props2.plugin);
   };
@@ -20864,7 +24514,7 @@ function instance7($$self, $$props, $$invalidate) {
     guideVisible,
     chartSum,
     muteTip,
-    icon,
+    icon2,
     toggleMute,
     barH,
     heatLevel,
@@ -20912,7 +24562,7 @@ var ThemePanel = class extends SvelteComponent {
 var ThemePanel_default = ThemePanel;
 
 // src/ui/theme-view.ts
-var ThemeView = class extends import_obsidian14.ItemView {
+var ThemeView = class extends import_obsidian15.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
@@ -20931,32 +24581,30 @@ var ThemeView = class extends import_obsidian14.ItemView {
     this.comp = new ThemePanel_default({ target: this.contentEl, props: { plugin: this.plugin } });
     this.registerEvent(
       this.app.workspace.on("active-leaf-change", (leaf) => {
-        var _a;
-        if (leaf === this.leaf) (_a = this.comp) == null ? void 0 : _a.refresh(true).catch((e) => console.error("\u9762\u677F\u5237\u65B0\u5931\u8D25:", e));
+        if (leaf === this.leaf) this.comp?.refresh(true).catch((e) => console.error("\u9762\u677F\u5237\u65B0\u5931\u8D25:", e));
       })
     );
   }
   async onClose() {
-    var _a;
-    (_a = this.comp) == null ? void 0 : _a.$destroy();
+    this.comp?.$destroy();
   }
 };
 
 // src/word-card-modal.ts
-var import_obsidian15 = require("obsidian");
-var WordCardModal = class _WordCardModal extends import_obsidian15.Modal {
+var import_obsidian16 = require("obsidian");
+var WordCardModal = class _WordCardModal extends import_obsidian16.Modal {
   constructor(app, plugin, wdoc) {
     super(app);
     this.plugin = plugin;
     this.wdoc = wdoc;
   }
   async onOpen() {
-    var _a;
     tagModal(this.modalEl, "Card", false);
-    (_a = _WordCardModal.current) == null ? void 0 : _a.close();
+    _WordCardModal.current?.close();
     _WordCardModal.current = this;
     this.modalEl.addClass("el-wordcard-modal");
     this.plugin.speakWord(this.wdoc.word, void 0, firstExample(this.wdoc));
+    this.plugin.prefetchWordSentences(this.wdoc);
     this.comp = new WordFullCard_default({
       target: this.contentEl,
       props: {
@@ -20975,7 +24623,7 @@ var WordCardModal = class _WordCardModal extends import_obsidian15.Modal {
       });
       if (_WordCardModal.current !== this) return;
       this.comp.$set({ synonyms: r.synonyms, antonyms: r.antonyms });
-    } catch (e) {
+    } catch {
     }
   }
   /** 释义缺失时的补全：走统一补全链（词典 → 在线 → AI），完成后刷新词卡内容 */
@@ -20986,19 +24634,17 @@ var WordCardModal = class _WordCardModal extends import_obsidian15.Modal {
    *  直接传索引对象、不复制：词卡上的原地写（setSenses/appendExample 等）改的就是它，
    *  传副本会让后续 refresh/会话监听拿旧对象把卡刷回旧数据（$set 同引用也触发重渲染） */
   refresh() {
-    var _a;
     const fresh = this.plugin.words.get(this.wdoc.word);
-    if (fresh && _WordCardModal.current === this) (_a = this.comp) == null ? void 0 : _a.$set({ doc: fresh });
+    if (fresh && _WordCardModal.current === this) this.comp?.$set({ doc: fresh });
   }
   onClose() {
-    var _a;
     if (_WordCardModal.current === this) _WordCardModal.current = void 0;
     this.plugin.stopSpeaking();
-    (_a = this.comp) == null ? void 0 : _a.$destroy();
+    this.comp?.$destroy();
     this.contentEl.empty();
   }
 };
-var ThemePickModal = class extends import_obsidian15.Modal {
+var ThemePickModal = class extends import_obsidian16.Modal {
   constructor(app, plugin, wdoc, onDone) {
     super(app);
     this.plugin = plugin;
@@ -21279,7 +24925,7 @@ var STARTER_PACKS = [
 ];
 
 // src/tts.ts
-var import_obsidian16 = require("obsidian");
+var import_obsidian17 = require("obsidian");
 var voice = null;
 var voicePicked = false;
 var preferredVoice = null;
@@ -21298,7 +24944,7 @@ function pickVoice() {
   voice = ens.reduce((best, v) => score(v) > score(best) ? v : best);
 }
 function setPreferredVoice(name) {
-  preferredVoice = (name == null ? void 0 : name.trim()) || null;
+  preferredVoice = name?.trim() || null;
   voice = null;
   voicePicked = false;
 }
@@ -21320,7 +24966,7 @@ function markEngineDead() {
   console.error("TTS \u8FDE\u7CFB\u7EDF\u9ED8\u8BA4\u58F0\u97F3\u90FD\u672A\u542F\u52A8\uFF0CspeechSynthesis \u53EF\u80FD\u5DF2\u5047\u6B7B\uFF0C\u8BF7\u91CD\u542F Obsidian");
   if (deadNotified) return;
   deadNotified = true;
-  new import_obsidian16.Notice(
+  new import_obsidian17.Notice(
     "TTS \u5F15\u64CE\u5DF2\u5931\u6548\uFF08Obsidian \u8BED\u97F3\u5408\u6210\u5361\u6B7B\uFF0C\u91CD\u542F\u524D\u65E0\u6CD5\u53D1\u97F3\uFF09\u3002\u6807\u51C6\u53D1\u97F3\u4E0D\u53D7\u5F71\u54CD\uFF1B\u5B8C\u5168\u9000\u51FA Obsidian\uFF08\u2318Q \u5173\u6389\u6574\u4E2A\u5E94\u7528\uFF0C\u4E0D\u662F\u5173\u7A97\u53E3\uFF09\u540E\u91CD\u5F00\u5373\u53EF\u6062\u590D",
     12e3
   );
@@ -21350,7 +24996,6 @@ function play(text2, rate, attempt, onEnd) {
   const needCancel = synth.speaking || synth.pending;
   if (needCancel) synth.cancel();
   setTimeout(() => {
-    var _a;
     if (gen !== speakSeq) return;
     if (synth.speaking) {
       markEngineDead();
@@ -21358,7 +25003,7 @@ function play(text2, rate, attempt, onEnd) {
     }
     const u = new SpeechSynthesisUtterance(text2);
     if (voice && attempt < 3) u.voice = voice;
-    u.lang = (_a = voice == null ? void 0 : voice.lang) != null ? _a : "en-US";
+    u.lang = voice?.lang ?? "en-US";
     u.rate = rate;
     let started = false;
     u.onstart = () => {
@@ -21366,7 +25011,7 @@ function play(text2, rate, attempt, onEnd) {
       markEngineAlive();
     };
     u.onend = () => {
-      if (gen === speakSeq) onEnd == null ? void 0 : onEnd();
+      if (gen === speakSeq) onEnd?.();
     };
     u.onerror = (e) => {
       const err = e.error;
@@ -21390,6 +25035,10230 @@ function play(text2, rate, attempt, onEnd) {
   }, needCancel ? 80 : 0);
 }
 
+// src/tts-edge.ts
+var import_obsidian18 = require("obsidian");
+
+// node_modules/@breezystack/lamejs/dist/lamejs.js
+var fa = {};
+function Xa(w) {
+  return new Int8Array(w);
+}
+function ma(w) {
+  return new Int16Array(w);
+}
+function ba(w) {
+  return new Int32Array(w);
+}
+function ca(w) {
+  return new Float32Array(w);
+}
+function Ya(w) {
+  return new Float64Array(w);
+}
+function Sa(w) {
+  if (w.length == 1)
+    return ca(w[0]);
+  var Z = w[0];
+  w = w.slice(1);
+  for (var X = [], z = 0; z < Z; z++)
+    X.push(Sa(w));
+  return X;
+}
+function da(w) {
+  if (w.length == 1)
+    return ba(w[0]);
+  var Z = w[0];
+  w = w.slice(1);
+  for (var X = [], z = 0; z < Z; z++)
+    X.push(da(w));
+  return X;
+}
+function Aa(w) {
+  if (w.length == 1)
+    return ma(w[0]);
+  var Z = w[0];
+  w = w.slice(1);
+  for (var X = [], z = 0; z < Z; z++)
+    X.push(Aa(w));
+  return X;
+}
+function Ra(w) {
+  if (w.length == 1)
+    return new Array(w[0]);
+  var Z = w[0];
+  w = w.slice(1);
+  for (var X = [], z = 0; z < Z; z++)
+    X.push(Ra(w));
+  return X;
+}
+var xa = {};
+xa.fill = function(w, Z, X, z) {
+  if (arguments.length == 2)
+    for (var u0 = 0; u0 < w.length; u0++)
+      w[u0] = arguments[1];
+  else
+    for (var u0 = Z; u0 < X; u0++)
+      w[u0] = z;
+};
+var W1 = {};
+W1.arraycopy = function(w, Z, X, z, u0) {
+  for (var W = Z + u0; Z < W; )
+    X[z++] = w[Z++];
+};
+W1.out = {};
+W1.out.println = function(w) {
+  console.log(w);
+};
+W1.out.printf = function() {
+  console.log.apply(console, arguments);
+};
+var se = {};
+se.SQRT2 = 1.4142135623730951;
+se.FAST_LOG10 = function(w) {
+  return Math.log10(w);
+};
+se.FAST_LOG10_X = function(w, Z) {
+  return Math.log10(w) * Z;
+};
+function B1(w) {
+  this.ordinal = w;
+}
+B1.short_block_allowed = new B1(0);
+B1.short_block_coupled = new B1(1);
+B1.short_block_dispensed = new B1(2);
+B1.short_block_forced = new B1(3);
+var Ma = {};
+Ma.MAX_VALUE = 34028235e31;
+function u1(w) {
+  this.ordinal = w;
+}
+u1.vbr_off = new u1(0);
+u1.vbr_mt = new u1(1);
+u1.vbr_rh = new u1(2);
+u1.vbr_abr = new u1(3);
+u1.vbr_mtrh = new u1(4);
+u1.vbr_default = u1.vbr_mtrh;
+var qa = function(w) {
+};
+var Q0 = {
+  System: W1,
+  VbrMode: u1,
+  Float: Ma,
+  ShortBlock: B1,
+  Util: se,
+  Arrays: xa,
+  new_array_n: Ra,
+  new_byte: Xa,
+  new_double: Ya,
+  new_float: ca,
+  new_float_n: Sa,
+  new_int: ba,
+  new_int_n: da,
+  new_short: ma,
+  new_short_n: Aa,
+  assert: qa
+};
+var ce;
+var De;
+function Da() {
+  if (De)
+    return ce;
+  De = 1;
+  var w = Q0, Z = w.System, X = w.Util, z = w.Arrays, u0 = w.new_float, W = t1();
+  function Q() {
+    var D = [
+      -0.1482523854003001,
+      32.308141959636465,
+      296.40344946382766,
+      883.1344870032432,
+      11113.947376231741,
+      1057.2713659324597,
+      305.7402417275812,
+      30.825928907280012,
+      /* 15 */
+      3.8533188138216365,
+      59.42900443849514,
+      709.5899960123345,
+      5281.91112291017,
+      -5829.66483675846,
+      -817.6293103748613,
+      -76.91656988279972,
+      -4.594269939176596,
+      0.9063471690191471,
+      0.1960342806591213,
+      -0.15466694054279598,
+      34.324387823855965,
+      301.8067566458425,
+      817.599602898885,
+      11573.795901679885,
+      1181.2520595540152,
+      321.59731579894424,
+      31.232021761053772,
+      /* 14 */
+      3.7107095756221318,
+      53.650946155329365,
+      684.167428119626,
+      5224.56624370173,
+      -6366.391851890084,
+      -908.9766368219582,
+      -89.83068876699639,
+      -5.411397422890401,
+      0.8206787908286602,
+      0.3901806440322567,
+      -0.16070888947830023,
+      36.147034243915876,
+      304.11815768187864,
+      732.7429163887613,
+      11989.60988270091,
+      1300.012278487897,
+      335.28490093152146,
+      31.48816102859945,
+      /* 13 */
+      3.373875931311736,
+      47.232241542899175,
+      652.7371796173471,
+      5132.414255594984,
+      -6909.087078780055,
+      -1001.9990371107289,
+      -103.62185754286375,
+      -6.104916304710272,
+      0.7416505462720353,
+      0.5805693545089249,
+      -0.16636367662261495,
+      37.751650073343995,
+      303.01103387567713,
+      627.9747488785183,
+      12358.763425278165,
+      1412.2779918482834,
+      346.7496836825721,
+      31.598286663170416,
+      /* 12 */
+      3.1598635433980946,
+      40.57878626349686,
+      616.1671130880391,
+      5007.833007176154,
+      -7454.040671756168,
+      -1095.7960341867115,
+      -118.24411666465777,
+      -6.818469345853504,
+      0.6681786379192989,
+      0.7653668647301797,
+      -0.1716176790982088,
+      39.11551877123304,
+      298.3413246578966,
+      503.5259106886539,
+      12679.589408408976,
+      1516.5821921214542,
+      355.9850766329023,
+      31.395241710249053,
+      /* 11 */
+      2.9164211881972335,
+      33.79716964664243,
+      574.8943997801362,
+      4853.234992253242,
+      -7997.57021486075,
+      -1189.7624067269965,
+      -133.6444792601766,
+      -7.7202770609839915,
+      0.5993769336819237,
+      0.9427934736519954,
+      -0.17645823955292173,
+      40.21879108166477,
+      289.9982036694474,
+      359.3226160751053,
+      12950.259102786438,
+      1612.1013903507662,
+      362.85067106591504,
+      31.045922092242872,
+      /* 10 */
+      2.822222032597987,
+      26.988862316190684,
+      529.8996541764288,
+      4671.371946949588,
+      -8535.899136645805,
+      -1282.5898586244496,
+      -149.58553632943463,
+      -8.643494270763135,
+      0.5345111359507916,
+      1.111140466039205,
+      -0.36174739330527045,
+      41.04429910497807,
+      277.5463268268618,
+      195.6386023135583,
+      13169.43812144731,
+      1697.6433561479398,
+      367.40983966190305,
+      30.557037410382826,
+      /* 9 */
+      2.531473372857427,
+      20.070154905927314,
+      481.50208566532336,
+      4464.970341588308,
+      -9065.36882077239,
+      -1373.62841526722,
+      -166.1660487028118,
+      -9.58289321133207,
+      0.4729647758913199,
+      1.268786568327291,
+      -0.36970682634889585,
+      41.393213350082036,
+      261.2935935556502,
+      12.935476055240873,
+      13336.131683328815,
+      1772.508612059496,
+      369.76534388639965,
+      29.751323653701338,
+      2.4023193045459172,
+      13.304795348228817,
+      430.5615775526625,
+      4237.0568611071185,
+      -9581.931701634761,
+      -1461.6913552409758,
+      -183.12733958476446,
+      -10.718010163869403,
+      0.41421356237309503,
+      /* tan(PI/8) */
+      1.414213562373095,
+      -0.37677560326535325,
+      41.619486213528496,
+      241.05423794991074,
+      -187.94665032361226,
+      13450.063605744153,
+      1836.153896465782,
+      369.4908799925761,
+      29.001847876923147,
+      /* 7 */
+      2.0714759319987186,
+      6.779591200894186,
+      377.7767837205709,
+      3990.386575512536,
+      -10081.709459700915,
+      -1545.947424837898,
+      -200.3762958015653,
+      -11.864482073055006,
+      0.3578057213145241,
+      1.546020906725474,
+      -0.3829366947518991,
+      41.1516456456653,
+      216.47684307105183,
+      -406.1569483347166,
+      13511.136535077321,
+      1887.8076599260432,
+      367.3025214564151,
+      28.136213436723654,
+      /* 6 */
+      1.913880671464418,
+      0.3829366947518991,
+      323.85365704338597,
+      3728.1472257487526,
+      -10561.233882199509,
+      -1625.2025997821418,
+      -217.62525175416,
+      -13.015432208941645,
+      0.3033466836073424,
+      1.66293922460509,
+      -0.5822628872992417,
+      40.35639251440489,
+      188.20071124269245,
+      -640.2706748618148,
+      13519.21490106562,
+      1927.6022433578062,
+      362.8197642637487,
+      26.968821921868447,
+      /* 5 */
+      1.7463817695935329,
+      -5.62650678237171,
+      269.3016715297017,
+      3453.386536448852,
+      -11016.145278780888,
+      -1698.6569643425091,
+      -234.7658734267683,
+      -14.16351421663124,
+      0.2504869601913055,
+      1.76384252869671,
+      -0.5887180101749253,
+      39.23429103868072,
+      155.76096234403798,
+      -889.2492977967378,
+      13475.470561874661,
+      1955.0535223723712,
+      356.4450994756727,
+      25.894952980042156,
+      /* 4 */
+      1.5695032905781554,
+      -11.181939564328772,
+      214.80884394039484,
+      3169.1640829158237,
+      -11443.321309975563,
+      -1765.1588461316153,
+      -251.68908574481912,
+      -15.49755935939164,
+      0.198912367379658,
+      1.847759065022573,
+      -0.7912582233652842,
+      37.39369355329111,
+      119.699486012458,
+      -1151.0956593239027,
+      13380.446257078214,
+      1970.3952110853447,
+      348.01959814116185,
+      24.731487364283044,
+      /* 3 */
+      1.3850130831637748,
+      -16.421408865300393,
+      161.05030052864092,
+      2878.3322807850063,
+      -11838.991423510031,
+      -1823.985884688674,
+      -268.2854986386903,
+      -16.81724543849939,
+      0.1483359875383474,
+      1.913880671464418,
+      -0.7960642926861912,
+      35.2322109610459,
+      80.01928065061526,
+      -1424.0212633405113,
+      13235.794061869668,
+      1973.804052543835,
+      337.9908651258184,
+      23.289159354463873,
+      1.3934255946442087,
+      -21.099669467133474,
+      108.48348407242611,
+      2583.700758091299,
+      -12199.726194855148,
+      -1874.2780658979746,
+      -284.2467154529415,
+      -18.11369784385905,
+      0.09849140335716425,
+      1.961570560806461,
+      -0.998795456205172,
+      32.56307803611191,
+      36.958364584370486,
+      -1706.075448829146,
+      13043.287458812016,
+      1965.3831106103316,
+      326.43182772364605,
+      22.175018750622293,
+      1.198638339011324,
+      -25.371248002043963,
+      57.53505923036915,
+      2288.41886619975,
+      -12522.674544337233,
+      -1914.8400385312243,
+      -299.26241273417224,
+      -19.37805630698734,
+      0.04912684976946725,
+      1.990369453344394,
+      0.035780907 * X.SQRT2 * 0.5 / 2384e-9,
+      0.017876148 * X.SQRT2 * 0.5 / 2384e-9,
+      3134727e-9 * X.SQRT2 * 0.5 / 2384e-9,
+      2457142e-9 * X.SQRT2 * 0.5 / 2384e-9,
+      971317e-9 * X.SQRT2 * 0.5 / 2384e-9,
+      218868e-9 * X.SQRT2 * 0.5 / 2384e-9,
+      101566e-9 * X.SQRT2 * 0.5 / 2384e-9,
+      13828e-9 * X.SQRT2 * 0.5 / 2384e-9,
+      12804.797818791945,
+      1945.5515939597317,
+      313.4244966442953,
+      20.801593959731544,
+      1995.1556208053692,
+      9.000838926174497,
+      -29.20218120805369
+      /* 2.384e-06/2.384e-06 */
+    ], g = 12, f0 = 36, A = [
+      [
+        2382191739347913e-28,
+        6423305872147834e-28,
+        9400849094049688e-28,
+        1122435026096556e-27,
+        1183840321267481e-27,
+        1122435026096556e-27,
+        940084909404969e-27,
+        6423305872147839e-28,
+        2382191739347918e-28,
+        5456116108943412e-27,
+        4878985199565852e-27,
+        4240448995017367e-27,
+        3559909094758252e-27,
+        2858043359288075e-27,
+        2156177623817898e-27,
+        1475637723558783e-27,
+        8371015190102974e-28,
+        2599706096327376e-28,
+        -5456116108943412e-27,
+        -4878985199565852e-27,
+        -4240448995017367e-27,
+        -3559909094758252e-27,
+        -2858043359288076e-27,
+        -2156177623817898e-27,
+        -1475637723558783e-27,
+        -8371015190102975e-28,
+        -2599706096327376e-28,
+        -2382191739347923e-28,
+        -6423305872147843e-28,
+        -9400849094049696e-28,
+        -1122435026096556e-27,
+        -1183840321267481e-27,
+        -1122435026096556e-27,
+        -9400849094049694e-28,
+        -642330587214784e-27,
+        -2382191739347918e-28
+      ],
+      [
+        2382191739347913e-28,
+        6423305872147834e-28,
+        9400849094049688e-28,
+        1122435026096556e-27,
+        1183840321267481e-27,
+        1122435026096556e-27,
+        9400849094049688e-28,
+        6423305872147841e-28,
+        2382191739347918e-28,
+        5456116108943413e-27,
+        4878985199565852e-27,
+        4240448995017367e-27,
+        3559909094758253e-27,
+        2858043359288075e-27,
+        2156177623817898e-27,
+        1475637723558782e-27,
+        8371015190102975e-28,
+        2599706096327376e-28,
+        -5461314069809755e-27,
+        -4921085770524055e-27,
+        -4343405037091838e-27,
+        -3732668368707687e-27,
+        -3093523840190885e-27,
+        -2430835727329465e-27,
+        -1734679010007751e-27,
+        -974825365660928e-27,
+        -2797435120168326e-28,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        -2283748241799531e-28,
+        -4037858874020686e-28,
+        -2146547464825323e-28
+      ],
+      [
+        0.1316524975873958,
+        /* win[SHORT_TYPE] */
+        0.414213562373095,
+        0.7673269879789602,
+        1.091308501069271,
+        /* tantab_l */
+        1.303225372841206,
+        1.56968557711749,
+        1.920982126971166,
+        2.414213562373094,
+        3.171594802363212,
+        4.510708503662055,
+        7.595754112725146,
+        22.90376554843115,
+        0.984807753012208,
+        /* cx */
+        0.6427876096865394,
+        0.3420201433256688,
+        0.9396926207859084,
+        -0.1736481776669303,
+        -0.7660444431189779,
+        0.8660254037844387,
+        0.5,
+        -0.5144957554275265,
+        /* ca */
+        -0.4717319685649723,
+        -0.3133774542039019,
+        -0.1819131996109812,
+        -0.09457419252642064,
+        -0.04096558288530405,
+        -0.01419856857247115,
+        -0.003699974673760037,
+        0.8574929257125442,
+        /* cs */
+        0.8817419973177052,
+        0.9496286491027329,
+        0.9833145924917901,
+        0.9955178160675857,
+        0.9991605581781475,
+        0.999899195244447,
+        0.9999931550702802
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2283748241799531e-28,
+        4037858874020686e-28,
+        2146547464825323e-28,
+        5461314069809755e-27,
+        4921085770524055e-27,
+        4343405037091838e-27,
+        3732668368707687e-27,
+        3093523840190885e-27,
+        2430835727329466e-27,
+        1734679010007751e-27,
+        974825365660928e-27,
+        2797435120168326e-28,
+        -5456116108943413e-27,
+        -4878985199565852e-27,
+        -4240448995017367e-27,
+        -3559909094758253e-27,
+        -2858043359288075e-27,
+        -2156177623817898e-27,
+        -1475637723558782e-27,
+        -8371015190102975e-28,
+        -2599706096327376e-28,
+        -2382191739347913e-28,
+        -6423305872147834e-28,
+        -9400849094049688e-28,
+        -1122435026096556e-27,
+        -1183840321267481e-27,
+        -1122435026096556e-27,
+        -9400849094049688e-28,
+        -6423305872147841e-28,
+        -2382191739347918e-28
+      ]
+    ], m = A[W.SHORT_TYPE], O = A[W.SHORT_TYPE], s0 = A[W.SHORT_TYPE], K = A[W.SHORT_TYPE], t0 = [
+      0,
+      1,
+      16,
+      17,
+      8,
+      9,
+      24,
+      25,
+      4,
+      5,
+      20,
+      21,
+      12,
+      13,
+      28,
+      29,
+      2,
+      3,
+      18,
+      19,
+      10,
+      11,
+      26,
+      27,
+      6,
+      7,
+      22,
+      23,
+      14,
+      15,
+      30,
+      31
+    ];
+    function U(u, d, e) {
+      for (var l = 10, M = d + 238 - 14 - 286, p = -15; p < 0; p++) {
+        var H, B, I;
+        H = D[l + -10], B = u[M + -224] * H, I = u[d + 224] * H, H = D[l + -9], B += u[M + -160] * H, I += u[d + 160] * H, H = D[l + -8], B += u[M + -96] * H, I += u[d + 96] * H, H = D[l + -7], B += u[M + -32] * H, I += u[d + 32] * H, H = D[l + -6], B += u[M + 32] * H, I += u[d + -32] * H, H = D[l + -5], B += u[M + 96] * H, I += u[d + -96] * H, H = D[l + -4], B += u[M + 160] * H, I += u[d + -160] * H, H = D[l + -3], B += u[M + 224] * H, I += u[d + -224] * H, H = D[l + -2], B += u[d + -256] * H, I -= u[M + 256] * H, H = D[l + -1], B += u[d + -192] * H, I -= u[M + 192] * H, H = D[l + 0], B += u[d + -128] * H, I -= u[M + 128] * H, H = D[l + 1], B += u[d + -64] * H, I -= u[M + 64] * H, H = D[l + 2], B += u[d + 0] * H, I -= u[M + 0] * H, H = D[l + 3], B += u[d + 64] * H, I -= u[M + -64] * H, H = D[l + 4], B += u[d + 128] * H, I -= u[M + -128] * H, H = D[l + 5], B += u[d + 192] * H, I -= u[M + -192] * H, B *= D[l + 6], H = I - B, e[30 + p * 2] = I + B, e[31 + p * 2] = D[l + 7] * H, l += 18, d--, M++;
+      }
+      {
+        var B, I, v0, b;
+        I = u[d + -16] * D[l + -10], B = u[d + -32] * D[l + -2], I += (u[d + -48] - u[d + 16]) * D[l + -9], B += u[d + -96] * D[l + -1], I += (u[d + -80] + u[d + 48]) * D[l + -8], B += u[d + -160] * D[l + 0], I += (u[d + -112] - u[d + 80]) * D[l + -7], B += u[d + -224] * D[l + 1], I += (u[d + -144] + u[d + 112]) * D[l + -6], B -= u[d + 32] * D[l + 2], I += (u[d + -176] - u[d + 144]) * D[l + -5], B -= u[d + 96] * D[l + 3], I += (u[d + -208] + u[d + 176]) * D[l + -4], B -= u[d + 160] * D[l + 4], I += (u[d + -240] - u[d + 208]) * D[l + -3], B -= u[d + 224], v0 = B - I, b = B + I, I = e[14], B = e[15] - I, e[31] = b + I, e[30] = v0 + B, e[15] = v0 - B, e[14] = b - I;
+      }
+      {
+        var a;
+        a = e[28] - e[0], e[0] += e[28], e[28] = a * D[l + -2 * 18 + 7], a = e[29] - e[1], e[1] += e[29], e[29] = a * D[l + -2 * 18 + 7], a = e[26] - e[2], e[2] += e[26], e[26] = a * D[l + -4 * 18 + 7], a = e[27] - e[3], e[3] += e[27], e[27] = a * D[l + -4 * 18 + 7], a = e[24] - e[4], e[4] += e[24], e[24] = a * D[l + -6 * 18 + 7], a = e[25] - e[5], e[5] += e[25], e[25] = a * D[l + -6 * 18 + 7], a = e[22] - e[6], e[6] += e[22], e[22] = a * X.SQRT2, a = e[23] - e[7], e[7] += e[23], e[23] = a * X.SQRT2 - e[7], e[7] -= e[6], e[22] -= e[7], e[23] -= e[22], a = e[6], e[6] = e[31] - a, e[31] = e[31] + a, a = e[7], e[7] = e[30] - a, e[30] = e[30] + a, a = e[22], e[22] = e[15] - a, e[15] = e[15] + a, a = e[23], e[23] = e[14] - a, e[14] = e[14] + a, a = e[20] - e[8], e[8] += e[20], e[20] = a * D[l + -10 * 18 + 7], a = e[21] - e[9], e[9] += e[21], e[21] = a * D[l + -10 * 18 + 7], a = e[18] - e[10], e[10] += e[18], e[18] = a * D[l + -12 * 18 + 7], a = e[19] - e[11], e[11] += e[19], e[19] = a * D[l + -12 * 18 + 7], a = e[16] - e[12], e[12] += e[16], e[16] = a * D[l + -14 * 18 + 7], a = e[17] - e[13], e[13] += e[17], e[17] = a * D[l + -14 * 18 + 7], a = -e[20] + e[24], e[20] += e[24], e[24] = a * D[l + -12 * 18 + 7], a = -e[21] + e[25], e[21] += e[25], e[25] = a * D[l + -12 * 18 + 7], a = e[4] - e[8], e[4] += e[8], e[8] = a * D[l + -12 * 18 + 7], a = e[5] - e[9], e[5] += e[9], e[9] = a * D[l + -12 * 18 + 7], a = e[0] - e[12], e[0] += e[12], e[12] = a * D[l + -4 * 18 + 7], a = e[1] - e[13], e[1] += e[13], e[13] = a * D[l + -4 * 18 + 7], a = e[16] - e[28], e[16] += e[28], e[28] = a * D[l + -4 * 18 + 7], a = -e[17] + e[29], e[17] += e[29], e[29] = a * D[l + -4 * 18 + 7], a = X.SQRT2 * (e[2] - e[10]), e[2] += e[10], e[10] = a, a = X.SQRT2 * (e[3] - e[11]), e[3] += e[11], e[11] = a, a = X.SQRT2 * (-e[18] + e[26]), e[18] += e[26], e[26] = a - e[18], a = X.SQRT2 * (-e[19] + e[27]), e[19] += e[27], e[27] = a - e[19], a = e[2], e[19] -= e[3], e[3] -= a, e[2] = e[31] - a, e[31] += a, a = e[3], e[11] -= e[19], e[18] -= a, e[3] = e[30] - a, e[30] += a, a = e[18], e[27] -= e[11], e[19] -= a, e[18] = e[15] - a, e[15] += a, a = e[19], e[10] -= a, e[19] = e[14] - a, e[14] += a, a = e[10], e[11] -= a, e[10] = e[23] - a, e[23] += a, a = e[11], e[26] -= a, e[11] = e[22] - a, e[22] += a, a = e[26], e[27] -= a, e[26] = e[7] - a, e[7] += a, a = e[27], e[27] = e[6] - a, e[6] += a, a = X.SQRT2 * (e[0] - e[4]), e[0] += e[4], e[4] = a, a = X.SQRT2 * (e[1] - e[5]), e[1] += e[5], e[5] = a, a = X.SQRT2 * (e[16] - e[20]), e[16] += e[20], e[20] = a, a = X.SQRT2 * (e[17] - e[21]), e[17] += e[21], e[21] = a, a = -X.SQRT2 * (e[8] - e[12]), e[8] += e[12], e[12] = a - e[8], a = -X.SQRT2 * (e[9] - e[13]), e[9] += e[13], e[13] = a - e[9], a = -X.SQRT2 * (e[25] - e[29]), e[25] += e[29], e[29] = a - e[25], a = -X.SQRT2 * (e[24] + e[28]), e[24] -= e[28], e[28] = a - e[24], a = e[24] - e[16], e[24] = a, a = e[20] - a, e[20] = a, a = e[28] - a, e[28] = a, a = e[25] - e[17], e[25] = a, a = e[21] - a, e[21] = a, a = e[29] - a, e[29] = a, a = e[17] - e[1], e[17] = a, a = e[9] - a, e[9] = a, a = e[25] - a, e[25] = a, a = e[5] - a, e[5] = a, a = e[21] - a, e[21] = a, a = e[13] - a, e[13] = a, a = e[29] - a, e[29] = a, a = e[1] - e[0], e[1] = a, a = e[16] - a, e[16] = a, a = e[17] - a, e[17] = a, a = e[8] - a, e[8] = a, a = e[9] - a, e[9] = a, a = e[24] - a, e[24] = a, a = e[25] - a, e[25] = a, a = e[4] - a, e[4] = a, a = e[5] - a, e[5] = a, a = e[20] - a, e[20] = a, a = e[21] - a, e[21] = a, a = e[12] - a, e[12] = a, a = e[13] - a, e[13] = a, a = e[28] - a, e[28] = a, a = e[29] - a, e[29] = a, a = e[0], e[0] += e[31], e[31] -= a, a = e[1], e[1] += e[30], e[30] -= a, a = e[16], e[16] += e[15], e[15] -= a, a = e[17], e[17] += e[14], e[14] -= a, a = e[8], e[8] += e[23], e[23] -= a, a = e[9], e[9] += e[22], e[22] -= a, a = e[24], e[24] += e[7], e[7] -= a, a = e[25], e[25] += e[6], e[6] -= a, a = e[4], e[4] += e[27], e[27] -= a, a = e[5], e[5] += e[26], e[26] -= a, a = e[20], e[20] += e[11], e[11] -= a, a = e[21], e[21] += e[10], e[10] -= a, a = e[12], e[12] += e[19], e[19] -= a, a = e[13], e[13] += e[18], e[18] -= a, a = e[28], e[28] += e[3], e[3] -= a, a = e[29], e[29] += e[2], e[2] -= a;
+      }
+    }
+    function R(u, d) {
+      for (var e = 0; e < 3; e++) {
+        var l, M, p, H, B, I;
+        H = u[d + 2 * 3] * A[W.SHORT_TYPE][0] - u[d + 5 * 3], l = u[d + 0 * 3] * A[W.SHORT_TYPE][2] - u[d + 3 * 3], M = H + l, p = H - l, H = u[d + 5 * 3] * A[W.SHORT_TYPE][0] + u[d + 2 * 3], l = u[d + 3 * 3] * A[W.SHORT_TYPE][2] + u[d + 0 * 3], B = H + l, I = -H + l, l = (u[d + 1 * 3] * A[W.SHORT_TYPE][1] - u[d + 4 * 3]) * 2069978111953089e-26, H = (u[d + 4 * 3] * A[W.SHORT_TYPE][1] + u[d + 1 * 3]) * 2069978111953089e-26, u[d + 3 * 0] = M * 190752519173728e-25 + l, u[d + 3 * 5] = -B * 190752519173728e-25 + H, p = p * 0.8660254037844387 * 1907525191737281e-26, B = B * 0.5 * 1907525191737281e-26 + H, u[d + 3 * 1] = p - B, u[d + 3 * 2] = p + B, M = M * 0.5 * 1907525191737281e-26 - l, I = I * 0.8660254037844387 * 1907525191737281e-26, u[d + 3 * 3] = M + I, u[d + 3 * 4] = M - I, d++;
+      }
+    }
+    function o(u, d, e) {
+      var l, M;
+      {
+        var p, H, B, I, v0, b, a, S;
+        p = e[17] - e[9], B = e[15] - e[11], I = e[14] - e[12], v0 = e[0] + e[8], b = e[1] + e[7], a = e[2] + e[6], S = e[3] + e[5], u[d + 17] = v0 + a - S - (b - e[4]), M = (v0 + a - S) * O[12 + 7] + (b - e[4]), l = (p - B - I) * O[12 + 6], u[d + 5] = l + M, u[d + 6] = l - M, H = (e[16] - e[10]) * O[12 + 6], b = b * O[12 + 7] + e[4], l = p * O[12 + 0] + H + B * O[12 + 1] + I * O[12 + 2], M = -v0 * O[12 + 4] + b - a * O[12 + 5] + S * O[12 + 3], u[d + 1] = l + M, u[d + 2] = l - M, l = p * O[12 + 1] - H - B * O[12 + 2] + I * O[12 + 0], M = -v0 * O[12 + 5] + b - a * O[12 + 3] + S * O[12 + 4], u[d + 9] = l + M, u[d + 10] = l - M, l = p * O[12 + 2] - H + B * O[12 + 0] - I * O[12 + 1], M = v0 * O[12 + 3] - b + a * O[12 + 4] - S * O[12 + 5], u[d + 13] = l + M, u[d + 14] = l - M;
+      }
+      {
+        var L, V, N, P, E, i, s, r;
+        L = e[8] - e[0], N = e[6] - e[2], P = e[5] - e[3], E = e[17] + e[9], i = e[16] + e[10], s = e[15] + e[11], r = e[14] + e[12], u[d + 0] = E + s + r + (i + e[13]), l = (E + s + r) * O[12 + 7] - (i + e[13]), M = (L - N + P) * O[12 + 6], u[d + 11] = l + M, u[d + 12] = l - M, V = (e[7] - e[1]) * O[12 + 6], i = e[13] - i * O[12 + 7], l = E * O[12 + 3] - i + s * O[12 + 4] + r * O[12 + 5], M = L * O[12 + 2] + V + N * O[12 + 0] + P * O[12 + 1], u[d + 3] = l + M, u[d + 4] = l - M, l = -E * O[12 + 5] + i - s * O[12 + 3] - r * O[12 + 4], M = L * O[12 + 1] + V - N * O[12 + 2] - P * O[12 + 0], u[d + 7] = l + M, u[d + 8] = l - M, l = -E * O[12 + 4] + i - s * O[12 + 5] - r * O[12 + 3], M = L * O[12 + 0] - V + N * O[12 + 1] - P * O[12 + 2], u[d + 15] = l + M, u[d + 16] = l - M;
+      }
+    }
+    this.mdct_sub48 = function(u, d, e) {
+      for (var l = d, M = 286, p = 0; p < u.channels_out; p++) {
+        for (var H = 0; H < u.mode_gr; H++) {
+          for (var B, I = u.l3_side.tt[H][p], v0 = I.xr, b = 0, a = u.sb_sample[p][1 - H], S = 0, L = 0; L < 18 / 2; L++)
+            for (U(l, M, a[S]), U(l, M + 32, a[S + 1]), S += 2, M += 64, B = 1; B < 32; B += 2)
+              a[S - 1][B] *= -1;
+          for (B = 0; B < 32; B++, b += 18) {
+            var V = I.block_type, N = u.sb_sample[p][H], P = u.sb_sample[p][1 - H];
+            if (I.mixed_block_flag != 0 && B < 2 && (V = 0), u.amp_filter[B] < 1e-12)
+              z.fill(
+                v0,
+                b + 0,
+                b + 18,
+                0
+              );
+            else {
+              if (u.amp_filter[B] < 1)
+                for (var L = 0; L < 18; L++)
+                  P[L][t0[B]] *= u.amp_filter[B];
+              if (V == W.SHORT_TYPE) {
+                for (var L = -g / 4; L < 0; L++) {
+                  var E = A[W.SHORT_TYPE][L + 3];
+                  v0[b + L * 3 + 9] = N[9 + L][t0[B]] * E - N[8 - L][t0[B]], v0[b + L * 3 + 18] = N[14 - L][t0[B]] * E + N[15 + L][t0[B]], v0[b + L * 3 + 10] = N[15 + L][t0[B]] * E - N[14 - L][t0[B]], v0[b + L * 3 + 19] = P[2 - L][t0[B]] * E + P[3 + L][t0[B]], v0[b + L * 3 + 11] = P[3 + L][t0[B]] * E - P[2 - L][t0[B]], v0[b + L * 3 + 20] = P[8 - L][t0[B]] * E + P[9 + L][t0[B]];
+                }
+                R(v0, b);
+              } else {
+                for (var i = u0(18), L = -f0 / 4; L < 0; L++) {
+                  var s, r;
+                  s = A[V][L + 27] * P[L + 9][t0[B]] + A[V][L + 36] * P[8 - L][t0[B]], r = A[V][L + 9] * N[L + 9][t0[B]] - A[V][L + 18] * N[8 - L][t0[B]], i[L + 9] = s - r * m[3 + L + 9], i[L + 18] = s * m[3 + L + 9] + r;
+                }
+                o(v0, b, i);
+              }
+            }
+            if (V != W.SHORT_TYPE && B != 0)
+              for (var L = 7; L >= 0; --L) {
+                var n, f;
+                n = v0[b + L] * s0[20 + L] + v0[b + -1 - L] * K[28 + L], f = v0[b + L] * K[28 + L] - v0[b + -1 - L] * s0[20 + L], v0[b + -1 - L] = n, v0[b + L] = f;
+              }
+          }
+        }
+        if (l = e, M = 286, u.mode_gr == 1)
+          for (var Y = 0; Y < 18; Y++)
+            Z.arraycopy(
+              u.sb_sample[p][1][Y],
+              0,
+              u.sb_sample[p][0][Y],
+              0,
+              32
+            );
+      }
+    };
+  }
+  return ce = Q, ce;
+}
+var Se;
+var Ge;
+function Ea() {
+  if (Ge)
+    return Se;
+  Ge = 1;
+  var w = t1(), Z = Q0, X = Z.System, z = Z.new_float, u0 = Z.new_float_n;
+  function W() {
+    this.l = z(w.SBMAX_l), this.s = u0([w.SBMAX_s, 3]);
+    var Q = this;
+    this.assign = function(D) {
+      X.arraycopy(D.l, 0, Q.l, 0, w.SBMAX_l);
+      for (var g = 0; g < w.SBMAX_s; g++)
+        for (var f0 = 0; f0 < 3; f0++)
+          Q.s[g][f0] = D.s[g][f0];
+    };
+  }
+  return Se = W, Se;
+}
+var de;
+var $e;
+function Ga() {
+  if ($e)
+    return de;
+  $e = 1;
+  var w = Ea();
+  function Z() {
+    this.thm = new w(), this.en = new w();
+  }
+  return de = Z, de;
+}
+function R1(w) {
+  var Z = w;
+  this.ordinal = function() {
+    return Z;
+  };
+}
+R1.STEREO = new R1(0);
+R1.JOINT_STEREO = new R1(1);
+R1.DUAL_CHANNEL = new R1(2);
+R1.MONO = new R1(3);
+R1.NOT_SET = new R1(4);
+var j1 = R1;
+var Ae;
+var Pe;
+function t1() {
+  if (Pe)
+    return Ae;
+  Pe = 1;
+  var w = Q0, Z = w.System, X = w.VbrMode, z = w.new_array_n, u0 = w.new_float, W = w.new_float_n, Q = w.new_int, D = w.assert;
+  g.ENCDELAY = 576, g.POSTDELAY = 1152, g.MDCTDELAY = 48, g.FFTOFFSET = 224 + g.MDCTDELAY, g.DECDELAY = 528, g.SBLIMIT = 32, g.CBANDS = 64, g.SBPSY_l = 21, g.SBPSY_s = 12, g.SBMAX_l = 22, g.SBMAX_s = 13, g.PSFB21 = 6, g.PSFB12 = 6, g.BLKSIZE = 1024, g.HBLKSIZE = g.BLKSIZE / 2 + 1, g.BLKSIZE_s = 256, g.HBLKSIZE_s = g.BLKSIZE_s / 2 + 1, g.NORM_TYPE = 0, g.START_TYPE = 1, g.SHORT_TYPE = 2, g.STOP_TYPE = 3, g.MPG_MD_LR_LR = 0, g.MPG_MD_LR_I = 1, g.MPG_MD_MS_LR = 2, g.MPG_MD_MS_I = 3, g.fircoef = [
+    -0.0207887 * 5,
+    -0.0378413 * 5,
+    -0.0432472 * 5,
+    -0.031183 * 5,
+    779609e-23 * 5,
+    0.0467745 * 5,
+    0.10091 * 5,
+    0.151365 * 5,
+    0.187098 * 5
+  ];
+  function g() {
+    var f0 = Da(), A = Ga(), m = j1, O = g.FFTOFFSET, s0 = g.MPG_MD_MS_LR, K = null;
+    this.psy = null;
+    var t0 = null, U = null, R = null;
+    this.setModules = function(l, M, p, H) {
+      K = l, this.psy = M, t0 = M, U = H, R = p;
+    };
+    var o = new f0();
+    function u(l) {
+      var M, p;
+      if (l.ATH.useAdjust == 0) {
+        l.ATH.adjust = 1;
+        return;
+      }
+      if (p = l.loudness_sq[0][0], M = l.loudness_sq[1][0], l.channels_out == 2 ? (p += l.loudness_sq[0][1], M += l.loudness_sq[1][1]) : (p += p, M += M), l.mode_gr == 2 && (p = Math.max(p, M)), p *= 0.5, p *= l.ATH.aaSensitivityP, p > 0.03125)
+        l.ATH.adjust >= 1 ? l.ATH.adjust = 1 : l.ATH.adjust < l.ATH.adjustLimit && (l.ATH.adjust = l.ATH.adjustLimit), l.ATH.adjustLimit = 1;
+      else {
+        var H = 31.98 * p + 625e-6;
+        l.ATH.adjust >= H ? (l.ATH.adjust *= H * 0.075 + 0.925, l.ATH.adjust < H && (l.ATH.adjust = H)) : l.ATH.adjustLimit >= H ? l.ATH.adjust = H : l.ATH.adjust < l.ATH.adjustLimit && (l.ATH.adjust = l.ATH.adjustLimit), l.ATH.adjustLimit = H;
+      }
+    }
+    function d(l) {
+      var M, p;
+      for (D(0 <= l.bitrate_index && l.bitrate_index < 16), D(0 <= l.mode_ext && l.mode_ext < 4), l.bitrate_stereoMode_Hist[l.bitrate_index][4]++, l.bitrate_stereoMode_Hist[15][4]++, l.channels_out == 2 && (l.bitrate_stereoMode_Hist[l.bitrate_index][l.mode_ext]++, l.bitrate_stereoMode_Hist[15][l.mode_ext]++), M = 0; M < l.mode_gr; ++M)
+        for (p = 0; p < l.channels_out; ++p) {
+          var H = l.l3_side.tt[M][p].block_type | 0;
+          l.l3_side.tt[M][p].mixed_block_flag != 0 && (H = 4), l.bitrate_blockType_Hist[l.bitrate_index][H]++, l.bitrate_blockType_Hist[l.bitrate_index][5]++, l.bitrate_blockType_Hist[15][H]++, l.bitrate_blockType_Hist[15][5]++;
+        }
+    }
+    function e(l, M) {
+      var p = l.internal_flags, H, B;
+      if (p.lame_encode_frame_init == 0) {
+        var I, v0, b = u0(2014), a = u0(286 + 1152 + 576);
+        for (p.lame_encode_frame_init = 1, I = 0, v0 = 0; I < 286 + 576 * (1 + p.mode_gr); ++I)
+          I < 576 * p.mode_gr ? (b[I] = 0, p.channels_out == 2 && (a[I] = 0)) : (b[I] = M[0][v0], p.channels_out == 2 && (a[I] = M[1][v0]), ++v0);
+        for (B = 0; B < p.mode_gr; B++)
+          for (H = 0; H < p.channels_out; H++)
+            p.l3_side.tt[B][H].block_type = g.SHORT_TYPE;
+        o.mdct_sub48(p, b, a), D(576 >= g.FFTOFFSET), D(p.mf_size >= g.BLKSIZE + l.framesize - g.FFTOFFSET), D(p.mf_size >= 512 + l.framesize - 32);
+      }
+    }
+    this.lame_encode_mp3_frame = function(l, M, p, H, B, I) {
+      var v0, b = z([2, 2]);
+      b[0][0] = new A(), b[0][1] = new A(), b[1][0] = new A(), b[1][1] = new A();
+      var a = z([2, 2]);
+      a[0][0] = new A(), a[0][1] = new A(), a[1][0] = new A(), a[1][1] = new A();
+      var S, L = [null, null], V = l.internal_flags, N = W([2, 4]), P = [0.5, 0.5], E = [[0, 0], [0, 0]], i = [[0, 0], [0, 0]], s, r, n;
+      if (L[0] = M, L[1] = p, V.lame_encode_frame_init == 0 && e(l, L), V.padding = 0, (V.slot_lag -= V.frac_SpF) < 0 && (V.slot_lag += l.out_samplerate, V.padding = 1), V.psymodel != 0) {
+        var f, Y = [null, null], J = 0, T = Q(2);
+        for (n = 0; n < V.mode_gr; n++) {
+          for (r = 0; r < V.channels_out; r++)
+            Y[r] = L[r], J = 576 + n * 576 - g.FFTOFFSET;
+          if (l.VBR == X.vbr_mtrh || l.VBR == X.vbr_mt ? f = t0.L3psycho_anal_vbr(
+            l,
+            Y,
+            J,
+            n,
+            b,
+            a,
+            E[n],
+            i[n],
+            N[n],
+            T
+          ) : f = t0.L3psycho_anal_ns(
+            l,
+            Y,
+            J,
+            n,
+            b,
+            a,
+            E[n],
+            i[n],
+            N[n],
+            T
+          ), f != 0)
+            return -4;
+          for (l.mode == m.JOINT_STEREO && (P[n] = N[n][2] + N[n][3], P[n] > 0 && (P[n] = N[n][3] / P[n])), r = 0; r < V.channels_out; r++) {
+            var q = V.l3_side.tt[n][r];
+            q.block_type = T[r], q.mixed_block_flag = 0;
+          }
+        }
+      } else
+        for (n = 0; n < V.mode_gr; n++)
+          for (r = 0; r < V.channels_out; r++)
+            V.l3_side.tt[n][r].block_type = g.NORM_TYPE, V.l3_side.tt[n][r].mixed_block_flag = 0, i[n][r] = E[n][r] = 700;
+      if (u(V), o.mdct_sub48(V, L[0], L[1]), V.mode_ext = g.MPG_MD_LR_LR, l.force_ms)
+        V.mode_ext = g.MPG_MD_MS_LR;
+      else if (l.mode == m.JOINT_STEREO) {
+        var i0 = 0, h0 = 0;
+        for (n = 0; n < V.mode_gr; n++)
+          for (r = 0; r < V.channels_out; r++)
+            i0 += i[n][r], h0 += E[n][r];
+        if (i0 <= 1 * h0) {
+          var d0 = V.l3_side.tt[0], M0 = V.l3_side.tt[V.mode_gr - 1];
+          d0[0].block_type == d0[1].block_type && M0[0].block_type == M0[1].block_type && (V.mode_ext = g.MPG_MD_MS_LR);
+        }
+      }
+      if (V.mode_ext == s0 ? (S = a, s = i) : (S = b, s = E), l.analysis && V.pinfo != null)
+        for (n = 0; n < V.mode_gr; n++)
+          for (r = 0; r < V.channels_out; r++)
+            V.pinfo.ms_ratio[n] = V.ms_ratio[n], V.pinfo.ms_ener_ratio[n] = P[n], V.pinfo.blocktype[n][r] = V.l3_side.tt[n][r].block_type, V.pinfo.pe[n][r] = s[n][r], Z.arraycopy(
+              V.l3_side.tt[n][r].xr,
+              0,
+              V.pinfo.xr[n][r],
+              0,
+              576
+            ), V.mode_ext == s0 && (V.pinfo.ers[n][r] = V.pinfo.ers[n][r + 2], Z.arraycopy(
+              V.pinfo.energy[n][r + 2],
+              0,
+              V.pinfo.energy[n][r],
+              0,
+              V.pinfo.energy[n][r].length
+            ));
+      if (l.VBR == X.vbr_off || l.VBR == X.vbr_abr) {
+        var R0, A0;
+        for (R0 = 0; R0 < 18; R0++)
+          V.nsPsy.pefirbuf[R0] = V.nsPsy.pefirbuf[R0 + 1];
+        for (A0 = 0, n = 0; n < V.mode_gr; n++)
+          for (r = 0; r < V.channels_out; r++)
+            A0 += s[n][r];
+        for (V.nsPsy.pefirbuf[18] = A0, A0 = V.nsPsy.pefirbuf[9], R0 = 0; R0 < 9; R0++)
+          A0 += (V.nsPsy.pefirbuf[R0] + V.nsPsy.pefirbuf[18 - R0]) * g.fircoef[R0];
+        for (A0 = 670 * 5 * V.mode_gr * V.channels_out / A0, n = 0; n < V.mode_gr; n++)
+          for (r = 0; r < V.channels_out; r++)
+            s[n][r] *= A0;
+      }
+      if (V.iteration_loop.iteration_loop(l, s, P, S), K.format_bitstream(l), v0 = K.copy_buffer(V, H, B, I, 1), l.bWriteVbrTag && U.addVbrFrame(l), l.analysis && V.pinfo != null) {
+        for (r = 0; r < V.channels_out; r++) {
+          var w0;
+          for (w0 = 0; w0 < O; w0++)
+            V.pinfo.pcmdata[r][w0] = V.pinfo.pcmdata[r][w0 + l.framesize];
+          for (w0 = O; w0 < 1600; w0++)
+            V.pinfo.pcmdata[r][w0] = L[r][w0 - O];
+        }
+        R.set_frame_pinfo(l, S);
+      }
+      return d(V), v0;
+    };
+  }
+  return Ae = g, Ae;
+}
+var Ba = Q0;
+var Ze = Ba.Util;
+var Ke = Ba.new_float;
+var J0 = t1();
+function $a() {
+  var w = Ke(J0.BLKSIZE), Z = Ke(J0.BLKSIZE_s / 2), X = [
+    0.9238795325112867,
+    0.3826834323650898,
+    0.9951847266721969,
+    0.0980171403295606,
+    0.9996988186962042,
+    0.02454122852291229,
+    0.9999811752826011,
+    0.006135884649154475
+  ];
+  function z(W, Q, D) {
+    var g = 0, f0, A, m;
+    D <<= 1;
+    var O = Q + D;
+    f0 = 4;
+    do {
+      var s0, K, t0, U, R, o, u;
+      u = f0 >> 1, U = f0, R = f0 << 1, o = R + U, f0 = R << 1, A = Q, m = A + u;
+      do {
+        var d, e, l, M;
+        e = W[A + 0] - W[A + U], d = W[A + 0] + W[A + U], M = W[A + R] - W[A + o], l = W[A + R] + W[A + o], W[A + R] = d - l, W[A + 0] = d + l, W[A + o] = e - M, W[A + U] = e + M, e = W[m + 0] - W[m + U], d = W[m + 0] + W[m + U], M = Ze.SQRT2 * W[m + o], l = Ze.SQRT2 * W[m + R], W[m + R] = d - l, W[m + 0] = d + l, W[m + o] = e - M, W[m + U] = e + M, m += f0, A += f0;
+      } while (A < O);
+      for (K = X[g + 0], s0 = X[g + 1], t0 = 1; t0 < u; t0++) {
+        var p, H;
+        p = 1 - 2 * s0 * s0, H = 2 * s0 * K, A = Q + t0, m = Q + U - t0;
+        do {
+          var B, I, v0, d, e, b, l, a, M, S;
+          I = H * W[A + U] - p * W[m + U], B = p * W[A + U] + H * W[m + U], e = W[A + 0] - B, d = W[A + 0] + B, b = W[m + 0] - I, v0 = W[m + 0] + I, I = H * W[A + o] - p * W[m + o], B = p * W[A + o] + H * W[m + o], M = W[A + R] - B, l = W[A + R] + B, S = W[m + R] - I, a = W[m + R] + I, I = s0 * l - K * S, B = K * l + s0 * S, W[A + R] = d - B, W[A + 0] = d + B, W[m + o] = b - I, W[m + U] = b + I, I = K * a - s0 * M, B = s0 * a + K * M, W[m + R] = v0 - B, W[m + 0] = v0 + B, W[A + o] = e - I, W[A + U] = e + I, m += f0, A += f0;
+        } while (A < O);
+        p = K, K = p * X[g + 0] - s0 * X[g + 1], s0 = p * X[g + 1] + s0 * X[g + 0];
+      }
+      g += 2;
+    } while (f0 < D);
+  }
+  var u0 = [
+    0,
+    128,
+    64,
+    192,
+    32,
+    160,
+    96,
+    224,
+    16,
+    144,
+    80,
+    208,
+    48,
+    176,
+    112,
+    240,
+    8,
+    136,
+    72,
+    200,
+    40,
+    168,
+    104,
+    232,
+    24,
+    152,
+    88,
+    216,
+    56,
+    184,
+    120,
+    248,
+    4,
+    132,
+    68,
+    196,
+    36,
+    164,
+    100,
+    228,
+    20,
+    148,
+    84,
+    212,
+    52,
+    180,
+    116,
+    244,
+    12,
+    140,
+    76,
+    204,
+    44,
+    172,
+    108,
+    236,
+    28,
+    156,
+    92,
+    220,
+    60,
+    188,
+    124,
+    252,
+    2,
+    130,
+    66,
+    194,
+    34,
+    162,
+    98,
+    226,
+    18,
+    146,
+    82,
+    210,
+    50,
+    178,
+    114,
+    242,
+    10,
+    138,
+    74,
+    202,
+    42,
+    170,
+    106,
+    234,
+    26,
+    154,
+    90,
+    218,
+    58,
+    186,
+    122,
+    250,
+    6,
+    134,
+    70,
+    198,
+    38,
+    166,
+    102,
+    230,
+    22,
+    150,
+    86,
+    214,
+    54,
+    182,
+    118,
+    246,
+    14,
+    142,
+    78,
+    206,
+    46,
+    174,
+    110,
+    238,
+    30,
+    158,
+    94,
+    222,
+    62,
+    190,
+    126,
+    254
+  ];
+  this.fft_short = function(W, Q, D, g, f0) {
+    for (var A = 0; A < 3; A++) {
+      var m = J0.BLKSIZE_s / 2, O = 65535 & 576 / 3 * (A + 1), s0 = J0.BLKSIZE_s / 8 - 1;
+      do {
+        var K, t0, U, R, o, u = u0[s0 << 2] & 255;
+        K = Z[u] * g[D][f0 + u + O], o = Z[127 - u] * g[D][f0 + u + O + 128], t0 = K - o, K = K + o, U = Z[u + 64] * g[D][f0 + u + O + 64], o = Z[63 - u] * g[D][f0 + u + O + 192], R = U - o, U = U + o, m -= 4, Q[A][m + 0] = K + U, Q[A][m + 2] = K - U, Q[A][m + 1] = t0 + R, Q[A][m + 3] = t0 - R, K = Z[u + 1] * g[D][f0 + u + O + 1], o = Z[126 - u] * g[D][f0 + u + O + 129], t0 = K - o, K = K + o, U = Z[u + 65] * g[D][f0 + u + O + 65], o = Z[62 - u] * g[D][f0 + u + O + 193], R = U - o, U = U + o, Q[A][m + J0.BLKSIZE_s / 2 + 0] = K + U, Q[A][m + J0.BLKSIZE_s / 2 + 2] = K - U, Q[A][m + J0.BLKSIZE_s / 2 + 1] = t0 + R, Q[A][m + J0.BLKSIZE_s / 2 + 3] = t0 - R;
+      } while (--s0 >= 0);
+      z(Q[A], m, J0.BLKSIZE_s / 2);
+    }
+  }, this.fft_long = function(W, Q, D, g, f0) {
+    var A = J0.BLKSIZE / 8 - 1, m = J0.BLKSIZE / 2;
+    do {
+      var O, s0, K, t0, U, R = u0[A] & 255;
+      O = w[R] * g[D][f0 + R], U = w[R + 512] * g[D][f0 + R + 512], s0 = O - U, O = O + U, K = w[R + 256] * g[D][f0 + R + 256], U = w[R + 768] * g[D][f0 + R + 768], t0 = K - U, K = K + U, m -= 4, Q[m + 0] = O + K, Q[m + 2] = O - K, Q[m + 1] = s0 + t0, Q[m + 3] = s0 - t0, O = w[R + 1] * g[D][f0 + R + 1], U = w[R + 513] * g[D][f0 + R + 513], s0 = O - U, O = O + U, K = w[R + 257] * g[D][f0 + R + 257], U = w[R + 769] * g[D][f0 + R + 769], t0 = K - U, K = K + U, Q[m + J0.BLKSIZE / 2 + 0] = O + K, Q[m + J0.BLKSIZE / 2 + 2] = O - K, Q[m + J0.BLKSIZE / 2 + 1] = s0 + t0, Q[m + J0.BLKSIZE / 2 + 3] = s0 - t0;
+    } while (--A >= 0);
+    z(Q, m, J0.BLKSIZE / 2);
+  }, this.init_fft = function(W) {
+    for (var Q = 0; Q < J0.BLKSIZE; Q++)
+      w[Q] = 0.42 - 0.5 * Math.cos(2 * Math.PI * (Q + 0.5) / J0.BLKSIZE) + 0.08 * Math.cos(4 * Math.PI * (Q + 0.5) / J0.BLKSIZE);
+    for (var Q = 0; Q < J0.BLKSIZE_s / 2; Q++)
+      Z[Q] = 0.5 * (1 - Math.cos(2 * Math.PI * (Q + 0.5) / J0.BLKSIZE_s));
+  };
+}
+var Pa = $a;
+var T1 = Q0;
+var C1 = T1.VbrMode;
+var Ue = T1.Float;
+var F1 = T1.ShortBlock;
+var n1 = T1.Util;
+var Za = T1.Arrays;
+var g0 = T1.new_float;
+var m1 = T1.new_float_n;
+var L1 = T1.new_int;
+var C0 = T1.assert;
+var Ka = Pa;
+var r0 = t1();
+function Ua() {
+  var w = j1, Z = new Ka(), X = 2.302585092994046, z = 2, u0 = 16, W = 2, Q = 16, D = 0.34, g = 1 / (14752 * 14752) / (r0.BLKSIZE / 2), f0 = 0.01, A = 0.8, m = 0.6, O = 0.3, s0 = 3.5, K = 21, t0 = 0.2302585093;
+  function U(v) {
+    return v;
+  }
+  function R(v, h) {
+    for (var x = 0, y = 0; y < r0.BLKSIZE / 2; ++y)
+      x += v[y] * h.ATH.eql_w[y];
+    return x *= g, x;
+  }
+  function o(v, h, x, y, k, c, C, G, F, e0, $) {
+    var a0 = v.internal_flags;
+    if (F < 2)
+      Z.fft_long(a0, y[k], F, e0, $), Z.fft_short(a0, c[C], F, e0, $);
+    else if (F == 2) {
+      for (var m0 = r0.BLKSIZE - 1; m0 >= 0; --m0) {
+        var N0 = y[k + 0][m0], n0 = y[k + 1][m0];
+        y[k + 0][m0] = (N0 + n0) * n1.SQRT2 * 0.5, y[k + 1][m0] = (N0 - n0) * n1.SQRT2 * 0.5;
+      }
+      for (var L0 = 2; L0 >= 0; --L0)
+        for (var m0 = r0.BLKSIZE_s - 1; m0 >= 0; --m0) {
+          var N0 = c[C + 0][L0][m0], n0 = c[C + 1][L0][m0];
+          c[C + 0][L0][m0] = (N0 + n0) * n1.SQRT2 * 0.5, c[C + 1][L0][m0] = (N0 - n0) * n1.SQRT2 * 0.5;
+        }
+    }
+    h[0] = y[k + 0][0], h[0] *= h[0];
+    for (var m0 = r0.BLKSIZE / 2 - 1; m0 >= 0; --m0) {
+      var j = y[k + 0][r0.BLKSIZE / 2 - m0], x0 = y[k + 0][r0.BLKSIZE / 2 + m0];
+      h[r0.BLKSIZE / 2 - m0] = (j * j + x0 * x0) * 0.5;
+    }
+    for (var L0 = 2; L0 >= 0; --L0) {
+      x[L0][0] = c[C + 0][L0][0], x[L0][0] *= x[L0][0];
+      for (var m0 = r0.BLKSIZE_s / 2 - 1; m0 >= 0; --m0) {
+        var j = c[C + 0][L0][r0.BLKSIZE_s / 2 - m0], x0 = c[C + 0][L0][r0.BLKSIZE_s / 2 + m0];
+        x[L0][r0.BLKSIZE_s / 2 - m0] = (j * j + x0 * x0) * 0.5;
+      }
+    }
+    {
+      for (var k0 = 0, m0 = 11; m0 < r0.HBLKSIZE; m0++)
+        k0 += h[m0];
+      a0.tot_ener[F] = k0;
+    }
+    if (v.analysis) {
+      for (var m0 = 0; m0 < r0.HBLKSIZE; m0++)
+        a0.pinfo.energy[G][F][m0] = a0.pinfo.energy_save[F][m0], a0.pinfo.energy_save[F][m0] = h[m0];
+      a0.pinfo.pe[G][F] = a0.pe[F];
+    }
+    v.athaa_loudapprox == 2 && F < 2 && (a0.loudness_sq[G][F] = a0.loudness_sq_save[F], a0.loudness_sq_save[F] = R(h, a0));
+  }
+  var u = 8, d = 23, e = 15, l, M, p, H = [
+    1,
+    0.79433,
+    0.63096,
+    0.63096,
+    0.63096,
+    0.63096,
+    0.63096,
+    0.25119,
+    0.11749
+  ];
+  function B() {
+    l = Math.pow(10, (u + 1) / 16), M = Math.pow(10, (d + 1) / 16), p = Math.pow(10, e / 10);
+  }
+  var I = [
+    3.3246 * 3.3246,
+    3.23837 * 3.23837,
+    3.15437 * 3.15437,
+    3.00412 * 3.00412,
+    2.86103 * 2.86103,
+    2.65407 * 2.65407,
+    2.46209 * 2.46209,
+    2.284 * 2.284,
+    2.11879 * 2.11879,
+    1.96552 * 1.96552,
+    1.82335 * 1.82335,
+    1.69146 * 1.69146,
+    1.56911 * 1.56911,
+    1.46658 * 1.46658,
+    1.37074 * 1.37074,
+    1.31036 * 1.31036,
+    1.25264 * 1.25264,
+    1.20648 * 1.20648,
+    1.16203 * 1.16203,
+    1.12765 * 1.12765,
+    1.09428 * 1.09428,
+    1.0659 * 1.0659,
+    1.03826 * 1.03826,
+    1.01895 * 1.01895,
+    1
+  ], v0 = [
+    1.33352 * 1.33352,
+    1.35879 * 1.35879,
+    1.38454 * 1.38454,
+    1.39497 * 1.39497,
+    1.40548 * 1.40548,
+    1.3537 * 1.3537,
+    1.30382 * 1.30382,
+    1.22321 * 1.22321,
+    1.14758 * 1.14758,
+    1
+  ], b = [
+    2.35364 * 2.35364,
+    2.29259 * 2.29259,
+    2.23313 * 2.23313,
+    2.12675 * 2.12675,
+    2.02545 * 2.02545,
+    1.87894 * 1.87894,
+    1.74303 * 1.74303,
+    1.61695 * 1.61695,
+    1.49999 * 1.49999,
+    1.39148 * 1.39148,
+    1.29083 * 1.29083,
+    1.19746 * 1.19746,
+    1.11084 * 1.11084,
+    1.03826 * 1.03826
+  ];
+  function a(v, h, x, y, k, c) {
+    var C;
+    if (h > v)
+      if (h < v * M)
+        C = h / v;
+      else
+        return v + h;
+    else {
+      if (v >= h * M)
+        return v + h;
+      C = v / h;
+    }
+    if (v += h, y + 3 <= 3 + 3) {
+      if (C >= l)
+        return v;
+      var G = 0 | n1.FAST_LOG10_X(C, 16);
+      return v * v0[G];
+    }
+    var G = 0 | n1.FAST_LOG10_X(C, 16);
+    if (c != 0 ? h = k.ATH.cb_s[x] * k.ATH.adjust : h = k.ATH.cb_l[x] * k.ATH.adjust, v < p * h) {
+      if (v > h) {
+        var F, e0;
+        return F = 1, G <= 13 && (F = b[G]), e0 = n1.FAST_LOG10_X(v / h, 10 / 15), v * ((I[G] - F) * e0 + F);
+      }
+      return G > 13 ? v : v * b[G];
+    }
+    return v * I[G];
+  }
+  var S = [
+    1.33352 * 1.33352,
+    1.35879 * 1.35879,
+    1.38454 * 1.38454,
+    1.39497 * 1.39497,
+    1.40548 * 1.40548,
+    1.3537 * 1.3537,
+    1.30382 * 1.30382,
+    1.22321 * 1.22321,
+    1.14758 * 1.14758,
+    1
+  ];
+  function L(v, h, x) {
+    var y;
+    if (v < 0 && (v = 0), h < 0 && (h = 0), v <= 0)
+      return h;
+    if (h <= 0)
+      return v;
+    if (h > v ? y = h / v : y = v / h, -2 <= x && x <= 2) {
+      if (y >= l)
+        return v + h;
+      var k = 0 | n1.FAST_LOG10_X(y, 16);
+      return (v + h) * S[k];
+    }
+    return y < M ? v + h : (v < h && (v = h), v);
+  }
+  function V(v, h) {
+    var x = v.internal_flags;
+    if (x.channels_out > 1) {
+      for (var y = 0; y < r0.SBMAX_l; y++) {
+        var k = x.thm[0].l[y], c = x.thm[1].l[y];
+        x.thm[0].l[y] += c * h, x.thm[1].l[y] += k * h;
+      }
+      for (var y = 0; y < r0.SBMAX_s; y++)
+        for (var C = 0; C < 3; C++) {
+          var k = x.thm[0].s[y][C], c = x.thm[1].s[y][C];
+          x.thm[0].s[y][C] += c * h, x.thm[1].s[y][C] += k * h;
+        }
+    }
+  }
+  function N(v) {
+    for (var h = 0; h < r0.SBMAX_l; h++)
+      if (!(v.thm[0].l[h] > 1.58 * v.thm[1].l[h] || v.thm[1].l[h] > 1.58 * v.thm[0].l[h])) {
+        var x = v.mld_l[h] * v.en[3].l[h], y = Math.max(
+          v.thm[2].l[h],
+          Math.min(v.thm[3].l[h], x)
+        );
+        x = v.mld_l[h] * v.en[2].l[h];
+        var k = Math.max(
+          v.thm[3].l[h],
+          Math.min(v.thm[2].l[h], x)
+        );
+        v.thm[2].l[h] = y, v.thm[3].l[h] = k;
+      }
+    for (var h = 0; h < r0.SBMAX_s; h++)
+      for (var c = 0; c < 3; c++)
+        if (!(v.thm[0].s[h][c] > 1.58 * v.thm[1].s[h][c] || v.thm[1].s[h][c] > 1.58 * v.thm[0].s[h][c])) {
+          var x = v.mld_s[h] * v.en[3].s[h][c], y = Math.max(
+            v.thm[2].s[h][c],
+            Math.min(v.thm[3].s[h][c], x)
+          );
+          x = v.mld_s[h] * v.en[2].s[h][c];
+          var k = Math.max(
+            v.thm[3].s[h][c],
+            Math.min(v.thm[2].s[h][c], x)
+          );
+          v.thm[2].s[h][c] = y, v.thm[3].s[h][c] = k;
+        }
+  }
+  function P(v, h, x) {
+    var y = h, k = Math.pow(10, x);
+    h *= 2, y *= 2;
+    for (var c = 0; c < r0.SBMAX_l; c++) {
+      var C, G, F, e0;
+      if (e0 = v.ATH.cb_l[v.bm_l[c]] * k, C = Math.min(
+        Math.max(v.thm[0].l[c], e0),
+        Math.max(v.thm[1].l[c], e0)
+      ), G = Math.max(v.thm[2].l[c], e0), F = Math.max(v.thm[3].l[c], e0), C * h < G + F) {
+        var $ = C * y / (G + F);
+        G *= $, F *= $;
+      }
+      v.thm[2].l[c] = Math.min(G, v.thm[2].l[c]), v.thm[3].l[c] = Math.min(F, v.thm[3].l[c]);
+    }
+    k *= r0.BLKSIZE_s / r0.BLKSIZE;
+    for (var c = 0; c < r0.SBMAX_s; c++)
+      for (var a0 = 0; a0 < 3; a0++) {
+        var C, G, F, e0;
+        if (e0 = v.ATH.cb_s[v.bm_s[c]] * k, C = Math.min(
+          Math.max(v.thm[0].s[c][a0], e0),
+          Math.max(v.thm[1].s[c][a0], e0)
+        ), G = Math.max(v.thm[2].s[c][a0], e0), F = Math.max(v.thm[3].s[c][a0], e0), C * h < G + F) {
+          var $ = C * h / (G + F);
+          G *= $, F *= $;
+        }
+        v.thm[2].s[c][a0] = Math.min(
+          v.thm[2].s[c][a0],
+          G
+        ), v.thm[3].s[c][a0] = Math.min(
+          v.thm[3].s[c][a0],
+          F
+        );
+      }
+  }
+  function E(v, h, x, y, k) {
+    var c, C, G = 0, F = 0;
+    for (c = C = 0; c < r0.SBMAX_s; ++C, ++c) {
+      for (var e0 = v.bo_s[c], $ = v.npart_s, a0 = e0 < $ ? e0 : $; C < a0; )
+        C0(h[C] >= 0), C0(x[C] >= 0), G += h[C], F += x[C], C++;
+      if (v.en[y].s[c][k] = G, v.thm[y].s[c][k] = F, C >= $) {
+        ++c;
+        break;
+      }
+      C0(h[C] >= 0), C0(x[C] >= 0);
+      {
+        var m0 = v.PSY.bo_s_weight[c], N0 = 1 - m0;
+        G = m0 * h[C], F = m0 * x[C], v.en[y].s[c][k] += G, v.thm[y].s[c][k] += F, G = N0 * h[C], F = N0 * x[C];
+      }
+    }
+    for (; c < r0.SBMAX_s; ++c)
+      v.en[y].s[c][k] = 0, v.thm[y].s[c][k] = 0;
+  }
+  function i(v, h, x, y) {
+    var k, c, C = 0, G = 0;
+    for (k = c = 0; k < r0.SBMAX_l; ++c, ++k) {
+      for (var F = v.bo_l[k], e0 = v.npart_l, $ = F < e0 ? F : e0; c < $; )
+        C0(h[c] >= 0), C0(x[c] >= 0), C += h[c], G += x[c], c++;
+      if (v.en[y].l[k] = C, v.thm[y].l[k] = G, c >= e0) {
+        ++k;
+        break;
+      }
+      C0(h[c] >= 0), C0(x[c] >= 0);
+      {
+        var a0 = v.PSY.bo_l_weight[k], m0 = 1 - a0;
+        C = a0 * h[c], G = a0 * x[c], v.en[y].l[k] += C, v.thm[y].l[k] += G, C = m0 * h[c], G = m0 * x[c];
+      }
+    }
+    for (; k < r0.SBMAX_l; ++k)
+      v.en[y].l[k] = 0, v.thm[y].l[k] = 0;
+  }
+  function s(v, h, x, y, k, c) {
+    var C = v.internal_flags, G, F;
+    for (F = G = 0; F < C.npart_s; ++F) {
+      for (var e0 = 0, $ = C.numlines_s[F], a0 = 0; a0 < $; ++a0, ++G) {
+        var m0 = h[c][G];
+        e0 += m0;
+      }
+      x[F] = e0;
+    }
+    for (C0(F == C.npart_s), G = F = 0; F < C.npart_s; F++) {
+      var N0 = C.s3ind_s[F][0], n0 = C.s3_ss[G++] * x[N0];
+      for (++N0; N0 <= C.s3ind_s[F][1]; )
+        n0 += C.s3_ss[G] * x[N0], ++G, ++N0;
+      {
+        var L0 = W * C.nb_s1[k][F];
+        y[F] = Math.min(n0, L0);
+      }
+      if (C.blocktype_old[k & 1] == r0.SHORT_TYPE) {
+        var L0 = Q * C.nb_s2[k][F], j = y[F];
+        y[F] = Math.min(L0, j);
+      }
+      C.nb_s2[k][F] = C.nb_s1[k][F], C.nb_s1[k][F] = n0, C0(y[F] >= 0);
+    }
+    for (; F <= r0.CBANDS; ++F)
+      x[F] = 0, y[F] = 0;
+  }
+  function r(v, h, x, y) {
+    var k = v.internal_flags;
+    v.short_blocks == F1.short_block_coupled && !(h[0] != 0 && h[1] != 0) && (h[0] = h[1] = 0);
+    for (var c = 0; c < k.channels_out; c++)
+      y[c] = r0.NORM_TYPE, v.short_blocks == F1.short_block_dispensed && (h[c] = 1), v.short_blocks == F1.short_block_forced && (h[c] = 0), h[c] != 0 ? (C0(k.blocktype_old[c] != r0.START_TYPE), k.blocktype_old[c] == r0.SHORT_TYPE && (y[c] = r0.STOP_TYPE)) : (y[c] = r0.SHORT_TYPE, k.blocktype_old[c] == r0.NORM_TYPE && (k.blocktype_old[c] = r0.START_TYPE), k.blocktype_old[c] == r0.STOP_TYPE && (k.blocktype_old[c] = r0.SHORT_TYPE)), x[c] = k.blocktype_old[c], k.blocktype_old[c] = y[c];
+  }
+  function n(v, h, x) {
+    return x >= 1 ? v : x <= 0 ? h : h > 0 ? Math.pow(v / h, x) * h : 0;
+  }
+  var f = [
+    11.8,
+    13.6,
+    17.2,
+    32,
+    46.5,
+    51.3,
+    57.5,
+    67.1,
+    71.5,
+    84.6,
+    97.6,
+    130
+    /* 255.8 */
+  ];
+  function Y(v, h) {
+    for (var x = 309.07, y = 0; y < r0.SBMAX_s - 1; y++)
+      for (var k = 0; k < 3; k++) {
+        var c = v.thm.s[y][k];
+        if (c > 0) {
+          var C = c * h, G = v.en.s[y][k];
+          G > C && (G > C * 1e10 ? x += f[y] * (10 * X) : x += f[y] * n1.FAST_LOG10(G / C));
+        }
+      }
+    return x;
+  }
+  var J = [
+    6.8,
+    5.8,
+    5.8,
+    6.4,
+    6.5,
+    9.9,
+    12.1,
+    14.4,
+    15,
+    18.9,
+    21.6,
+    26.9,
+    34.2,
+    40.2,
+    46.8,
+    56.5,
+    60.7,
+    73.9,
+    85.7,
+    93.4,
+    126.1
+    /* 241.3 */
+  ];
+  function T(v, h) {
+    for (var x = 281.0575, y = 0; y < r0.SBMAX_l - 1; y++) {
+      var k = v.thm.l[y];
+      if (k > 0) {
+        var c = k * h, C = v.en.l[y];
+        C > c && (C > c * 1e10 ? x += J[y] * (10 * X) : x += J[y] * n1.FAST_LOG10(C / c));
+      }
+    }
+    return x;
+  }
+  function q(v, h, x, y, k) {
+    var c, C;
+    for (c = C = 0; c < v.npart_l; ++c) {
+      var G = 0, F = 0, e0;
+      for (e0 = 0; e0 < v.numlines_l[c]; ++e0, ++C) {
+        var $ = h[C];
+        G += $, F < $ && (F = $);
+      }
+      x[c] = G, y[c] = F, k[c] = G * v.rnumlines_l[c], C0(v.rnumlines_l[c] >= 0), C0(x[c] >= 0), C0(y[c] >= 0), C0(k[c] >= 0);
+    }
+  }
+  function i0(v, h, x, y) {
+    var k = H.length - 1, c = 0, C = x[c] + x[c + 1];
+    if (C > 0) {
+      var G = h[c];
+      G < h[c + 1] && (G = h[c + 1]), C0(v.numlines_l[c] + v.numlines_l[c + 1] - 1 > 0), C = 20 * (G * 2 - C) / (C * (v.numlines_l[c] + v.numlines_l[c + 1] - 1));
+      var F = 0 | C;
+      F > k && (F = k), y[c] = F;
+    } else
+      y[c] = 0;
+    for (c = 1; c < v.npart_l - 1; c++)
+      if (C = x[c - 1] + x[c] + x[c + 1], C > 0) {
+        var G = h[c - 1];
+        G < h[c] && (G = h[c]), G < h[c + 1] && (G = h[c + 1]), C0(v.numlines_l[c - 1] + v.numlines_l[c] + v.numlines_l[c + 1] - 1 > 0), C = 20 * (G * 3 - C) / (C * (v.numlines_l[c - 1] + v.numlines_l[c] + v.numlines_l[c + 1] - 1));
+        var F = 0 | C;
+        F > k && (F = k), y[c] = F;
+      } else
+        y[c] = 0;
+    if (C0(c == v.npart_l - 1), C = x[c - 1] + x[c], C > 0) {
+      var G = h[c - 1];
+      G < h[c] && (G = h[c]), C0(v.numlines_l[c - 1] + v.numlines_l[c] - 1 > 0), C = 20 * (G * 2 - C) / (C * (v.numlines_l[c - 1] + v.numlines_l[c] - 1));
+      var F = 0 | C;
+      F > k && (F = k), y[c] = F;
+    } else
+      y[c] = 0;
+    C0(c == v.npart_l - 1);
+  }
+  var h0 = [
+    -865163e-23 * 2,
+    -851586e-8 * 2,
+    -674764e-23 * 2,
+    0.0209036 * 2,
+    -336639e-22 * 2,
+    -0.0438162 * 2,
+    -154175e-22 * 2,
+    0.0931738 * 2,
+    -552212e-22 * 2,
+    -0.313819 * 2
+  ];
+  this.L3psycho_anal_ns = function(v, h, x, y, k, c, C, G, F, e0) {
+    var $ = v.internal_flags, a0 = m1([2, r0.BLKSIZE]), m0 = m1([2, 3, r0.BLKSIZE_s]), N0 = g0(r0.CBANDS + 1), n0 = g0(r0.CBANDS + 1), L0 = g0(r0.CBANDS + 2), j = L1(2), x0 = L1(2), k0, _0, B0, l0, p0, P0, c0, O0, X0 = m1([2, 576]), Z0, v1 = L1(r0.CBANDS + 2), z0 = L1(r0.CBANDS + 2);
+    for (Za.fill(z0, 0), k0 = $.channels_out, v.mode == w.JOINT_STEREO && (k0 = 4), v.VBR == C1.vbr_off ? Z0 = $.ResvMax == 0 ? 0 : $.ResvSize / $.ResvMax * 0.5 : v.VBR == C1.vbr_rh || v.VBR == C1.vbr_mtrh || v.VBR == C1.vbr_mt ? Z0 = 0.6 : Z0 = 1, _0 = 0; _0 < $.channels_out; _0++) {
+      var K0 = h[_0], s1 = x + 576 - 350 - K + 192;
+      for (l0 = 0; l0 < 576; l0++) {
+        var o1, h1;
+        for (o1 = K0[s1 + l0 + 10], h1 = 0, p0 = 0; p0 < (K - 1) / 2 - 1; p0 += 2)
+          o1 += h0[p0] * (K0[s1 + l0 + p0] + K0[s1 + l0 + K - p0]), h1 += h0[p0 + 1] * (K0[s1 + l0 + p0 + 1] + K0[s1 + l0 + K - p0 - 1]);
+        X0[_0][l0] = o1 + h1;
+      }
+      k[y][_0].en.assign($.en[_0]), k[y][_0].thm.assign($.thm[_0]), k0 > 2 && (c[y][_0].en.assign($.en[_0 + 2]), c[y][_0].thm.assign($.thm[_0 + 2]));
+    }
+    for (_0 = 0; _0 < k0; _0++) {
+      var c1, S1, r1 = g0(12), x1 = [0, 0, 0, 0], O1 = g0(12), le = 1, Ce, Fe = g0(r0.CBANDS), ke = g0(r0.CBANDS), U0 = [0, 0, 0, 0], Xe = g0(r0.HBLKSIZE), Ye = m1([3, r0.HBLKSIZE_s]);
+      for (C0($.npart_s <= r0.CBANDS), C0($.npart_l <= r0.CBANDS), l0 = 0; l0 < 3; l0++)
+        r1[l0] = $.nsPsy.last_en_subshort[_0][l0 + 6], C0($.nsPsy.last_en_subshort[_0][l0 + 4] > 0), O1[l0] = r1[l0] / $.nsPsy.last_en_subshort[_0][l0 + 4], x1[0] += r1[l0];
+      if (_0 == 2)
+        for (l0 = 0; l0 < 576; l0++) {
+          var ve, oe;
+          ve = X0[0][l0], oe = X0[1][l0], X0[0][l0] = ve + oe, X0[1][l0] = ve - oe;
+        }
+      {
+        var qe = X0[_0 & 1], G1 = 0;
+        for (l0 = 0; l0 < 9; l0++) {
+          for (var ka = G1 + 64, a1 = 1; G1 < ka; G1++)
+            a1 < Math.abs(qe[G1]) && (a1 = Math.abs(qe[G1]));
+          $.nsPsy.last_en_subshort[_0][l0] = r1[l0 + 3] = a1, x1[1 + l0 / 3] += a1, a1 > r1[l0 + 3 - 2] ? (C0(r1[l0 + 3 - 2] > 0), a1 = a1 / r1[l0 + 3 - 2]) : r1[l0 + 3 - 2] > a1 * 10 ? a1 = r1[l0 + 3 - 2] / (a1 * 10) : a1 = 0, O1[l0 + 3] = a1;
+        }
+      }
+      if (v.analysis) {
+        var he = O1[0];
+        for (l0 = 1; l0 < 12; l0++)
+          he < O1[l0] && (he = O1[l0]);
+        $.pinfo.ers[y][_0] = $.pinfo.ers_save[_0], $.pinfo.ers_save[_0] = he;
+      }
+      for (Ce = _0 == 3 ? $.nsPsy.attackthre_s : $.nsPsy.attackthre, l0 = 0; l0 < 12; l0++)
+        U0[l0 / 3] == 0 && O1[l0] > Ce && (U0[l0 / 3] = l0 % 3 + 1);
+      for (l0 = 1; l0 < 4; l0++) {
+        var ue;
+        x1[l0 - 1] > x1[l0] ? (C0(x1[l0] > 0), ue = x1[l0 - 1] / x1[l0]) : (C0(x1[l0 - 1] > 0), ue = x1[l0] / x1[l0 - 1]), ue < 1.7 && (U0[l0] = 0, l0 == 1 && (U0[0] = 0));
+      }
+      for (U0[0] != 0 && $.nsPsy.lastAttacks[_0] != 0 && (U0[0] = 0), ($.nsPsy.lastAttacks[_0] == 3 || U0[0] + U0[1] + U0[2] + U0[3] != 0) && (le = 0, U0[1] != 0 && U0[0] != 0 && (U0[1] = 0), U0[2] != 0 && U0[1] != 0 && (U0[2] = 0), U0[3] != 0 && U0[2] != 0 && (U0[3] = 0)), _0 < 2 ? x0[_0] = le : le == 0 && (x0[0] = x0[1] = 0), F[_0] = $.tot_ener[_0], S1 = m0, c1 = a0, o(
+        v,
+        Xe,
+        Ye,
+        c1,
+        _0 & 1,
+        S1,
+        _0 & 1,
+        y,
+        _0,
+        h,
+        x
+      ), q($, Xe, N0, Fe, ke), i0($, Fe, ke, v1), O0 = 0; O0 < 3; O0++) {
+        var fe, i1;
+        for (s(v, Ye, n0, L0, _0, O0), E($, n0, L0, _0, O0), c0 = 0; c0 < r0.SBMAX_s; c0++) {
+          if (i1 = $.thm[_0].s[c0][O0], i1 *= A, U0[O0] >= 2 || U0[O0 + 1] == 1) {
+            var $1 = O0 != 0 ? O0 - 1 : 2, a1 = n(
+              $.thm[_0].s[c0][$1],
+              i1,
+              m * Z0
+            );
+            i1 = Math.min(i1, a1);
+          }
+          if (U0[O0] == 1) {
+            var $1 = O0 != 0 ? O0 - 1 : 2, a1 = n(
+              $.thm[_0].s[c0][$1],
+              i1,
+              O * Z0
+            );
+            i1 = Math.min(i1, a1);
+          } else if (O0 != 0 && U0[O0 - 1] == 3 || O0 == 0 && $.nsPsy.lastAttacks[_0] == 3) {
+            var $1 = O0 != 2 ? O0 + 1 : 0, a1 = n(
+              $.thm[_0].s[c0][$1],
+              i1,
+              O * Z0
+            );
+            i1 = Math.min(i1, a1);
+          }
+          fe = r1[O0 * 3 + 3] + r1[O0 * 3 + 4] + r1[O0 * 3 + 5], r1[O0 * 3 + 5] * 6 < fe && (i1 *= 0.5, r1[O0 * 3 + 4] * 6 < fe && (i1 *= 0.5)), $.thm[_0].s[c0][O0] = i1;
+        }
+      }
+      for ($.nsPsy.lastAttacks[_0] = U0[2], P0 = 0, B0 = 0; B0 < $.npart_l; B0++) {
+        for (var w1 = $.s3ind[B0][0], me = N0[w1] * H[v1[w1]], I1 = $.s3_ll[P0++] * me; ++w1 <= $.s3ind[B0][1]; )
+          me = N0[w1] * H[v1[w1]], I1 = a(
+            I1,
+            $.s3_ll[P0++] * me,
+            w1,
+            w1 - B0,
+            $,
+            0
+          );
+        I1 *= 0.158489319246111, $.blocktype_old[_0 & 1] == r0.SHORT_TYPE ? L0[B0] = I1 : L0[B0] = n(
+          Math.min(I1, Math.min(z * $.nb_1[_0][B0], u0 * $.nb_2[_0][B0])),
+          I1,
+          Z0
+        ), $.nb_2[_0][B0] = $.nb_1[_0][B0], $.nb_1[_0][B0] = I1;
+      }
+      for (; B0 <= r0.CBANDS; ++B0)
+        N0[B0] = 0, L0[B0] = 0;
+      i($, N0, L0, _0);
+    }
+    if ((v.mode == w.STEREO || v.mode == w.JOINT_STEREO) && v.interChRatio > 0 && V(v, v.interChRatio), v.mode == w.JOINT_STEREO) {
+      var be;
+      N($), be = v.msfix, Math.abs(be) > 0 && P($, be, v.ATHlower * $.ATH.adjust);
+    }
+    for (r(v, x0, e0, j), _0 = 0; _0 < k0; _0++) {
+      var P1, Z1 = 0, z1, J1;
+      _0 > 1 ? (P1 = G, Z1 = -2, z1 = r0.NORM_TYPE, (e0[0] == r0.SHORT_TYPE || e0[1] == r0.SHORT_TYPE) && (z1 = r0.SHORT_TYPE), J1 = c[y][_0 - 2]) : (P1 = C, Z1 = 0, z1 = e0[_0], J1 = k[y][_0]), z1 == r0.SHORT_TYPE ? P1[Z1 + _0] = Y(J1, $.masking_lower) : P1[Z1 + _0] = T(J1, $.masking_lower), v.analysis && ($.pinfo.pe[y][_0] = P1[Z1 + _0]);
+    }
+    return 0;
+  };
+  function d0(v, h, x, y, k, c, C, G) {
+    var F = v.internal_flags;
+    if (y < 2)
+      Z.fft_long(F, C[G], y, h, x);
+    else if (y == 2)
+      for (var e0 = r0.BLKSIZE - 1; e0 >= 0; --e0) {
+        var $ = C[G + 0][e0], a0 = C[G + 1][e0];
+        C[G + 0][e0] = ($ + a0) * n1.SQRT2 * 0.5, C[G + 1][e0] = ($ - a0) * n1.SQRT2 * 0.5;
+      }
+    c[0] = C[G + 0][0], c[0] *= c[0];
+    for (var e0 = r0.BLKSIZE / 2 - 1; e0 >= 0; --e0) {
+      var m0 = C[G + 0][r0.BLKSIZE / 2 - e0], N0 = C[G + 0][r0.BLKSIZE / 2 + e0];
+      c[r0.BLKSIZE / 2 - e0] = (m0 * m0 + N0 * N0) * 0.5;
+    }
+    {
+      for (var n0 = 0, e0 = 11; e0 < r0.HBLKSIZE; e0++)
+        n0 += c[e0];
+      F.tot_ener[y] = n0;
+    }
+    if (v.analysis) {
+      for (var e0 = 0; e0 < r0.HBLKSIZE; e0++)
+        F.pinfo.energy[k][y][e0] = F.pinfo.energy_save[y][e0], F.pinfo.energy_save[y][e0] = c[e0];
+      F.pinfo.pe[k][y] = F.pe[y];
+    }
+  }
+  function M0(v, h, x, y, k, c, C, G) {
+    var F = v.internal_flags;
+    if (k == 0 && y < 2 && Z.fft_short(F, C[G], y, h, x), y == 2)
+      for (var e0 = r0.BLKSIZE_s - 1; e0 >= 0; --e0) {
+        var $ = C[G + 0][k][e0], a0 = C[G + 1][k][e0];
+        C[G + 0][k][e0] = ($ + a0) * n1.SQRT2 * 0.5, C[G + 1][k][e0] = ($ - a0) * n1.SQRT2 * 0.5;
+      }
+    c[k][0] = C[G + 0][k][0], c[k][0] *= c[k][0];
+    for (var e0 = r0.BLKSIZE_s / 2 - 1; e0 >= 0; --e0) {
+      var m0 = C[G + 0][k][r0.BLKSIZE_s / 2 - e0], N0 = C[G + 0][k][r0.BLKSIZE_s / 2 + e0];
+      c[k][r0.BLKSIZE_s / 2 - e0] = (m0 * m0 + N0 * N0) * 0.5;
+    }
+  }
+  function R0(v, h, x, y) {
+    var k = v.internal_flags;
+    v.athaa_loudapprox == 2 && x < 2 && (k.loudness_sq[h][x] = k.loudness_sq_save[x], k.loudness_sq_save[x] = R(y, k));
+  }
+  var A0 = [
+    -865163e-23 * 2,
+    -851586e-8 * 2,
+    -674764e-23 * 2,
+    0.0209036 * 2,
+    -336639e-22 * 2,
+    -0.0438162 * 2,
+    -154175e-22 * 2,
+    0.0931738 * 2,
+    -552212e-22 * 2,
+    -0.313819 * 2
+  ];
+  function w0(v, h, x, y, k, c, C, G, F, e0) {
+    for (var $ = m1([2, 576]), a0 = v.internal_flags, m0 = a0.channels_out, N0 = v.mode == w.JOINT_STEREO ? 4 : m0, n0 = 0; n0 < m0; n0++) {
+      firbuf = h[n0];
+      for (var L0 = x + 576 - 350 - K + 192, j = 0; j < 576; j++) {
+        var x0, k0;
+        x0 = firbuf[L0 + j + 10], k0 = 0;
+        for (var _0 = 0; _0 < (K - 1) / 2 - 1; _0 += 2)
+          x0 += A0[_0] * (firbuf[L0 + j + _0] + firbuf[L0 + j + K - _0]), k0 += A0[_0 + 1] * (firbuf[L0 + j + _0 + 1] + firbuf[L0 + j + K - _0 - 1]);
+        $[n0][j] = x0 + k0;
+      }
+      k[y][n0].en.assign(a0.en[n0]), k[y][n0].thm.assign(a0.thm[n0]), N0 > 2 && (c[y][n0].en.assign(a0.en[n0 + 2]), c[y][n0].thm.assign(a0.thm[n0 + 2]));
+    }
+    for (var n0 = 0; n0 < N0; n0++) {
+      var B0 = g0(12), l0 = g0(12), p0 = [0, 0, 0, 0], P0 = $[n0 & 1], c0 = 0, O0 = n0 == 3 ? a0.nsPsy.attackthre_s : a0.nsPsy.attackthre, X0 = 1;
+      if (n0 == 2)
+        for (var j = 0, _0 = 576; _0 > 0; ++j, --_0) {
+          var Z0 = $[0][j], v1 = $[1][j];
+          $[0][j] = Z0 + v1, $[1][j] = Z0 - v1;
+        }
+      for (var j = 0; j < 3; j++)
+        l0[j] = a0.nsPsy.last_en_subshort[n0][j + 6], C0(a0.nsPsy.last_en_subshort[n0][j + 4] > 0), B0[j] = l0[j] / a0.nsPsy.last_en_subshort[n0][j + 4], p0[0] += l0[j];
+      for (var j = 0; j < 9; j++) {
+        for (var z0 = c0 + 64, K0 = 1; c0 < z0; c0++)
+          K0 < Math.abs(P0[c0]) && (K0 = Math.abs(P0[c0]));
+        a0.nsPsy.last_en_subshort[n0][j] = l0[j + 3] = K0, p0[1 + j / 3] += K0, K0 > l0[j + 3 - 2] ? (C0(l0[j + 3 - 2] > 0), K0 = K0 / l0[j + 3 - 2]) : l0[j + 3 - 2] > K0 * 10 ? K0 = l0[j + 3 - 2] / (K0 * 10) : K0 = 0, B0[j + 3] = K0;
+      }
+      for (var j = 0; j < 3; ++j) {
+        var s1 = l0[j * 3 + 3] + l0[j * 3 + 4] + l0[j * 3 + 5], o1 = 1;
+        l0[j * 3 + 5] * 6 < s1 && (o1 *= 0.5, l0[j * 3 + 4] * 6 < s1 && (o1 *= 0.5)), G[n0][j] = o1;
+      }
+      if (v.analysis) {
+        for (var h1 = B0[0], j = 1; j < 12; j++)
+          h1 < B0[j] && (h1 = B0[j]);
+        a0.pinfo.ers[y][n0] = a0.pinfo.ers_save[n0], a0.pinfo.ers_save[n0] = h1;
+      }
+      for (var j = 0; j < 12; j++)
+        F[n0][j / 3] == 0 && B0[j] > O0 && (F[n0][j / 3] = j % 3 + 1);
+      for (var j = 1; j < 4; j++) {
+        var c1 = p0[j - 1], S1 = p0[j], r1 = Math.max(c1, S1);
+        r1 < 4e4 && c1 < 1.7 * S1 && S1 < 1.7 * c1 && (j == 1 && F[n0][0] <= F[n0][j] && (F[n0][0] = 0), F[n0][j] = 0);
+      }
+      F[n0][0] <= a0.nsPsy.lastAttacks[n0] && (F[n0][0] = 0), (a0.nsPsy.lastAttacks[n0] == 3 || F[n0][0] + F[n0][1] + F[n0][2] + F[n0][3] != 0) && (X0 = 0, F[n0][1] != 0 && F[n0][0] != 0 && (F[n0][1] = 0), F[n0][2] != 0 && F[n0][1] != 0 && (F[n0][2] = 0), F[n0][3] != 0 && F[n0][2] != 0 && (F[n0][3] = 0)), n0 < 2 ? e0[n0] = X0 : X0 == 0 && (e0[0] = e0[1] = 0), C[n0] = a0.tot_ener[n0];
+    }
+  }
+  function $0(v, h, x) {
+    if (x == 0)
+      for (var y = 0; y < v.npart_s; y++)
+        v.nb_s2[h][y] = v.nb_s1[h][y], v.nb_s1[h][y] = 0;
+  }
+  function f1(v, h) {
+    for (var x = 0; x < v.npart_l; x++)
+      v.nb_2[h][x] = v.nb_1[h][x], v.nb_1[h][x] = 0;
+  }
+  function t(v, h, x, y) {
+    var k = H.length - 1, c = 0, C = x[c] + x[c + 1];
+    if (C > 0) {
+      var G = h[c];
+      G < h[c + 1] && (G = h[c + 1]), C0(v.numlines_s[c] + v.numlines_s[c + 1] - 1 > 0), C = 20 * (G * 2 - C) / (C * (v.numlines_s[c] + v.numlines_s[c + 1] - 1));
+      var F = 0 | C;
+      F > k && (F = k), y[c] = F;
+    } else
+      y[c] = 0;
+    for (c = 1; c < v.npart_s - 1; c++)
+      if (C = x[c - 1] + x[c] + x[c + 1], C0(c + 1 < v.npart_s), C > 0) {
+        var G = h[c - 1];
+        G < h[c] && (G = h[c]), G < h[c + 1] && (G = h[c + 1]), C0(v.numlines_s[c - 1] + v.numlines_s[c] + v.numlines_s[c + 1] - 1 > 0), C = 20 * (G * 3 - C) / (C * (v.numlines_s[c - 1] + v.numlines_s[c] + v.numlines_s[c + 1] - 1));
+        var F = 0 | C;
+        F > k && (F = k), y[c] = F;
+      } else
+        y[c] = 0;
+    if (C0(c == v.npart_s - 1), C = x[c - 1] + x[c], C > 0) {
+      var G = h[c - 1];
+      G < h[c] && (G = h[c]), C0(v.numlines_s[c - 1] + v.numlines_s[c] - 1 > 0), C = 20 * (G * 2 - C) / (C * (v.numlines_s[c - 1] + v.numlines_s[c] - 1));
+      var F = 0 | C;
+      F > k && (F = k), y[c] = F;
+    } else
+      y[c] = 0;
+    C0(c == v.npart_s - 1);
+  }
+  function _(v, h, x, y, k, c) {
+    var C = v.internal_flags, G = new float[r0.CBANDS](), F = g0(r0.CBANDS), e0, $, a0, m0 = new int[r0.CBANDS]();
+    for (a0 = $ = 0; a0 < C.npart_s; ++a0) {
+      var N0 = 0, n0 = 0, L0 = C.numlines_s[a0];
+      for (e0 = 0; e0 < L0; ++e0, ++$) {
+        var j = h[c][$];
+        N0 += j, n0 < j && (n0 = j);
+      }
+      x[a0] = N0, G[a0] = n0, F[a0] = N0 / L0, C0(F[a0] >= 0);
+    }
+    for (C0(a0 == C.npart_s); a0 < r0.CBANDS; ++a0)
+      G[a0] = 0, F[a0] = 0;
+    for (t(C, G, F, m0), $ = a0 = 0; a0 < C.npart_s; a0++) {
+      var x0 = C.s3ind_s[a0][0], k0 = C.s3ind_s[a0][1], _0, B0, l0, p0, P0;
+      for (_0 = m0[x0], B0 = 1, p0 = C.s3_ss[$] * x[x0] * H[m0[x0]], ++$, ++x0; x0 <= k0; )
+        _0 += m0[x0], B0 += 1, l0 = C.s3_ss[$] * x[x0] * H[m0[x0]], p0 = L(p0, l0, x0 - a0), ++$, ++x0;
+      _0 = (1 + 2 * _0) / (2 * B0), P0 = H[_0] * 0.5, p0 *= P0, y[a0] = p0, C.nb_s2[k][a0] = C.nb_s1[k][a0], C.nb_s1[k][a0] = p0, l0 = G[a0], l0 *= C.minval_s[a0], l0 *= P0, y[a0] > l0 && (y[a0] = l0), C.masking_lower > 1 && (y[a0] *= C.masking_lower), y[a0] > x[a0] && (y[a0] = x[a0]), C.masking_lower < 1 && (y[a0] *= C.masking_lower), C0(y[a0] >= 0);
+    }
+    for (; a0 < r0.CBANDS; ++a0)
+      x[a0] = 0, y[a0] = 0;
+  }
+  function S0(v, h, x, y, k) {
+    var c = g0(r0.CBANDS), C = g0(r0.CBANDS), G = L1(r0.CBANDS + 2), F;
+    q(v, h, x, c, C), i0(v, c, C, G);
+    var e0 = 0;
+    for (F = 0; F < v.npart_l; F++) {
+      var $, a0, m0, N0, n0 = v.s3ind[F][0], L0 = v.s3ind[F][1], j = 0, x0 = 0;
+      for (j = G[n0], x0 += 1, a0 = v.s3_ll[e0] * x[n0] * H[G[n0]], ++e0, ++n0; n0 <= L0; )
+        j += G[n0], x0 += 1, $ = v.s3_ll[e0] * x[n0] * H[G[n0]], N0 = L(a0, $, n0 - F), a0 = N0, ++e0, ++n0;
+      if (j = (1 + 2 * j) / (2 * x0), m0 = H[j] * 0.5, a0 *= m0, v.blocktype_old[k & 1] == r0.SHORT_TYPE) {
+        var k0 = z * v.nb_1[k][F];
+        k0 > 0 ? y[F] = Math.min(a0, k0) : y[F] = Math.min(a0, x[F] * O);
+      } else {
+        var _0 = u0 * v.nb_2[k][F], B0 = z * v.nb_1[k][F], k0;
+        _0 <= 0 && (_0 = a0), B0 <= 0 && (B0 = a0), v.blocktype_old[k & 1] == r0.NORM_TYPE ? k0 = Math.min(B0, _0) : k0 = B0, y[F] = Math.min(a0, k0);
+      }
+      v.nb_2[k][F] = v.nb_1[k][F], v.nb_1[k][F] = a0, $ = c[F], $ *= v.minval_l[F], $ *= m0, y[F] > $ && (y[F] = $), v.masking_lower > 1 && (y[F] *= v.masking_lower), y[F] > x[F] && (y[F] = x[F]), v.masking_lower < 1 && (y[F] *= v.masking_lower), C0(y[F] >= 0);
+    }
+    for (; F < r0.CBANDS; ++F)
+      x[F] = 0, y[F] = 0;
+  }
+  function E0(v, h) {
+    var x = v.internal_flags;
+    v.short_blocks == F1.short_block_coupled && !(h[0] != 0 && h[1] != 0) && (h[0] = h[1] = 0);
+    for (var y = 0; y < x.channels_out; y++)
+      v.short_blocks == F1.short_block_dispensed && (h[y] = 1), v.short_blocks == F1.short_block_forced && (h[y] = 0);
+  }
+  function V0(v, h, x) {
+    for (var y = v.internal_flags, k = 0; k < y.channels_out; k++) {
+      var c = r0.NORM_TYPE;
+      h[k] != 0 ? (C0(y.blocktype_old[k] != r0.START_TYPE), y.blocktype_old[k] == r0.SHORT_TYPE && (c = r0.STOP_TYPE)) : (c = r0.SHORT_TYPE, y.blocktype_old[k] == r0.NORM_TYPE && (y.blocktype_old[k] = r0.START_TYPE), y.blocktype_old[k] == r0.STOP_TYPE && (y.blocktype_old[k] = r0.SHORT_TYPE)), x[k] = y.blocktype_old[k], y.blocktype_old[k] = c;
+    }
+  }
+  function H0(v, h, x, y, k, c, C) {
+    for (var G = c * 2, F = c > 0 ? Math.pow(10, k) : 1, e0, $, a0 = 0; a0 < C; ++a0) {
+      var m0 = v[2][a0], N0 = v[3][a0], n0 = h[0][a0], L0 = h[1][a0], j = h[2][a0], x0 = h[3][a0];
+      if (n0 <= 1.58 * L0 && L0 <= 1.58 * n0) {
+        var k0 = x[a0] * N0, _0 = x[a0] * m0;
+        $ = Math.max(j, Math.min(x0, k0)), e0 = Math.max(x0, Math.min(j, _0));
+      } else
+        $ = j, e0 = x0;
+      if (c > 0) {
+        var B0, l0, p0 = y[a0] * F;
+        if (B0 = Math.min(Math.max(n0, p0), Math.max(L0, p0)), j = Math.max($, p0), x0 = Math.max(e0, p0), l0 = j + x0, l0 > 0 && B0 * G < l0) {
+          var P0 = B0 * G / l0;
+          j *= P0, x0 *= P0;
+        }
+        $ = Math.min(j, $), e0 = Math.min(x0, e0);
+      }
+      $ > m0 && ($ = m0), e0 > N0 && (e0 = N0), h[2][a0] = $, h[3][a0] = e0;
+    }
+  }
+  this.L3psycho_anal_vbr = function(v, h, x, y, k, c, C, G, F, e0) {
+    var $ = v.internal_flags, a0, m0, N0 = g0(r0.HBLKSIZE), n0 = m1([3, r0.HBLKSIZE_s]), L0 = m1([2, r0.BLKSIZE]), j = m1([2, 3, r0.BLKSIZE_s]), x0 = m1([4, r0.CBANDS]), k0 = m1([4, r0.CBANDS]), _0 = m1([4, 3]), B0 = 0.6, l0 = [
+      [0, 0, 0, 0],
+      [0, 0, 0, 0],
+      [0, 0, 0, 0],
+      [0, 0, 0, 0]
+    ], p0 = L1(2), P0 = v.mode == w.JOINT_STEREO ? 4 : $.channels_out;
+    w0(
+      v,
+      h,
+      x,
+      y,
+      k,
+      c,
+      F,
+      _0,
+      l0,
+      p0
+    ), E0(v, p0);
+    {
+      for (var c0 = 0; c0 < P0; c0++) {
+        var O0 = c0 & 1;
+        a0 = L0, d0(
+          v,
+          h,
+          x,
+          c0,
+          y,
+          N0,
+          a0,
+          O0
+        ), R0(
+          v,
+          y,
+          c0,
+          N0
+        ), p0[O0] != 0 ? S0(
+          $,
+          N0,
+          x0[c0],
+          k0[c0],
+          c0
+        ) : f1($, c0);
+      }
+      p0[0] + p0[1] == 2 && v.mode == w.JOINT_STEREO && H0(
+        x0,
+        k0,
+        $.mld_cb_l,
+        $.ATH.cb_l,
+        v.ATHlower * $.ATH.adjust,
+        v.msfix,
+        $.npart_l
+      );
+      for (var c0 = 0; c0 < P0; c0++) {
+        var O0 = c0 & 1;
+        p0[O0] != 0 && i($, x0[c0], k0[c0], c0);
+      }
+    }
+    {
+      for (var X0 = 0; X0 < 3; X0++) {
+        for (var c0 = 0; c0 < P0; ++c0) {
+          var O0 = c0 & 1;
+          p0[O0] != 0 ? $0($, c0, X0) : (m0 = j, M0(
+            v,
+            h,
+            x,
+            c0,
+            X0,
+            n0,
+            m0,
+            O0
+          ), _(
+            v,
+            n0,
+            x0[c0],
+            k0[c0],
+            c0,
+            X0
+          ));
+        }
+        p0[0] + p0[1] == 0 && v.mode == w.JOINT_STEREO && H0(
+          x0,
+          k0,
+          $.mld_cb_s,
+          $.ATH.cb_s,
+          v.ATHlower * $.ATH.adjust,
+          v.msfix,
+          $.npart_s
+        );
+        for (var c0 = 0; c0 < P0; ++c0) {
+          var O0 = c0 & 1;
+          p0[O0] == 0 && E(
+            $,
+            x0[c0],
+            k0[c0],
+            c0,
+            X0
+          );
+        }
+      }
+      for (var c0 = 0; c0 < P0; c0++) {
+        var O0 = c0 & 1;
+        if (p0[O0] == 0)
+          for (var Z0 = 0; Z0 < r0.SBMAX_s; Z0++) {
+            for (var v1 = g0(3), X0 = 0; X0 < 3; X0++) {
+              var z0 = $.thm[c0].s[Z0][X0];
+              if (z0 *= A, l0[c0][X0] >= 2 || l0[c0][X0 + 1] == 1) {
+                var K0 = X0 != 0 ? X0 - 1 : 2, s1 = n(
+                  $.thm[c0].s[Z0][K0],
+                  z0,
+                  m * B0
+                );
+                z0 = Math.min(z0, s1);
+              } else if (l0[c0][X0] == 1) {
+                var K0 = X0 != 0 ? X0 - 1 : 2, s1 = n(
+                  $.thm[c0].s[Z0][K0],
+                  z0,
+                  O * B0
+                );
+                z0 = Math.min(z0, s1);
+              } else if (X0 != 0 && l0[c0][X0 - 1] == 3 || X0 == 0 && $.nsPsy.lastAttacks[c0] == 3) {
+                var K0 = X0 != 2 ? X0 + 1 : 0, s1 = n(
+                  $.thm[c0].s[Z0][K0],
+                  z0,
+                  O * B0
+                );
+                z0 = Math.min(z0, s1);
+              }
+              z0 *= _0[c0][X0], v1[X0] = z0;
+            }
+            for (var X0 = 0; X0 < 3; X0++)
+              $.thm[c0].s[Z0][X0] = v1[X0];
+          }
+      }
+    }
+    for (var c0 = 0; c0 < P0; c0++)
+      $.nsPsy.lastAttacks[c0] = l0[c0][2];
+    V0(v, p0, e0);
+    for (var c0 = 0; c0 < P0; c0++) {
+      var o1, h1, c1, S1;
+      c0 > 1 ? (o1 = G, h1 = -2, c1 = r0.NORM_TYPE, (e0[0] == r0.SHORT_TYPE || e0[1] == r0.SHORT_TYPE) && (c1 = r0.SHORT_TYPE), S1 = c[y][c0 - 2]) : (o1 = C, h1 = 0, c1 = e0[c0], S1 = k[y][c0]), c1 == r0.SHORT_TYPE ? o1[h1 + c0] = Y(S1, $.masking_lower) : o1[h1 + c0] = T(S1, $.masking_lower), v.analysis && ($.pinfo.pe[y][c0] = o1[h1 + c0]);
+    }
+    return 0;
+  };
+  function y0(v, h) {
+    var x = v, y;
+    return x >= 0 ? y = -x * 27 : y = x * h, y <= -72 ? 0 : Math.exp(y * t0);
+  }
+  function T0(v) {
+    var h = 0, x = 0;
+    {
+      var y = 0, k, c;
+      for (y = 0; y0(y, v) > 1e-20; y -= 1)
+        ;
+      for (k = y, c = 0; Math.abs(c - k) > 1e-12; )
+        y = (c + k) / 2, y0(y, v) > 0 ? c = y : k = y;
+      h = k;
+    }
+    {
+      var y = 0, k, c;
+      for (y = 0; y0(y, v) > 1e-20; y += 1)
+        ;
+      for (k = 0, c = y; Math.abs(c - k) > 1e-12; )
+        y = (c + k) / 2, y0(y, v) > 0 ? k = y : c = y;
+      x = c;
+    }
+    {
+      var C = 0, G = 1e3, F;
+      for (F = 0; F <= G; ++F) {
+        var y = h + F * (x - h) / G, e0 = y0(y, v);
+        C += e0;
+      }
+      {
+        var $ = (G + 1) / (C * (x - h));
+        return $;
+      }
+    }
+  }
+  function F0(v) {
+    var h, x, y, k;
+    return h = v, h >= 0 ? h *= 3 : h *= 1.5, h >= 0.5 && h <= 2.5 ? (k = h - 0.5, x = 8 * (k * k - 2 * k)) : x = 0, h += 0.474, y = 15.811389 + 7.5 * h - 17.5 * Math.sqrt(1 + h * h), y <= -60 ? 0 : (h = Math.exp((x + y) * t0), h /= 0.6609193, h);
+  }
+  function I0(v) {
+    return v < 0 && (v = 0), v = v * 1e-3, 13 * Math.atan(0.76 * v) + 3.5 * Math.atan(v * v / (7.5 * 7.5));
+  }
+  function b0(v, h, x, y, k, c, C, G, F, e0, $, a0) {
+    var m0 = g0(r0.CBANDS + 1), N0 = G / (a0 > 15 ? 2 * 576 : 2 * 192), n0 = L1(r0.HBLKSIZE), L0;
+    G /= F;
+    var j = 0, x0 = 0;
+    for (L0 = 0; L0 < r0.CBANDS; L0++) {
+      var k0, _0;
+      for (k0 = I0(G * j), m0[L0] = G * j, _0 = j; I0(G * _0) - k0 < D && _0 <= F / 2; _0++)
+        ;
+      for (v[L0] = _0 - j, x0 = L0 + 1; j < _0; )
+        C0(j < r0.HBLKSIZE), n0[j++] = L0;
+      if (j > F / 2) {
+        j = F / 2, ++L0;
+        break;
+      }
+    }
+    C0(L0 < r0.CBANDS), m0[L0] = G * j;
+    for (var B0 = 0; B0 < a0; B0++) {
+      var l0, p0, P0, c0, O0;
+      P0 = e0[B0], c0 = e0[B0 + 1], l0 = 0 | Math.floor(0.5 + $ * (P0 - 0.5)), l0 < 0 && (l0 = 0), p0 = 0 | Math.floor(0.5 + $ * (c0 - 0.5)), p0 > F / 2 && (p0 = F / 2), x[B0] = (n0[l0] + n0[p0]) / 2, h[B0] = n0[p0];
+      var X0 = N0 * c0;
+      C[B0] = (X0 - m0[h[B0]]) / (m0[h[B0] + 1] - m0[h[B0]]), C[B0] < 0 ? C[B0] = 0 : C[B0] > 1 && (C[B0] = 1), O0 = I0(G * e0[B0] * $), O0 = Math.min(O0, 15.5) / 15.5, c[B0] = Math.pow(
+        10,
+        1.25 * (1 - Math.cos(Math.PI * O0)) - 2.5
+      );
+    }
+    j = 0;
+    for (var Z0 = 0; Z0 < x0; Z0++) {
+      var v1 = v[Z0], k0, z0;
+      k0 = I0(G * j), z0 = I0(G * (j + v1 - 1)), y[Z0] = 0.5 * (k0 + z0), k0 = I0(G * (j - 0.5)), z0 = I0(G * (j + v1 - 0.5)), k[Z0] = z0 - k0, j += v1;
+    }
+    return x0;
+  }
+  function G0(v, h, x, y, k, c) {
+    var C = m1([r0.CBANDS, r0.CBANDS]), G, F = 0;
+    if (c)
+      for (var e0 = 0; e0 < h; e0++)
+        for (G = 0; G < h; G++) {
+          var $ = F0(x[e0] - x[G]) * y[G];
+          C[e0][G] = $ * k[e0];
+        }
+    else
+      for (G = 0; G < h; G++)
+        for (var a0 = 15 + Math.min(21 / x[G], 12), m0 = T0(a0), e0 = 0; e0 < h; e0++) {
+          var $ = m0 * y0(x[e0] - x[G], a0) * y[G];
+          C[e0][G] = $ * k[e0];
+        }
+    for (var e0 = 0; e0 < h; e0++) {
+      for (G = 0; G < h && !(C[e0][G] > 0); G++)
+        ;
+      for (v[e0][0] = G, G = h - 1; G > 0 && !(C[e0][G] > 0); G--)
+        ;
+      v[e0][1] = G, F += v[e0][1] - v[e0][0] + 1;
+    }
+    for (var N0 = g0(F), n0 = 0, e0 = 0; e0 < h; e0++)
+      for (G = v[e0][0]; G <= v[e0][1]; G++)
+        N0[n0++] = C[e0][G];
+    return N0;
+  }
+  function e1(v) {
+    var h = I0(v);
+    return h = Math.min(h, 15.5) / 15.5, Math.pow(
+      10,
+      1.25 * (1 - Math.cos(Math.PI * h)) - 2.5
+    );
+  }
+  this.psymodel_init = function(v) {
+    var h = v.internal_flags, x, y = true, k = 13, c = 24, C = 0, G = 0, F = -8.25, e0 = -4.5, $ = g0(r0.CBANDS), a0 = g0(r0.CBANDS), m0 = g0(r0.CBANDS), N0 = v.out_samplerate;
+    switch (v.experimentalZ) {
+      default:
+      case 0:
+        y = true;
+        break;
+      case 1:
+        y = !(v.VBR == C1.vbr_mtrh || v.VBR == C1.vbr_mt);
+        break;
+      case 2:
+        y = false;
+        break;
+      case 3:
+        k = 8, C = -1.75, G = -0.0125, F = -8.25, e0 = -2.25;
+        break;
+    }
+    for (h.ms_ener_ratio_old = 0.25, h.blocktype_old[0] = h.blocktype_old[1] = r0.NORM_TYPE, x = 0; x < 4; ++x) {
+      for (var j = 0; j < r0.CBANDS; ++j)
+        h.nb_1[x][j] = 1e20, h.nb_2[x][j] = 1e20, h.nb_s1[x][j] = h.nb_s2[x][j] = 1;
+      for (var n0 = 0; n0 < r0.SBMAX_l; n0++)
+        h.en[x].l[n0] = 1e20, h.thm[x].l[n0] = 1e20;
+      for (var j = 0; j < 3; ++j) {
+        for (var n0 = 0; n0 < r0.SBMAX_s; n0++)
+          h.en[x].s[n0][j] = 1e20, h.thm[x].s[n0][j] = 1e20;
+        h.nsPsy.lastAttacks[x] = 0;
+      }
+      for (var j = 0; j < 9; j++)
+        h.nsPsy.last_en_subshort[x][j] = 10;
+    }
+    for (h.loudness_sq_save[0] = h.loudness_sq_save[1] = 0, h.npart_l = b0(
+      h.numlines_l,
+      h.bo_l,
+      h.bm_l,
+      $,
+      a0,
+      h.mld_l,
+      h.PSY.bo_l_weight,
+      N0,
+      r0.BLKSIZE,
+      h.scalefac_band.l,
+      r0.BLKSIZE / (2 * 576),
+      r0.SBMAX_l
+    ), C0(h.npart_l < r0.CBANDS), x = 0; x < h.npart_l; x++) {
+      var L0 = C;
+      $[x] >= k && (L0 = G * ($[x] - k) / (c - k) + C * (c - $[x]) / (c - k)), m0[x] = Math.pow(10, L0 / 10), h.numlines_l[x] > 0 ? h.rnumlines_l[x] = 1 / h.numlines_l[x] : h.rnumlines_l[x] = 0;
+    }
+    h.s3_ll = G0(
+      h.s3ind,
+      h.npart_l,
+      $,
+      a0,
+      m0,
+      y
+    );
+    var j = 0;
+    for (x = 0; x < h.npart_l; x++) {
+      var x0;
+      x0 = Ue.MAX_VALUE;
+      for (var k0 = 0; k0 < h.numlines_l[x]; k0++, j++) {
+        var _0 = N0 * j / (1e3 * r0.BLKSIZE), B0;
+        B0 = this.ATHformula(_0 * 1e3, v) - 20, B0 = Math.pow(10, 0.1 * B0), B0 *= h.numlines_l[x], x0 > B0 && (x0 = B0);
+      }
+      h.ATH.cb_l[x] = x0, x0 = -20 + $[x] * 20 / 10, x0 > 6 && (x0 = 100), x0 < -15 && (x0 = -15), x0 -= 8, h.minval_l[x] = Math.pow(10, x0 / 10) * h.numlines_l[x];
+    }
+    for (h.npart_s = b0(
+      h.numlines_s,
+      h.bo_s,
+      h.bm_s,
+      $,
+      a0,
+      h.mld_s,
+      h.PSY.bo_s_weight,
+      N0,
+      r0.BLKSIZE_s,
+      h.scalefac_band.s,
+      r0.BLKSIZE_s / (2 * 192),
+      r0.SBMAX_s
+    ), C0(h.npart_s < r0.CBANDS), j = 0, x = 0; x < h.npart_s; x++) {
+      var x0, L0 = F;
+      $[x] >= k && (L0 = e0 * ($[x] - k) / (c - k) + F * (c - $[x]) / (c - k)), m0[x] = Math.pow(10, L0 / 10), x0 = Ue.MAX_VALUE;
+      for (var k0 = 0; k0 < h.numlines_s[x]; k0++, j++) {
+        var _0 = N0 * j / (1e3 * r0.BLKSIZE_s), B0;
+        B0 = this.ATHformula(_0 * 1e3, v) - 20, B0 = Math.pow(10, 0.1 * B0), B0 *= h.numlines_s[x], x0 > B0 && (x0 = B0);
+      }
+      h.ATH.cb_s[x] = x0, x0 = -7 + $[x] * 7 / 12, $[x] > 12 && (x0 *= 1 + Math.log(1 + x0) * 3.1), $[x] < 12 && (x0 *= 1 + Math.log(1 - x0) * 2.3), x0 < -15 && (x0 = -15), x0 -= 8, h.minval_s[x] = Math.pow(10, x0 / 10) * h.numlines_s[x];
+    }
+    h.s3_ss = G0(
+      h.s3ind_s,
+      h.npart_s,
+      $,
+      a0,
+      m0,
+      y
+    ), B(), Z.init_fft(h), h.decay = Math.exp(-1 * X / (f0 * N0 / 192));
+    {
+      var l0;
+      l0 = s0, v.exp_nspsytune & 2 && (l0 = 1), Math.abs(v.msfix) > 0 && (l0 = v.msfix), v.msfix = l0;
+      for (var p0 = 0; p0 < h.npart_l; p0++)
+        h.s3ind[p0][1] > h.npart_l - 1 && (h.s3ind[p0][1] = h.npart_l - 1);
+    }
+    var P0 = 576 * h.mode_gr / N0;
+    if (h.ATH.decay = Math.pow(10, -12 / 10 * P0), h.ATH.adjust = 0.01, h.ATH.adjustLimit = 1, C0(h.bo_l[r0.SBMAX_l - 1] <= h.npart_l), C0(h.bo_s[r0.SBMAX_s - 1] <= h.npart_s), v.ATHtype != -1) {
+      var _0, c0 = v.out_samplerate / r0.BLKSIZE, O0 = 0;
+      for (_0 = 0, x = 0; x < r0.BLKSIZE / 2; ++x)
+        _0 += c0, h.ATH.eql_w[x] = 1 / Math.pow(10, this.ATHformula(_0, v) / 10), O0 += h.ATH.eql_w[x];
+      for (O0 = 1 / O0, x = r0.BLKSIZE / 2; --x >= 0; )
+        h.ATH.eql_w[x] *= O0;
+    }
+    {
+      for (var p0 = j = 0; p0 < h.npart_s; ++p0)
+        for (x = 0; x < h.numlines_s[p0]; ++x)
+          ++j;
+      for (var p0 = j = 0; p0 < h.npart_l; ++p0)
+        for (x = 0; x < h.numlines_l[p0]; ++x)
+          ++j;
+    }
+    for (j = 0, x = 0; x < h.npart_l; x++) {
+      var _0 = N0 * (j + h.numlines_l[x] / 2) / (1 * r0.BLKSIZE);
+      h.mld_cb_l[x] = e1(_0), j += h.numlines_l[x];
+    }
+    for (; x < r0.CBANDS; ++x)
+      h.mld_cb_l[x] = 1;
+    for (j = 0, x = 0; x < h.npart_s; x++) {
+      var _0 = N0 * (j + h.numlines_s[x] / 2) / (1 * r0.BLKSIZE_s);
+      h.mld_cb_s[x] = e1(_0), j += h.numlines_s[x];
+    }
+    for (; x < r0.CBANDS; ++x)
+      h.mld_cb_s[x] = 1;
+    return 0;
+  };
+  function Y0(v, h) {
+    v < -0.3 && (v = 3410), v /= 1e3, v = Math.max(0.1, v);
+    var x = 3.64 * Math.pow(v, -0.8) - 6.8 * Math.exp(-0.6 * Math.pow(v - 3.4, 2)) + 6 * Math.exp(-0.15 * Math.pow(v - 8.7, 2)) + (0.6 + 0.04 * h) * 1e-3 * Math.pow(v, 4);
+    return x;
+  }
+  this.ATHformula = function(v, h) {
+    var x;
+    switch (h.ATHtype) {
+      case 0:
+        x = Y0(v, 9);
+        break;
+      case 1:
+        x = Y0(v, -1);
+        break;
+      case 2:
+        x = Y0(v, 0);
+        break;
+      case 3:
+        x = Y0(v, 1) + 6;
+        break;
+      case 4:
+        x = Y0(v, h.ATHcurve);
+        break;
+      default:
+        x = Y0(v, 0);
+        break;
+    }
+    return x;
+  };
+}
+var Qa = Ua;
+var Wa = j1;
+function ja() {
+  this.class_id = 0, this.num_samples = 0, this.num_channels = 0, this.in_samplerate = 0, this.out_samplerate = 0, this.scale = 0, this.scale_left = 0, this.scale_right = 0, this.analysis = false, this.bWriteVbrTag = false, this.decode_only = false, this.quality = 0, this.mode = Wa.STEREO, this.force_ms = false, this.free_format = false, this.findReplayGain = false, this.decode_on_the_fly = false, this.write_id3tag_automatic = false, this.brate = 0, this.compression_ratio = 0, this.copyright = 0, this.original = 0, this.extension = 0, this.emphasis = 0, this.error_protection = 0, this.strict_ISO = false, this.disable_reservoir = false, this.quant_comp = 0, this.quant_comp_short = 0, this.experimentalY = false, this.experimentalZ = 0, this.exp_nspsytune = 0, this.preset = 0, this.VBR = null, this.VBR_q_frac = 0, this.VBR_q = 0, this.VBR_mean_bitrate_kbps = 0, this.VBR_min_bitrate_kbps = 0, this.VBR_max_bitrate_kbps = 0, this.VBR_hard_min = 0, this.lowpassfreq = 0, this.highpassfreq = 0, this.lowpasswidth = 0, this.highpasswidth = 0, this.maskingadjust = 0, this.maskingadjust_short = 0, this.ATHonly = false, this.ATHshort = false, this.noATH = false, this.ATHtype = 0, this.ATHcurve = 0, this.ATHlower = 0, this.athaa_type = 0, this.athaa_loudapprox = 0, this.athaa_sensitivity = 0, this.short_blocks = null, this.useTemporal = false, this.interChRatio = 0, this.msfix = 0, this.tune = false, this.tune_value_a = 0, this.version = 0, this.encoder_delay = 0, this.encoder_padding = 0, this.framesize = 0, this.frameNum = 0, this.lame_allocated_gfp = 0, this.internal_flags = null;
+}
+var za = ja;
+var Ja = t1();
+var Ta = {};
+Ta.SFBMAX = Ja.SBMAX_s * 3;
+var ie = Ta;
+var ya = Q0;
+var ga = ya.new_float;
+var N1 = ya.new_int;
+var Re = ie;
+function e2() {
+  this.xr = ga(576), this.l3_enc = N1(576), this.scalefac = N1(Re.SFBMAX), this.xrpow_max = 0, this.part2_3_length = 0, this.big_values = 0, this.count1 = 0, this.global_gain = 0, this.scalefac_compress = 0, this.block_type = 0, this.mixed_block_flag = 0, this.table_select = N1(3), this.subblock_gain = N1(3 + 1), this.region0_count = 0, this.region1_count = 0, this.preflag = 0, this.scalefac_scale = 0, this.count1table_select = 0, this.part2_length = 0, this.sfb_lmax = 0, this.sfb_smin = 0, this.psy_lmax = 0, this.sfbmax = 0, this.psymax = 0, this.sfbdivide = 0, this.width = N1(Re.SFBMAX), this.window = N1(Re.SFBMAX), this.count1bits = 0, this.sfb_partition_table = null, this.slen = N1(4), this.max_nonzero_coeff = 0;
+  var w = this;
+  function Z(z) {
+    return new Int32Array(z);
+  }
+  function X(z) {
+    return new Float32Array(z);
+  }
+  this.assign = function(z) {
+    w.xr = X(z.xr), w.l3_enc = Z(z.l3_enc), w.scalefac = Z(z.scalefac), w.xrpow_max = z.xrpow_max, w.part2_3_length = z.part2_3_length, w.big_values = z.big_values, w.count1 = z.count1, w.global_gain = z.global_gain, w.scalefac_compress = z.scalefac_compress, w.block_type = z.block_type, w.mixed_block_flag = z.mixed_block_flag, w.table_select = Z(z.table_select), w.subblock_gain = Z(z.subblock_gain), w.region0_count = z.region0_count, w.region1_count = z.region1_count, w.preflag = z.preflag, w.scalefac_scale = z.scalefac_scale, w.count1table_select = z.count1table_select, w.part2_length = z.part2_length, w.sfb_lmax = z.sfb_lmax, w.sfb_smin = z.sfb_smin, w.psy_lmax = z.psy_lmax, w.sfbmax = z.sfbmax, w.psymax = z.psymax, w.sfbdivide = z.sfbdivide, w.width = Z(z.width), w.window = Z(z.window), w.count1bits = z.count1bits, w.sfb_partition_table = z.sfb_partition_table.slice(0), w.slen = Z(z.slen), w.max_nonzero_coeff = z.max_nonzero_coeff;
+  };
+}
+var Le = e2;
+var a2 = Q0;
+var Qe = a2.new_int;
+var r2 = Le;
+function t2() {
+  this.tt = [[null, null], [null, null]], this.main_data_begin = 0, this.private_bits = 0, this.resvDrain_pre = 0, this.resvDrain_post = 0, this.scfsi = [Qe(4), Qe(4)];
+  for (var w = 0; w < 2; w++)
+    for (var Z = 0; Z < 2; Z++)
+      this.tt[w][Z] = new r2();
+}
+var s2 = t2;
+var wa = Q0;
+var g1 = wa.System;
+var ee = wa.new_int;
+var ae = t1();
+function i2(w, Z, X, z) {
+  this.l = ee(1 + ae.SBMAX_l), this.s = ee(1 + ae.SBMAX_s), this.psfb21 = ee(1 + ae.PSFB21), this.psfb12 = ee(1 + ae.PSFB12);
+  var u0 = this.l, W = this.s;
+  arguments.length == 4 && (this.arrL = arguments[0], this.arrS = arguments[1], this.arr21 = arguments[2], this.arr12 = arguments[3], g1.arraycopy(this.arrL, 0, u0, 0, Math.min(this.arrL.length, this.l.length)), g1.arraycopy(this.arrS, 0, W, 0, Math.min(this.arrS.length, this.s.length)), g1.arraycopy(this.arr21, 0, this.psfb21, 0, Math.min(this.arr21.length, this.psfb21.length)), g1.arraycopy(this.arr12, 0, this.psfb12, 0, Math.min(this.arr12.length, this.psfb12.length)));
+}
+var Ia = i2;
+var Ne = Q0;
+var xe = Ne.new_float;
+var n2 = Ne.new_float_n;
+var _2 = Ne.new_int;
+var We = t1();
+function l2() {
+  this.last_en_subshort = n2([4, 9]), this.lastAttacks = _2(4), this.pefirbuf = xe(19), this.longfact = xe(We.SBMAX_l), this.shortfact = xe(We.SBMAX_s), this.attackthre = 0, this.attackthre_s = 0;
+}
+var v2 = l2;
+function o2() {
+  this.sum = 0, this.seen = 0, this.want = 0, this.pos = 0, this.size = 0, this.bag = null, this.nVbrNumFrames = 0, this.nBytesWritten = 0, this.TotalFrameSize = 0;
+}
+var h2 = o2;
+var Y1 = Q0;
+var u2 = Y1.new_byte;
+var f2 = Y1.new_double;
+var b1 = Y1.new_float;
+var p1 = Y1.new_float_n;
+var d1 = Y1.new_int;
+var re = Y1.new_int_n;
+var m2 = s2;
+var b2 = Ia;
+var c2 = v2;
+var S2 = h2;
+var je = Ea();
+var W0 = t1();
+var d2 = ie;
+E1.MFSIZE = 3 * 1152 + W0.ENCDELAY - W0.MDCTDELAY;
+E1.MAX_HEADER_BUF = 256;
+E1.MAX_BITS_PER_CHANNEL = 4095;
+E1.MAX_BITS_PER_GRANULE = 7680;
+E1.BPC = 320;
+function E1() {
+  var w = 40;
+  this.Class_ID = 0, this.lame_encode_frame_init = 0, this.iteration_init_init = 0, this.fill_buffer_resample_init = 0, this.mfbuf = p1([2, E1.MFSIZE]), this.mode_gr = 0, this.channels_in = 0, this.channels_out = 0, this.resample_ratio = 0, this.mf_samples_to_encode = 0, this.mf_size = 0, this.VBR_min_bitrate = 0, this.VBR_max_bitrate = 0, this.bitrate_index = 0, this.samplerate_index = 0, this.mode_ext = 0, this.lowpass1 = 0, this.lowpass2 = 0, this.highpass1 = 0, this.highpass2 = 0, this.noise_shaping = 0, this.noise_shaping_amp = 0, this.substep_shaping = 0, this.psymodel = 0, this.noise_shaping_stop = 0, this.subblock_gain = 0, this.use_best_huffman = 0, this.full_outer_loop = 0, this.l3_side = new m2(), this.ms_ratio = b1(2), this.padding = 0, this.frac_SpF = 0, this.slot_lag = 0, this.tag_spec = null, this.nMusicCRC = 0, this.OldValue = d1(2), this.CurrentStep = d1(2), this.masking_lower = 0, this.bv_scf = d1(576), this.pseudohalf = d1(d2.SFBMAX), this.sfb21_extra = false, this.inbuf_old = new Array(2), this.blackfilt = new Array(2 * E1.BPC + 1), this.itime = f2(2), this.sideinfo_len = 0, this.sb_sample = p1([2, 2, 18, W0.SBLIMIT]), this.amp_filter = b1(32);
+  function Z() {
+    this.write_timing = 0, this.ptr = 0, this.buf = u2(w);
+  }
+  this.header = new Array(E1.MAX_HEADER_BUF), this.h_ptr = 0, this.w_ptr = 0, this.ancillary_flag = 0, this.ResvSize = 0, this.ResvMax = 0, this.scalefac_band = new b2(), this.minval_l = b1(W0.CBANDS), this.minval_s = b1(W0.CBANDS), this.nb_1 = p1([4, W0.CBANDS]), this.nb_2 = p1([4, W0.CBANDS]), this.nb_s1 = p1([4, W0.CBANDS]), this.nb_s2 = p1([4, W0.CBANDS]), this.s3_ss = null, this.s3_ll = null, this.decay = 0, this.thm = new Array(4), this.en = new Array(4), this.tot_ener = b1(4), this.loudness_sq = p1([2, 2]), this.loudness_sq_save = b1(2), this.mld_l = b1(W0.SBMAX_l), this.mld_s = b1(W0.SBMAX_s), this.bm_l = d1(W0.SBMAX_l), this.bo_l = d1(W0.SBMAX_l), this.bm_s = d1(W0.SBMAX_s), this.bo_s = d1(W0.SBMAX_s), this.npart_l = 0, this.npart_s = 0, this.s3ind = re([W0.CBANDS, 2]), this.s3ind_s = re([W0.CBANDS, 2]), this.numlines_s = d1(W0.CBANDS), this.numlines_l = d1(W0.CBANDS), this.rnumlines_l = b1(W0.CBANDS), this.mld_cb_l = b1(W0.CBANDS), this.mld_cb_s = b1(W0.CBANDS), this.numlines_s_num1 = 0, this.numlines_l_num1 = 0, this.pe = b1(4), this.ms_ratio_s_old = 0, this.ms_ratio_l_old = 0, this.ms_ener_ratio_old = 0, this.blocktype_old = d1(2), this.nsPsy = new c2(), this.VBR_seek_table = new S2(), this.ATH = null, this.PSY = null, this.nogap_total = 0, this.nogap_current = 0, this.decode_on_the_fly = true, this.findReplayGain = true, this.findPeakSample = true, this.PeakSample = 0, this.RadioGain = 0, this.AudiophileGain = 0, this.rgdata = null, this.noclipGainChange = 0, this.noclipScale = 0, this.bitrate_stereoMode_Hist = re([16, 4 + 1]), this.bitrate_blockType_Hist = re([16, 4 + 1 + 1]), this.pinfo = null, this.hip = null, this.in_buffer_nsamples = 0, this.in_buffer_0 = null, this.in_buffer_1 = null, this.iteration_loop = null;
+  for (var X = 0; X < this.en.length; X++)
+    this.en[X] = new je();
+  for (var X = 0; X < this.thm.length; X++)
+    this.thm[X] = new je();
+  for (var X = 0; X < this.header.length; X++)
+    this.header[X] = new Z();
+}
+var ne = E1;
+var A2 = Q0;
+var H1 = A2.new_float;
+var V1 = t1();
+function R2() {
+  this.useAdjust = 0, this.aaSensitivityP = 0, this.adjust = 0, this.adjustLimit = 0, this.decay = 0, this.floor = 0, this.l = H1(V1.SBMAX_l), this.s = H1(V1.SBMAX_s), this.psfb21 = H1(V1.PSFB21), this.psfb12 = H1(V1.PSFB12), this.cb_l = H1(V1.CBANDS), this.cb_s = H1(V1.CBANDS), this.eql_w = H1(V1.BLKSIZE / 2);
+}
+var x2 = R2;
+var La = Q0;
+var _1 = La.System;
+var ze = La.Arrays;
+j0.STEPS_per_dB = 100;
+j0.MAX_dB = 120;
+j0.GAIN_NOT_ENOUGH_SAMPLES = -24601;
+j0.GAIN_ANALYSIS_ERROR = 0;
+j0.GAIN_ANALYSIS_OK = 1;
+j0.INIT_GAIN_ANALYSIS_ERROR = 0;
+j0.INIT_GAIN_ANALYSIS_OK = 1;
+j0.YULE_ORDER = 10;
+j0.MAX_ORDER = j0.YULE_ORDER;
+j0.MAX_SAMP_FREQ = 48e3;
+j0.RMS_WINDOW_TIME_NUMERATOR = 1;
+j0.RMS_WINDOW_TIME_DENOMINATOR = 20;
+j0.MAX_SAMPLES_PER_WINDOW = j0.MAX_SAMP_FREQ * j0.RMS_WINDOW_TIME_NUMERATOR / j0.RMS_WINDOW_TIME_DENOMINATOR + 1;
+function j0() {
+  var w = 64.82, Z = 0.95, X = j0.RMS_WINDOW_TIME_NUMERATOR, z = j0.RMS_WINDOW_TIME_DENOMINATOR, u0 = [
+    [
+      0.038575994352,
+      -3.84664617118067,
+      -0.02160367184185,
+      7.81501653005538,
+      -0.00123395316851,
+      -11.34170355132042,
+      -9291677959e-14,
+      13.05504219327545,
+      -0.01655260341619,
+      -12.28759895145294,
+      0.02161526843274,
+      9.4829380631979,
+      -0.02074045215285,
+      -5.87257861775999,
+      0.00594298065125,
+      2.75465861874613,
+      0.00306428023191,
+      -0.86984376593551,
+      12025322027e-14,
+      0.13919314567432,
+      0.00288463683916
+    ],
+    [
+      0.0541865640643,
+      -3.47845948550071,
+      -0.02911007808948,
+      6.36317777566148,
+      -0.00848709379851,
+      -8.54751527471874,
+      -0.00851165645469,
+      9.4769360780128,
+      -0.00834990904936,
+      -8.81498681370155,
+      0.02245293253339,
+      6.85401540936998,
+      -0.02596338512915,
+      -4.39470996079559,
+      0.01624864962975,
+      2.19611684890774,
+      -0.00240879051584,
+      -0.75104302451432,
+      0.00674613682247,
+      0.13149317958808,
+      -0.00187763777362
+    ],
+    [
+      0.15457299681924,
+      -2.37898834973084,
+      -0.09331049056315,
+      2.84868151156327,
+      -0.06247880153653,
+      -2.64577170229825,
+      0.02163541888798,
+      2.23697657451713,
+      -0.05588393329856,
+      -1.67148153367602,
+      0.04781476674921,
+      1.00595954808547,
+      0.00222312597743,
+      -0.45953458054983,
+      0.03174092540049,
+      0.16378164858596,
+      -0.01390589421898,
+      -0.05032077717131,
+      0.00651420667831,
+      0.0234789740702,
+      -0.00881362733839
+    ],
+    [
+      0.30296907319327,
+      -1.61273165137247,
+      -0.22613988682123,
+      1.0797749225997,
+      -0.08587323730772,
+      -0.2565625775407,
+      0.03282930172664,
+      -0.1627671912044,
+      -0.00915702933434,
+      -0.22638893773906,
+      -0.02364141202522,
+      0.39120800788284,
+      -0.00584456039913,
+      -0.22138138954925,
+      0.06276101321749,
+      0.04500235387352,
+      -828086748e-14,
+      0.02005851806501,
+      0.00205861885564,
+      0.00302439095741,
+      -0.02950134983287
+    ],
+    [
+      0.33642304856132,
+      -1.49858979367799,
+      -0.2557224142557,
+      0.87350271418188,
+      -0.11828570177555,
+      0.12205022308084,
+      0.11921148675203,
+      -0.80774944671438,
+      -0.07834489609479,
+      0.47854794562326,
+      -0.0046997791438,
+      -0.12453458140019,
+      -0.0058950022444,
+      -0.04067510197014,
+      0.05724228140351,
+      0.08333755284107,
+      0.00832043980773,
+      -0.04237348025746,
+      -0.0163538138454,
+      0.02977207319925,
+      -0.0176017656815
+    ],
+    [
+      0.4491525660845,
+      -0.62820619233671,
+      -0.14351757464547,
+      0.29661783706366,
+      -0.22784394429749,
+      -0.372563729424,
+      -0.01419140100551,
+      0.00213767857124,
+      0.04078262797139,
+      -0.42029820170918,
+      -0.12398163381748,
+      0.22199650564824,
+      0.04097565135648,
+      0.00613424350682,
+      0.10478503600251,
+      0.06747620744683,
+      -0.01863887810927,
+      0.05784820375801,
+      -0.03193428438915,
+      0.03222754072173,
+      0.00541907748707
+    ],
+    [
+      0.56619470757641,
+      -1.04800335126349,
+      -0.75464456939302,
+      0.29156311971249,
+      0.1624213774223,
+      -0.26806001042947,
+      0.16744243493672,
+      0.00819999645858,
+      -0.18901604199609,
+      0.45054734505008,
+      0.3093178284183,
+      -0.33032403314006,
+      -0.27562961986224,
+      0.0673936833311,
+      0.00647310677246,
+      -0.04784254229033,
+      0.08647503780351,
+      0.01639907836189,
+      -0.0378898455484,
+      0.01807364323573,
+      -0.00588215443421
+    ],
+    [
+      0.58100494960553,
+      -0.51035327095184,
+      -0.53174909058578,
+      -0.31863563325245,
+      -0.14289799034253,
+      -0.20256413484477,
+      0.17520704835522,
+      0.1472815413433,
+      0.02377945217615,
+      0.38952639978999,
+      0.15558449135573,
+      -0.23313271880868,
+      -0.25344790059353,
+      -0.05246019024463,
+      0.01628462406333,
+      -0.02505961724053,
+      0.06920467763959,
+      0.02442357316099,
+      -0.03721611395801,
+      0.01818801111503,
+      -0.00749618797172
+    ],
+    [
+      0.53648789255105,
+      -0.2504987195602,
+      -0.42163034350696,
+      -0.43193942311114,
+      -0.00275953611929,
+      -0.03424681017675,
+      0.04267842219415,
+      -0.04678328784242,
+      -0.10214864179676,
+      0.26408300200955,
+      0.14590772289388,
+      0.15113130533216,
+      -0.02459864859345,
+      -0.17556493366449,
+      -0.11202315195388,
+      -0.18823009262115,
+      -0.04060034127,
+      0.05477720428674,
+      0.0478866554818,
+      0.0470440968812,
+      -0.02217936801134
+    ]
+  ], W = [
+    [
+      0.98621192462708,
+      -1.97223372919527,
+      -1.97242384925416,
+      0.97261396931306,
+      0.98621192462708
+    ],
+    [
+      0.98500175787242,
+      -1.96977855582618,
+      -1.97000351574484,
+      0.9702284756635,
+      0.98500175787242
+    ],
+    [
+      0.97938932735214,
+      -1.95835380975398,
+      -1.95877865470428,
+      0.95920349965459,
+      0.97938932735214
+    ],
+    [
+      0.97531843204928,
+      -1.95002759149878,
+      -1.95063686409857,
+      0.95124613669835,
+      0.97531843204928
+    ],
+    [
+      0.97316523498161,
+      -1.94561023566527,
+      -1.94633046996323,
+      0.94705070426118,
+      0.97316523498161
+    ],
+    [
+      0.96454515552826,
+      -1.92783286977036,
+      -1.92909031105652,
+      0.93034775234268,
+      0.96454515552826
+    ],
+    [
+      0.96009142950541,
+      -1.91858953033784,
+      -1.92018285901082,
+      0.92177618768381,
+      0.96009142950541
+    ],
+    [
+      0.95856916599601,
+      -1.9154210807478,
+      -1.91713833199203,
+      0.91885558323625,
+      0.95856916599601
+    ],
+    [
+      0.94597685600279,
+      -1.88903307939452,
+      -1.89195371200558,
+      0.89487434461664,
+      0.94597685600279
+    ]
+  ];
+  function Q(m, O, s0, K, t0, U) {
+    for (; t0-- != 0; )
+      s0[K] = 1e-10 + m[O + 0] * U[0] - s0[K - 1] * U[1] + m[O - 1] * U[2] - s0[K - 2] * U[3] + m[O - 2] * U[4] - s0[K - 3] * U[5] + m[O - 3] * U[6] - s0[K - 4] * U[7] + m[O - 4] * U[8] - s0[K - 5] * U[9] + m[O - 5] * U[10] - s0[K - 6] * U[11] + m[O - 6] * U[12] - s0[K - 7] * U[13] + m[O - 7] * U[14] - s0[K - 8] * U[15] + m[O - 8] * U[16] - s0[K - 9] * U[17] + m[O - 9] * U[18] - s0[K - 10] * U[19] + m[O - 10] * U[20], ++K, ++O;
+  }
+  function D(m, O, s0, K, t0, U) {
+    for (; t0-- != 0; )
+      s0[K] = m[O + 0] * U[0] - s0[K - 1] * U[1] + m[O - 1] * U[2] - s0[K - 2] * U[3] + m[O - 2] * U[4], ++K, ++O;
+  }
+  function g(m, O) {
+    for (var s0 = 0; s0 < MAX_ORDER; s0++)
+      m.linprebuf[s0] = m.lstepbuf[s0] = m.loutbuf[s0] = m.rinprebuf[s0] = m.rstepbuf[s0] = m.routbuf[s0] = 0;
+    switch (0 | O) {
+      case 48e3:
+        m.reqindex = 0;
+        break;
+      case 44100:
+        m.reqindex = 1;
+        break;
+      case 32e3:
+        m.reqindex = 2;
+        break;
+      case 24e3:
+        m.reqindex = 3;
+        break;
+      case 22050:
+        m.reqindex = 4;
+        break;
+      case 16e3:
+        m.reqindex = 5;
+        break;
+      case 12e3:
+        m.reqindex = 6;
+        break;
+      case 11025:
+        m.reqindex = 7;
+        break;
+      case 8e3:
+        m.reqindex = 8;
+        break;
+      default:
+        return INIT_GAIN_ANALYSIS_ERROR;
+    }
+    return m.sampleWindow = 0 | (O * X + z - 1) / z, m.lsum = 0, m.rsum = 0, m.totsamp = 0, ze.ill(m.A, 0), INIT_GAIN_ANALYSIS_OK;
+  }
+  this.InitGainAnalysis = function(m, O) {
+    return g(m, O) != INIT_GAIN_ANALYSIS_OK ? INIT_GAIN_ANALYSIS_ERROR : (m.linpre = MAX_ORDER, m.rinpre = MAX_ORDER, m.lstep = MAX_ORDER, m.rstep = MAX_ORDER, m.lout = MAX_ORDER, m.rout = MAX_ORDER, ze.fill(m.B, 0), INIT_GAIN_ANALYSIS_OK);
+  };
+  function f0(m) {
+    return m * m;
+  }
+  this.AnalyzeSamples = function(m, O, s0, K, t0, U, R) {
+    var o, u, d, e, l, M, p;
+    if (U == 0)
+      return GAIN_ANALYSIS_OK;
+    switch (p = 0, l = U, R) {
+      case 1:
+        K = O, t0 = s0;
+        break;
+      case 2:
+        break;
+      default:
+        return GAIN_ANALYSIS_ERROR;
+    }
+    for (U < MAX_ORDER ? (_1.arraycopy(
+      O,
+      s0,
+      m.linprebuf,
+      MAX_ORDER,
+      U
+    ), _1.arraycopy(
+      K,
+      t0,
+      m.rinprebuf,
+      MAX_ORDER,
+      U
+    )) : (_1.arraycopy(
+      O,
+      s0,
+      m.linprebuf,
+      MAX_ORDER,
+      MAX_ORDER
+    ), _1.arraycopy(
+      K,
+      t0,
+      m.rinprebuf,
+      MAX_ORDER,
+      MAX_ORDER
+    )); l > 0; ) {
+      M = l > m.sampleWindow - m.totsamp ? m.sampleWindow - m.totsamp : l, p < MAX_ORDER ? (o = m.linpre + p, u = m.linprebuf, d = m.rinpre + p, e = m.rinprebuf, M > MAX_ORDER - p && (M = MAX_ORDER - p)) : (o = s0 + p, u = O, d = t0 + p, e = K), Q(u, o, m.lstepbuf, m.lstep + m.totsamp, M, u0[m.reqindex]), Q(e, d, m.rstepbuf, m.rstep + m.totsamp, M, u0[m.reqindex]), D(
+        m.lstepbuf,
+        m.lstep + m.totsamp,
+        m.loutbuf,
+        m.lout + m.totsamp,
+        M,
+        W[m.reqindex]
+      ), D(
+        m.rstepbuf,
+        m.rstep + m.totsamp,
+        m.routbuf,
+        m.rout + m.totsamp,
+        M,
+        W[m.reqindex]
+      ), o = m.lout + m.totsamp, u = m.loutbuf, d = m.rout + m.totsamp, e = m.routbuf;
+      for (var H = M % 8; H-- != 0; )
+        m.lsum += f0(u[o++]), m.rsum += f0(e[d++]);
+      for (H = M / 8; H-- != 0; )
+        m.lsum += f0(u[o + 0]) + f0(u[o + 1]) + f0(u[o + 2]) + f0(u[o + 3]) + f0(u[o + 4]) + f0(u[o + 5]) + f0(u[o + 6]) + f0(u[o + 7]), o += 8, m.rsum += f0(e[d + 0]) + f0(e[d + 1]) + f0(e[d + 2]) + f0(e[d + 3]) + f0(e[d + 4]) + f0(e[d + 5]) + f0(e[d + 6]) + f0(e[d + 7]), d += 8;
+      if (l -= M, p += M, m.totsamp += M, m.totsamp == m.sampleWindow) {
+        var B = j0.STEPS_per_dB * 10 * Math.log10((m.lsum + m.rsum) / m.totsamp * 0.5 + 1e-37), I = B <= 0 ? 0 : 0 | B;
+        I >= m.A.length && (I = m.A.length - 1), m.A[I]++, m.lsum = m.rsum = 0, _1.arraycopy(
+          m.loutbuf,
+          m.totsamp,
+          m.loutbuf,
+          0,
+          MAX_ORDER
+        ), _1.arraycopy(
+          m.routbuf,
+          m.totsamp,
+          m.routbuf,
+          0,
+          MAX_ORDER
+        ), _1.arraycopy(
+          m.lstepbuf,
+          m.totsamp,
+          m.lstepbuf,
+          0,
+          MAX_ORDER
+        ), _1.arraycopy(
+          m.rstepbuf,
+          m.totsamp,
+          m.rstepbuf,
+          0,
+          MAX_ORDER
+        ), m.totsamp = 0;
+      }
+      if (m.totsamp > m.sampleWindow)
+        return GAIN_ANALYSIS_ERROR;
+    }
+    return U < MAX_ORDER ? (_1.arraycopy(
+      m.linprebuf,
+      U,
+      m.linprebuf,
+      0,
+      MAX_ORDER - U
+    ), _1.arraycopy(
+      m.rinprebuf,
+      U,
+      m.rinprebuf,
+      0,
+      MAX_ORDER - U
+    ), _1.arraycopy(
+      O,
+      s0,
+      m.linprebuf,
+      MAX_ORDER - U,
+      U
+    ), _1.arraycopy(
+      K,
+      t0,
+      m.rinprebuf,
+      MAX_ORDER - U,
+      U
+    )) : (_1.arraycopy(O, s0 + U - MAX_ORDER, m.linprebuf, 0, MAX_ORDER), _1.arraycopy(K, t0 + U - MAX_ORDER, m.rinprebuf, 0, MAX_ORDER)), GAIN_ANALYSIS_OK;
+  };
+  function A(m, O) {
+    var s0, K = 0;
+    for (s0 = 0; s0 < O; s0++)
+      K += m[s0];
+    if (K == 0)
+      return GAIN_NOT_ENOUGH_SAMPLES;
+    var t0 = 0 | Math.ceil(K * (1 - Z));
+    for (s0 = O; s0-- > 0 && !((t0 -= m[s0]) <= 0); )
+      ;
+    return w - s0 / j0.STEPS_per_dB;
+  }
+  this.GetTitleGain = function(m) {
+    for (var O = A(m.A, m.A.length), s0 = 0; s0 < m.A.length; s0++)
+      m.B[s0] += m.A[s0], m.A[s0] = 0;
+    for (var s0 = 0; s0 < MAX_ORDER; s0++)
+      m.linprebuf[s0] = m.lstepbuf[s0] = m.loutbuf[s0] = m.rinprebuf[s0] = m.rstepbuf[s0] = m.routbuf[s0] = 0;
+    return m.totsamp = 0, m.lsum = m.rsum = 0, O;
+  };
+}
+var Na = j0;
+var pa = Q0;
+var k1 = pa.new_float;
+var Je = pa.new_int;
+var l1 = Na;
+function M2() {
+  this.linprebuf = k1(l1.MAX_ORDER * 2), this.linpre = 0, this.lstepbuf = k1(l1.MAX_SAMPLES_PER_WINDOW + l1.MAX_ORDER), this.lstep = 0, this.loutbuf = k1(l1.MAX_SAMPLES_PER_WINDOW + l1.MAX_ORDER), this.lout = 0, this.rinprebuf = k1(l1.MAX_ORDER * 2), this.rinpre = 0, this.rstepbuf = k1(l1.MAX_SAMPLES_PER_WINDOW + l1.MAX_ORDER), this.rstep = 0, this.routbuf = k1(l1.MAX_SAMPLES_PER_WINDOW + l1.MAX_ORDER), this.rout = 0, this.sampleWindow = 0, this.totsamp = 0, this.lsum = 0, this.rsum = 0, this.freqindex = 0, this.first = 0, this.A = Je(0 | l1.STEPS_per_dB * l1.MAX_dB), this.B = Je(0 | l1.STEPS_per_dB * l1.MAX_dB);
+}
+var E2 = M2;
+function B2(w) {
+  this.bits = w;
+}
+var Ha = B2;
+var pe = Q0;
+var ge = pe.new_float;
+var T2 = pe.new_int;
+var ea = pe.assert;
+var y2 = Ha;
+var aa = t1();
+var w2 = ie;
+var I2 = ne;
+function L2(w) {
+  var Z = w;
+  this.quantize = Z, this.iteration_loop = function(X, z, u0, W) {
+    var Q = X.internal_flags, D = ge(w2.SFBMAX), g = ge(576), f0 = T2(2), A = 0, m, O = Q.l3_side, s0 = new y2(A);
+    this.quantize.rv.ResvFrameBegin(X, s0), A = s0.bits;
+    for (var K = 0; K < Q.mode_gr; K++) {
+      m = this.quantize.qupvt.on_pe(
+        X,
+        z,
+        f0,
+        A,
+        K,
+        K
+      ), Q.mode_ext == aa.MPG_MD_MS_LR && (this.quantize.ms_convert(Q.l3_side, K), this.quantize.qupvt.reduce_side(
+        f0,
+        u0[K],
+        A,
+        m
+      ));
+      for (var t0 = 0; t0 < Q.channels_out; t0++) {
+        var U, R, o = O.tt[K][t0];
+        o.block_type != aa.SHORT_TYPE ? (U = 0, R = Q.PSY.mask_adjust - U) : (U = 0, R = Q.PSY.mask_adjust_short - U), Q.masking_lower = Math.pow(
+          10,
+          R * 0.1
+        ), this.quantize.init_outer_loop(Q, o), this.quantize.init_xrpow(Q, o, g) && (this.quantize.qupvt.calc_xmin(
+          X,
+          W[K][t0],
+          o,
+          D
+        ), this.quantize.outer_loop(
+          X,
+          o,
+          D,
+          g,
+          t0,
+          f0[t0]
+        )), this.quantize.iteration_finish_one(Q, K, t0), ea(o.part2_3_length <= I2.MAX_BITS_PER_CHANNEL), ea(o.part2_3_length <= f0[t0]);
+      }
+    }
+    this.quantize.rv.ResvFrameEnd(Q, A);
+  };
+}
+var N2 = L2;
+function q0(w, Z, X, z) {
+  this.xlen = w, this.linmax = Z, this.table = X, this.hlen = z;
+}
+var o0 = {};
+o0.t1HB = [
+  1,
+  1,
+  1,
+  0
+];
+o0.t2HB = [
+  1,
+  2,
+  1,
+  3,
+  1,
+  1,
+  3,
+  2,
+  0
+];
+o0.t3HB = [
+  3,
+  2,
+  1,
+  1,
+  1,
+  1,
+  3,
+  2,
+  0
+];
+o0.t5HB = [
+  1,
+  2,
+  6,
+  5,
+  3,
+  1,
+  4,
+  4,
+  7,
+  5,
+  7,
+  1,
+  6,
+  1,
+  1,
+  0
+];
+o0.t6HB = [
+  7,
+  3,
+  5,
+  1,
+  6,
+  2,
+  3,
+  2,
+  5,
+  4,
+  4,
+  1,
+  3,
+  3,
+  2,
+  0
+];
+o0.t7HB = [
+  1,
+  2,
+  10,
+  19,
+  16,
+  10,
+  3,
+  3,
+  7,
+  10,
+  5,
+  3,
+  11,
+  4,
+  13,
+  17,
+  8,
+  4,
+  12,
+  11,
+  18,
+  15,
+  11,
+  2,
+  7,
+  6,
+  9,
+  14,
+  3,
+  1,
+  6,
+  4,
+  5,
+  3,
+  2,
+  0
+];
+o0.t8HB = [
+  3,
+  4,
+  6,
+  18,
+  12,
+  5,
+  5,
+  1,
+  2,
+  16,
+  9,
+  3,
+  7,
+  3,
+  5,
+  14,
+  7,
+  3,
+  19,
+  17,
+  15,
+  13,
+  10,
+  4,
+  13,
+  5,
+  8,
+  11,
+  5,
+  1,
+  12,
+  4,
+  4,
+  1,
+  1,
+  0
+];
+o0.t9HB = [
+  7,
+  5,
+  9,
+  14,
+  15,
+  7,
+  6,
+  4,
+  5,
+  5,
+  6,
+  7,
+  7,
+  6,
+  8,
+  8,
+  8,
+  5,
+  15,
+  6,
+  9,
+  10,
+  5,
+  1,
+  11,
+  7,
+  9,
+  6,
+  4,
+  1,
+  14,
+  4,
+  6,
+  2,
+  6,
+  0
+];
+o0.t10HB = [
+  1,
+  2,
+  10,
+  23,
+  35,
+  30,
+  12,
+  17,
+  3,
+  3,
+  8,
+  12,
+  18,
+  21,
+  12,
+  7,
+  11,
+  9,
+  15,
+  21,
+  32,
+  40,
+  19,
+  6,
+  14,
+  13,
+  22,
+  34,
+  46,
+  23,
+  18,
+  7,
+  20,
+  19,
+  33,
+  47,
+  27,
+  22,
+  9,
+  3,
+  31,
+  22,
+  41,
+  26,
+  21,
+  20,
+  5,
+  3,
+  14,
+  13,
+  10,
+  11,
+  16,
+  6,
+  5,
+  1,
+  9,
+  8,
+  7,
+  8,
+  4,
+  4,
+  2,
+  0
+];
+o0.t11HB = [
+  3,
+  4,
+  10,
+  24,
+  34,
+  33,
+  21,
+  15,
+  5,
+  3,
+  4,
+  10,
+  32,
+  17,
+  11,
+  10,
+  11,
+  7,
+  13,
+  18,
+  30,
+  31,
+  20,
+  5,
+  25,
+  11,
+  19,
+  59,
+  27,
+  18,
+  12,
+  5,
+  35,
+  33,
+  31,
+  58,
+  30,
+  16,
+  7,
+  5,
+  28,
+  26,
+  32,
+  19,
+  17,
+  15,
+  8,
+  14,
+  14,
+  12,
+  9,
+  13,
+  14,
+  9,
+  4,
+  1,
+  11,
+  4,
+  6,
+  6,
+  6,
+  3,
+  2,
+  0
+];
+o0.t12HB = [
+  9,
+  6,
+  16,
+  33,
+  41,
+  39,
+  38,
+  26,
+  7,
+  5,
+  6,
+  9,
+  23,
+  16,
+  26,
+  11,
+  17,
+  7,
+  11,
+  14,
+  21,
+  30,
+  10,
+  7,
+  17,
+  10,
+  15,
+  12,
+  18,
+  28,
+  14,
+  5,
+  32,
+  13,
+  22,
+  19,
+  18,
+  16,
+  9,
+  5,
+  40,
+  17,
+  31,
+  29,
+  17,
+  13,
+  4,
+  2,
+  27,
+  12,
+  11,
+  15,
+  10,
+  7,
+  4,
+  1,
+  27,
+  12,
+  8,
+  12,
+  6,
+  3,
+  1,
+  0
+];
+o0.t13HB = [
+  1,
+  5,
+  14,
+  21,
+  34,
+  51,
+  46,
+  71,
+  42,
+  52,
+  68,
+  52,
+  67,
+  44,
+  43,
+  19,
+  3,
+  4,
+  12,
+  19,
+  31,
+  26,
+  44,
+  33,
+  31,
+  24,
+  32,
+  24,
+  31,
+  35,
+  22,
+  14,
+  15,
+  13,
+  23,
+  36,
+  59,
+  49,
+  77,
+  65,
+  29,
+  40,
+  30,
+  40,
+  27,
+  33,
+  42,
+  16,
+  22,
+  20,
+  37,
+  61,
+  56,
+  79,
+  73,
+  64,
+  43,
+  76,
+  56,
+  37,
+  26,
+  31,
+  25,
+  14,
+  35,
+  16,
+  60,
+  57,
+  97,
+  75,
+  114,
+  91,
+  54,
+  73,
+  55,
+  41,
+  48,
+  53,
+  23,
+  24,
+  58,
+  27,
+  50,
+  96,
+  76,
+  70,
+  93,
+  84,
+  77,
+  58,
+  79,
+  29,
+  74,
+  49,
+  41,
+  17,
+  47,
+  45,
+  78,
+  74,
+  115,
+  94,
+  90,
+  79,
+  69,
+  83,
+  71,
+  50,
+  59,
+  38,
+  36,
+  15,
+  72,
+  34,
+  56,
+  95,
+  92,
+  85,
+  91,
+  90,
+  86,
+  73,
+  77,
+  65,
+  51,
+  44,
+  43,
+  42,
+  43,
+  20,
+  30,
+  44,
+  55,
+  78,
+  72,
+  87,
+  78,
+  61,
+  46,
+  54,
+  37,
+  30,
+  20,
+  16,
+  53,
+  25,
+  41,
+  37,
+  44,
+  59,
+  54,
+  81,
+  66,
+  76,
+  57,
+  54,
+  37,
+  18,
+  39,
+  11,
+  35,
+  33,
+  31,
+  57,
+  42,
+  82,
+  72,
+  80,
+  47,
+  58,
+  55,
+  21,
+  22,
+  26,
+  38,
+  22,
+  53,
+  25,
+  23,
+  38,
+  70,
+  60,
+  51,
+  36,
+  55,
+  26,
+  34,
+  23,
+  27,
+  14,
+  9,
+  7,
+  34,
+  32,
+  28,
+  39,
+  49,
+  75,
+  30,
+  52,
+  48,
+  40,
+  52,
+  28,
+  18,
+  17,
+  9,
+  5,
+  45,
+  21,
+  34,
+  64,
+  56,
+  50,
+  49,
+  45,
+  31,
+  19,
+  12,
+  15,
+  10,
+  7,
+  6,
+  3,
+  48,
+  23,
+  20,
+  39,
+  36,
+  35,
+  53,
+  21,
+  16,
+  23,
+  13,
+  10,
+  6,
+  1,
+  4,
+  2,
+  16,
+  15,
+  17,
+  27,
+  25,
+  20,
+  29,
+  11,
+  17,
+  12,
+  16,
+  8,
+  1,
+  1,
+  0,
+  1
+];
+o0.t15HB = [
+  7,
+  12,
+  18,
+  53,
+  47,
+  76,
+  124,
+  108,
+  89,
+  123,
+  108,
+  119,
+  107,
+  81,
+  122,
+  63,
+  13,
+  5,
+  16,
+  27,
+  46,
+  36,
+  61,
+  51,
+  42,
+  70,
+  52,
+  83,
+  65,
+  41,
+  59,
+  36,
+  19,
+  17,
+  15,
+  24,
+  41,
+  34,
+  59,
+  48,
+  40,
+  64,
+  50,
+  78,
+  62,
+  80,
+  56,
+  33,
+  29,
+  28,
+  25,
+  43,
+  39,
+  63,
+  55,
+  93,
+  76,
+  59,
+  93,
+  72,
+  54,
+  75,
+  50,
+  29,
+  52,
+  22,
+  42,
+  40,
+  67,
+  57,
+  95,
+  79,
+  72,
+  57,
+  89,
+  69,
+  49,
+  66,
+  46,
+  27,
+  77,
+  37,
+  35,
+  66,
+  58,
+  52,
+  91,
+  74,
+  62,
+  48,
+  79,
+  63,
+  90,
+  62,
+  40,
+  38,
+  125,
+  32,
+  60,
+  56,
+  50,
+  92,
+  78,
+  65,
+  55,
+  87,
+  71,
+  51,
+  73,
+  51,
+  70,
+  30,
+  109,
+  53,
+  49,
+  94,
+  88,
+  75,
+  66,
+  122,
+  91,
+  73,
+  56,
+  42,
+  64,
+  44,
+  21,
+  25,
+  90,
+  43,
+  41,
+  77,
+  73,
+  63,
+  56,
+  92,
+  77,
+  66,
+  47,
+  67,
+  48,
+  53,
+  36,
+  20,
+  71,
+  34,
+  67,
+  60,
+  58,
+  49,
+  88,
+  76,
+  67,
+  106,
+  71,
+  54,
+  38,
+  39,
+  23,
+  15,
+  109,
+  53,
+  51,
+  47,
+  90,
+  82,
+  58,
+  57,
+  48,
+  72,
+  57,
+  41,
+  23,
+  27,
+  62,
+  9,
+  86,
+  42,
+  40,
+  37,
+  70,
+  64,
+  52,
+  43,
+  70,
+  55,
+  42,
+  25,
+  29,
+  18,
+  11,
+  11,
+  118,
+  68,
+  30,
+  55,
+  50,
+  46,
+  74,
+  65,
+  49,
+  39,
+  24,
+  16,
+  22,
+  13,
+  14,
+  7,
+  91,
+  44,
+  39,
+  38,
+  34,
+  63,
+  52,
+  45,
+  31,
+  52,
+  28,
+  19,
+  14,
+  8,
+  9,
+  3,
+  123,
+  60,
+  58,
+  53,
+  47,
+  43,
+  32,
+  22,
+  37,
+  24,
+  17,
+  12,
+  15,
+  10,
+  2,
+  1,
+  71,
+  37,
+  34,
+  30,
+  28,
+  20,
+  17,
+  26,
+  21,
+  16,
+  10,
+  6,
+  8,
+  6,
+  2,
+  0
+];
+o0.t16HB = [
+  1,
+  5,
+  14,
+  44,
+  74,
+  63,
+  110,
+  93,
+  172,
+  149,
+  138,
+  242,
+  225,
+  195,
+  376,
+  17,
+  3,
+  4,
+  12,
+  20,
+  35,
+  62,
+  53,
+  47,
+  83,
+  75,
+  68,
+  119,
+  201,
+  107,
+  207,
+  9,
+  15,
+  13,
+  23,
+  38,
+  67,
+  58,
+  103,
+  90,
+  161,
+  72,
+  127,
+  117,
+  110,
+  209,
+  206,
+  16,
+  45,
+  21,
+  39,
+  69,
+  64,
+  114,
+  99,
+  87,
+  158,
+  140,
+  252,
+  212,
+  199,
+  387,
+  365,
+  26,
+  75,
+  36,
+  68,
+  65,
+  115,
+  101,
+  179,
+  164,
+  155,
+  264,
+  246,
+  226,
+  395,
+  382,
+  362,
+  9,
+  66,
+  30,
+  59,
+  56,
+  102,
+  185,
+  173,
+  265,
+  142,
+  253,
+  232,
+  400,
+  388,
+  378,
+  445,
+  16,
+  111,
+  54,
+  52,
+  100,
+  184,
+  178,
+  160,
+  133,
+  257,
+  244,
+  228,
+  217,
+  385,
+  366,
+  715,
+  10,
+  98,
+  48,
+  91,
+  88,
+  165,
+  157,
+  148,
+  261,
+  248,
+  407,
+  397,
+  372,
+  380,
+  889,
+  884,
+  8,
+  85,
+  84,
+  81,
+  159,
+  156,
+  143,
+  260,
+  249,
+  427,
+  401,
+  392,
+  383,
+  727,
+  713,
+  708,
+  7,
+  154,
+  76,
+  73,
+  141,
+  131,
+  256,
+  245,
+  426,
+  406,
+  394,
+  384,
+  735,
+  359,
+  710,
+  352,
+  11,
+  139,
+  129,
+  67,
+  125,
+  247,
+  233,
+  229,
+  219,
+  393,
+  743,
+  737,
+  720,
+  885,
+  882,
+  439,
+  4,
+  243,
+  120,
+  118,
+  115,
+  227,
+  223,
+  396,
+  746,
+  742,
+  736,
+  721,
+  712,
+  706,
+  223,
+  436,
+  6,
+  202,
+  224,
+  222,
+  218,
+  216,
+  389,
+  386,
+  381,
+  364,
+  888,
+  443,
+  707,
+  440,
+  437,
+  1728,
+  4,
+  747,
+  211,
+  210,
+  208,
+  370,
+  379,
+  734,
+  723,
+  714,
+  1735,
+  883,
+  877,
+  876,
+  3459,
+  865,
+  2,
+  377,
+  369,
+  102,
+  187,
+  726,
+  722,
+  358,
+  711,
+  709,
+  866,
+  1734,
+  871,
+  3458,
+  870,
+  434,
+  0,
+  12,
+  10,
+  7,
+  11,
+  10,
+  17,
+  11,
+  9,
+  13,
+  12,
+  10,
+  7,
+  5,
+  3,
+  1,
+  3
+];
+o0.t24HB = [
+  15,
+  13,
+  46,
+  80,
+  146,
+  262,
+  248,
+  434,
+  426,
+  669,
+  653,
+  649,
+  621,
+  517,
+  1032,
+  88,
+  14,
+  12,
+  21,
+  38,
+  71,
+  130,
+  122,
+  216,
+  209,
+  198,
+  327,
+  345,
+  319,
+  297,
+  279,
+  42,
+  47,
+  22,
+  41,
+  74,
+  68,
+  128,
+  120,
+  221,
+  207,
+  194,
+  182,
+  340,
+  315,
+  295,
+  541,
+  18,
+  81,
+  39,
+  75,
+  70,
+  134,
+  125,
+  116,
+  220,
+  204,
+  190,
+  178,
+  325,
+  311,
+  293,
+  271,
+  16,
+  147,
+  72,
+  69,
+  135,
+  127,
+  118,
+  112,
+  210,
+  200,
+  188,
+  352,
+  323,
+  306,
+  285,
+  540,
+  14,
+  263,
+  66,
+  129,
+  126,
+  119,
+  114,
+  214,
+  202,
+  192,
+  180,
+  341,
+  317,
+  301,
+  281,
+  262,
+  12,
+  249,
+  123,
+  121,
+  117,
+  113,
+  215,
+  206,
+  195,
+  185,
+  347,
+  330,
+  308,
+  291,
+  272,
+  520,
+  10,
+  435,
+  115,
+  111,
+  109,
+  211,
+  203,
+  196,
+  187,
+  353,
+  332,
+  313,
+  298,
+  283,
+  531,
+  381,
+  17,
+  427,
+  212,
+  208,
+  205,
+  201,
+  193,
+  186,
+  177,
+  169,
+  320,
+  303,
+  286,
+  268,
+  514,
+  377,
+  16,
+  335,
+  199,
+  197,
+  191,
+  189,
+  181,
+  174,
+  333,
+  321,
+  305,
+  289,
+  275,
+  521,
+  379,
+  371,
+  11,
+  668,
+  184,
+  183,
+  179,
+  175,
+  344,
+  331,
+  314,
+  304,
+  290,
+  277,
+  530,
+  383,
+  373,
+  366,
+  10,
+  652,
+  346,
+  171,
+  168,
+  164,
+  318,
+  309,
+  299,
+  287,
+  276,
+  263,
+  513,
+  375,
+  368,
+  362,
+  6,
+  648,
+  322,
+  316,
+  312,
+  307,
+  302,
+  292,
+  284,
+  269,
+  261,
+  512,
+  376,
+  370,
+  364,
+  359,
+  4,
+  620,
+  300,
+  296,
+  294,
+  288,
+  282,
+  273,
+  266,
+  515,
+  380,
+  374,
+  369,
+  365,
+  361,
+  357,
+  2,
+  1033,
+  280,
+  278,
+  274,
+  267,
+  264,
+  259,
+  382,
+  378,
+  372,
+  367,
+  363,
+  360,
+  358,
+  356,
+  0,
+  43,
+  20,
+  19,
+  17,
+  15,
+  13,
+  11,
+  9,
+  7,
+  6,
+  4,
+  7,
+  5,
+  3,
+  1,
+  3
+];
+o0.t32HB = [
+  1,
+  10,
+  8,
+  20,
+  12,
+  20,
+  16,
+  32,
+  14,
+  12,
+  24,
+  0,
+  28,
+  16,
+  24,
+  16
+];
+o0.t33HB = [
+  15,
+  28,
+  26,
+  48,
+  22,
+  40,
+  36,
+  64,
+  14,
+  24,
+  20,
+  32,
+  12,
+  16,
+  8,
+  0
+];
+o0.t1l = [
+  1,
+  4,
+  3,
+  5
+];
+o0.t2l = [
+  1,
+  4,
+  7,
+  4,
+  5,
+  7,
+  6,
+  7,
+  8
+];
+o0.t3l = [
+  2,
+  3,
+  7,
+  4,
+  4,
+  7,
+  6,
+  7,
+  8
+];
+o0.t5l = [
+  1,
+  4,
+  7,
+  8,
+  4,
+  5,
+  8,
+  9,
+  7,
+  8,
+  9,
+  10,
+  8,
+  8,
+  9,
+  10
+];
+o0.t6l = [
+  3,
+  4,
+  6,
+  8,
+  4,
+  4,
+  6,
+  7,
+  5,
+  6,
+  7,
+  8,
+  7,
+  7,
+  8,
+  9
+];
+o0.t7l = [
+  1,
+  4,
+  7,
+  9,
+  9,
+  10,
+  4,
+  6,
+  8,
+  9,
+  9,
+  10,
+  7,
+  7,
+  9,
+  10,
+  10,
+  11,
+  8,
+  9,
+  10,
+  11,
+  11,
+  11,
+  8,
+  9,
+  10,
+  11,
+  11,
+  12,
+  9,
+  10,
+  11,
+  12,
+  12,
+  12
+];
+o0.t8l = [
+  2,
+  4,
+  7,
+  9,
+  9,
+  10,
+  4,
+  4,
+  6,
+  10,
+  10,
+  10,
+  7,
+  6,
+  8,
+  10,
+  10,
+  11,
+  9,
+  10,
+  10,
+  11,
+  11,
+  12,
+  9,
+  9,
+  10,
+  11,
+  12,
+  12,
+  10,
+  10,
+  11,
+  11,
+  13,
+  13
+];
+o0.t9l = [
+  3,
+  4,
+  6,
+  7,
+  9,
+  10,
+  4,
+  5,
+  6,
+  7,
+  8,
+  10,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  7,
+  7,
+  8,
+  9,
+  9,
+  10,
+  8,
+  8,
+  9,
+  9,
+  10,
+  11,
+  9,
+  9,
+  10,
+  10,
+  11,
+  11
+];
+o0.t10l = [
+  1,
+  4,
+  7,
+  9,
+  10,
+  10,
+  10,
+  11,
+  4,
+  6,
+  8,
+  9,
+  10,
+  11,
+  10,
+  10,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  11,
+  11,
+  8,
+  9,
+  10,
+  11,
+  12,
+  12,
+  11,
+  12,
+  9,
+  10,
+  11,
+  12,
+  12,
+  12,
+  12,
+  12,
+  10,
+  11,
+  12,
+  12,
+  13,
+  13,
+  12,
+  13,
+  9,
+  10,
+  11,
+  12,
+  12,
+  12,
+  13,
+  13,
+  10,
+  10,
+  11,
+  12,
+  12,
+  13,
+  13,
+  13
+];
+o0.t11l = [
+  2,
+  4,
+  6,
+  8,
+  9,
+  10,
+  9,
+  10,
+  4,
+  5,
+  6,
+  8,
+  10,
+  10,
+  9,
+  10,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  10,
+  10,
+  8,
+  8,
+  9,
+  11,
+  10,
+  12,
+  10,
+  11,
+  9,
+  10,
+  10,
+  11,
+  11,
+  12,
+  11,
+  12,
+  9,
+  10,
+  11,
+  12,
+  12,
+  13,
+  12,
+  13,
+  9,
+  9,
+  9,
+  10,
+  11,
+  12,
+  12,
+  12,
+  9,
+  9,
+  10,
+  11,
+  12,
+  12,
+  12,
+  12
+];
+o0.t12l = [
+  4,
+  4,
+  6,
+  8,
+  9,
+  10,
+  10,
+  10,
+  4,
+  5,
+  6,
+  7,
+  9,
+  9,
+  10,
+  10,
+  6,
+  6,
+  7,
+  8,
+  9,
+  10,
+  9,
+  10,
+  7,
+  7,
+  8,
+  8,
+  9,
+  10,
+  10,
+  10,
+  8,
+  8,
+  9,
+  9,
+  10,
+  10,
+  10,
+  11,
+  9,
+  9,
+  10,
+  10,
+  10,
+  11,
+  10,
+  11,
+  9,
+  9,
+  9,
+  10,
+  10,
+  11,
+  11,
+  12,
+  10,
+  10,
+  10,
+  11,
+  11,
+  11,
+  11,
+  12
+];
+o0.t13l = [
+  1,
+  5,
+  7,
+  8,
+  9,
+  10,
+  10,
+  11,
+  10,
+  11,
+  12,
+  12,
+  13,
+  13,
+  14,
+  14,
+  4,
+  6,
+  8,
+  9,
+  10,
+  10,
+  11,
+  11,
+  11,
+  11,
+  12,
+  12,
+  13,
+  14,
+  14,
+  14,
+  7,
+  8,
+  9,
+  10,
+  11,
+  11,
+  12,
+  12,
+  11,
+  12,
+  12,
+  13,
+  13,
+  14,
+  15,
+  15,
+  8,
+  9,
+  10,
+  11,
+  11,
+  12,
+  12,
+  12,
+  12,
+  13,
+  13,
+  13,
+  13,
+  14,
+  15,
+  15,
+  9,
+  9,
+  11,
+  11,
+  12,
+  12,
+  13,
+  13,
+  12,
+  13,
+  13,
+  14,
+  14,
+  15,
+  15,
+  16,
+  10,
+  10,
+  11,
+  12,
+  12,
+  12,
+  13,
+  13,
+  13,
+  13,
+  14,
+  13,
+  15,
+  15,
+  16,
+  16,
+  10,
+  11,
+  12,
+  12,
+  13,
+  13,
+  13,
+  13,
+  13,
+  14,
+  14,
+  14,
+  15,
+  15,
+  16,
+  16,
+  11,
+  11,
+  12,
+  13,
+  13,
+  13,
+  14,
+  14,
+  14,
+  14,
+  15,
+  15,
+  15,
+  16,
+  18,
+  18,
+  10,
+  10,
+  11,
+  12,
+  12,
+  13,
+  13,
+  14,
+  14,
+  14,
+  14,
+  15,
+  15,
+  16,
+  17,
+  17,
+  11,
+  11,
+  12,
+  12,
+  13,
+  13,
+  13,
+  15,
+  14,
+  15,
+  15,
+  16,
+  16,
+  16,
+  18,
+  17,
+  11,
+  12,
+  12,
+  13,
+  13,
+  14,
+  14,
+  15,
+  14,
+  15,
+  16,
+  15,
+  16,
+  17,
+  18,
+  19,
+  12,
+  12,
+  12,
+  13,
+  14,
+  14,
+  14,
+  14,
+  15,
+  15,
+  15,
+  16,
+  17,
+  17,
+  17,
+  18,
+  12,
+  13,
+  13,
+  14,
+  14,
+  15,
+  14,
+  15,
+  16,
+  16,
+  17,
+  17,
+  17,
+  18,
+  18,
+  18,
+  13,
+  13,
+  14,
+  15,
+  15,
+  15,
+  16,
+  16,
+  16,
+  16,
+  16,
+  17,
+  18,
+  17,
+  18,
+  18,
+  14,
+  14,
+  14,
+  15,
+  15,
+  15,
+  17,
+  16,
+  16,
+  19,
+  17,
+  17,
+  17,
+  19,
+  18,
+  18,
+  13,
+  14,
+  15,
+  16,
+  16,
+  16,
+  17,
+  16,
+  17,
+  17,
+  18,
+  18,
+  21,
+  20,
+  21,
+  18
+];
+o0.t15l = [
+  3,
+  5,
+  6,
+  8,
+  8,
+  9,
+  10,
+  10,
+  10,
+  11,
+  11,
+  12,
+  12,
+  12,
+  13,
+  14,
+  5,
+  5,
+  7,
+  8,
+  9,
+  9,
+  10,
+  10,
+  10,
+  11,
+  11,
+  12,
+  12,
+  12,
+  13,
+  13,
+  6,
+  7,
+  7,
+  8,
+  9,
+  9,
+  10,
+  10,
+  10,
+  11,
+  11,
+  12,
+  12,
+  13,
+  13,
+  13,
+  7,
+  8,
+  8,
+  9,
+  9,
+  10,
+  10,
+  11,
+  11,
+  11,
+  12,
+  12,
+  12,
+  13,
+  13,
+  13,
+  8,
+  8,
+  9,
+  9,
+  10,
+  10,
+  11,
+  11,
+  11,
+  11,
+  12,
+  12,
+  12,
+  13,
+  13,
+  13,
+  9,
+  9,
+  9,
+  10,
+  10,
+  10,
+  11,
+  11,
+  11,
+  11,
+  12,
+  12,
+  13,
+  13,
+  13,
+  14,
+  10,
+  9,
+  10,
+  10,
+  10,
+  11,
+  11,
+  11,
+  11,
+  12,
+  12,
+  12,
+  13,
+  13,
+  14,
+  14,
+  10,
+  10,
+  10,
+  11,
+  11,
+  11,
+  11,
+  12,
+  12,
+  12,
+  12,
+  12,
+  13,
+  13,
+  13,
+  14,
+  10,
+  10,
+  10,
+  11,
+  11,
+  11,
+  11,
+  12,
+  12,
+  12,
+  12,
+  13,
+  13,
+  14,
+  14,
+  14,
+  10,
+  10,
+  11,
+  11,
+  11,
+  11,
+  12,
+  12,
+  12,
+  13,
+  13,
+  13,
+  13,
+  14,
+  14,
+  14,
+  11,
+  11,
+  11,
+  11,
+  12,
+  12,
+  12,
+  12,
+  12,
+  13,
+  13,
+  13,
+  13,
+  14,
+  15,
+  14,
+  11,
+  11,
+  11,
+  11,
+  12,
+  12,
+  12,
+  12,
+  13,
+  13,
+  13,
+  13,
+  14,
+  14,
+  14,
+  15,
+  12,
+  12,
+  11,
+  12,
+  12,
+  12,
+  13,
+  13,
+  13,
+  13,
+  13,
+  13,
+  14,
+  14,
+  15,
+  15,
+  12,
+  12,
+  12,
+  12,
+  12,
+  13,
+  13,
+  13,
+  13,
+  14,
+  14,
+  14,
+  14,
+  14,
+  15,
+  15,
+  13,
+  13,
+  13,
+  13,
+  13,
+  13,
+  13,
+  13,
+  14,
+  14,
+  14,
+  14,
+  15,
+  15,
+  14,
+  15,
+  13,
+  13,
+  13,
+  13,
+  13,
+  13,
+  13,
+  14,
+  14,
+  14,
+  14,
+  14,
+  15,
+  15,
+  15,
+  15
+];
+o0.t16_5l = [
+  1,
+  5,
+  7,
+  9,
+  10,
+  10,
+  11,
+  11,
+  12,
+  12,
+  12,
+  13,
+  13,
+  13,
+  14,
+  11,
+  4,
+  6,
+  8,
+  9,
+  10,
+  11,
+  11,
+  11,
+  12,
+  12,
+  12,
+  13,
+  14,
+  13,
+  14,
+  11,
+  7,
+  8,
+  9,
+  10,
+  11,
+  11,
+  12,
+  12,
+  13,
+  12,
+  13,
+  13,
+  13,
+  14,
+  14,
+  12,
+  9,
+  9,
+  10,
+  11,
+  11,
+  12,
+  12,
+  12,
+  13,
+  13,
+  14,
+  14,
+  14,
+  15,
+  15,
+  13,
+  10,
+  10,
+  11,
+  11,
+  12,
+  12,
+  13,
+  13,
+  13,
+  14,
+  14,
+  14,
+  15,
+  15,
+  15,
+  12,
+  10,
+  10,
+  11,
+  11,
+  12,
+  13,
+  13,
+  14,
+  13,
+  14,
+  14,
+  15,
+  15,
+  15,
+  16,
+  13,
+  11,
+  11,
+  11,
+  12,
+  13,
+  13,
+  13,
+  13,
+  14,
+  14,
+  14,
+  14,
+  15,
+  15,
+  16,
+  13,
+  11,
+  11,
+  12,
+  12,
+  13,
+  13,
+  13,
+  14,
+  14,
+  15,
+  15,
+  15,
+  15,
+  17,
+  17,
+  13,
+  11,
+  12,
+  12,
+  13,
+  13,
+  13,
+  14,
+  14,
+  15,
+  15,
+  15,
+  15,
+  16,
+  16,
+  16,
+  13,
+  12,
+  12,
+  12,
+  13,
+  13,
+  14,
+  14,
+  15,
+  15,
+  15,
+  15,
+  16,
+  15,
+  16,
+  15,
+  14,
+  12,
+  13,
+  12,
+  13,
+  14,
+  14,
+  14,
+  14,
+  15,
+  16,
+  16,
+  16,
+  17,
+  17,
+  16,
+  13,
+  13,
+  13,
+  13,
+  13,
+  14,
+  14,
+  15,
+  16,
+  16,
+  16,
+  16,
+  16,
+  16,
+  15,
+  16,
+  14,
+  13,
+  14,
+  14,
+  14,
+  14,
+  15,
+  15,
+  15,
+  15,
+  17,
+  16,
+  16,
+  16,
+  16,
+  18,
+  14,
+  15,
+  14,
+  14,
+  14,
+  15,
+  15,
+  16,
+  16,
+  16,
+  18,
+  17,
+  17,
+  17,
+  19,
+  17,
+  14,
+  14,
+  15,
+  13,
+  14,
+  16,
+  16,
+  15,
+  16,
+  16,
+  17,
+  18,
+  17,
+  19,
+  17,
+  16,
+  14,
+  11,
+  11,
+  11,
+  12,
+  12,
+  13,
+  13,
+  13,
+  14,
+  14,
+  14,
+  14,
+  14,
+  14,
+  14,
+  12
+];
+o0.t16l = [
+  1,
+  5,
+  7,
+  9,
+  10,
+  10,
+  11,
+  11,
+  12,
+  12,
+  12,
+  13,
+  13,
+  13,
+  14,
+  10,
+  4,
+  6,
+  8,
+  9,
+  10,
+  11,
+  11,
+  11,
+  12,
+  12,
+  12,
+  13,
+  14,
+  13,
+  14,
+  10,
+  7,
+  8,
+  9,
+  10,
+  11,
+  11,
+  12,
+  12,
+  13,
+  12,
+  13,
+  13,
+  13,
+  14,
+  14,
+  11,
+  9,
+  9,
+  10,
+  11,
+  11,
+  12,
+  12,
+  12,
+  13,
+  13,
+  14,
+  14,
+  14,
+  15,
+  15,
+  12,
+  10,
+  10,
+  11,
+  11,
+  12,
+  12,
+  13,
+  13,
+  13,
+  14,
+  14,
+  14,
+  15,
+  15,
+  15,
+  11,
+  10,
+  10,
+  11,
+  11,
+  12,
+  13,
+  13,
+  14,
+  13,
+  14,
+  14,
+  15,
+  15,
+  15,
+  16,
+  12,
+  11,
+  11,
+  11,
+  12,
+  13,
+  13,
+  13,
+  13,
+  14,
+  14,
+  14,
+  14,
+  15,
+  15,
+  16,
+  12,
+  11,
+  11,
+  12,
+  12,
+  13,
+  13,
+  13,
+  14,
+  14,
+  15,
+  15,
+  15,
+  15,
+  17,
+  17,
+  12,
+  11,
+  12,
+  12,
+  13,
+  13,
+  13,
+  14,
+  14,
+  15,
+  15,
+  15,
+  15,
+  16,
+  16,
+  16,
+  12,
+  12,
+  12,
+  12,
+  13,
+  13,
+  14,
+  14,
+  15,
+  15,
+  15,
+  15,
+  16,
+  15,
+  16,
+  15,
+  13,
+  12,
+  13,
+  12,
+  13,
+  14,
+  14,
+  14,
+  14,
+  15,
+  16,
+  16,
+  16,
+  17,
+  17,
+  16,
+  12,
+  13,
+  13,
+  13,
+  13,
+  14,
+  14,
+  15,
+  16,
+  16,
+  16,
+  16,
+  16,
+  16,
+  15,
+  16,
+  13,
+  13,
+  14,
+  14,
+  14,
+  14,
+  15,
+  15,
+  15,
+  15,
+  17,
+  16,
+  16,
+  16,
+  16,
+  18,
+  13,
+  15,
+  14,
+  14,
+  14,
+  15,
+  15,
+  16,
+  16,
+  16,
+  18,
+  17,
+  17,
+  17,
+  19,
+  17,
+  13,
+  14,
+  15,
+  13,
+  14,
+  16,
+  16,
+  15,
+  16,
+  16,
+  17,
+  18,
+  17,
+  19,
+  17,
+  16,
+  13,
+  10,
+  10,
+  10,
+  11,
+  11,
+  12,
+  12,
+  12,
+  13,
+  13,
+  13,
+  13,
+  13,
+  13,
+  13,
+  10
+];
+o0.t24l = [
+  4,
+  5,
+  7,
+  8,
+  9,
+  10,
+  10,
+  11,
+  11,
+  12,
+  12,
+  12,
+  12,
+  12,
+  13,
+  10,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  10,
+  11,
+  11,
+  11,
+  12,
+  12,
+  12,
+  12,
+  12,
+  10,
+  7,
+  7,
+  8,
+  9,
+  9,
+  10,
+  10,
+  11,
+  11,
+  11,
+  11,
+  12,
+  12,
+  12,
+  13,
+  9,
+  8,
+  8,
+  9,
+  9,
+  10,
+  10,
+  10,
+  11,
+  11,
+  11,
+  11,
+  12,
+  12,
+  12,
+  12,
+  9,
+  9,
+  9,
+  9,
+  10,
+  10,
+  10,
+  10,
+  11,
+  11,
+  11,
+  12,
+  12,
+  12,
+  12,
+  13,
+  9,
+  10,
+  9,
+  10,
+  10,
+  10,
+  10,
+  11,
+  11,
+  11,
+  11,
+  12,
+  12,
+  12,
+  12,
+  12,
+  9,
+  10,
+  10,
+  10,
+  10,
+  10,
+  11,
+  11,
+  11,
+  11,
+  12,
+  12,
+  12,
+  12,
+  12,
+  13,
+  9,
+  11,
+  10,
+  10,
+  10,
+  11,
+  11,
+  11,
+  11,
+  12,
+  12,
+  12,
+  12,
+  12,
+  13,
+  13,
+  10,
+  11,
+  11,
+  11,
+  11,
+  11,
+  11,
+  11,
+  11,
+  11,
+  12,
+  12,
+  12,
+  12,
+  13,
+  13,
+  10,
+  11,
+  11,
+  11,
+  11,
+  11,
+  11,
+  11,
+  12,
+  12,
+  12,
+  12,
+  12,
+  13,
+  13,
+  13,
+  10,
+  12,
+  11,
+  11,
+  11,
+  11,
+  12,
+  12,
+  12,
+  12,
+  12,
+  12,
+  13,
+  13,
+  13,
+  13,
+  10,
+  12,
+  12,
+  11,
+  11,
+  11,
+  12,
+  12,
+  12,
+  12,
+  12,
+  12,
+  13,
+  13,
+  13,
+  13,
+  10,
+  12,
+  12,
+  12,
+  12,
+  12,
+  12,
+  12,
+  12,
+  12,
+  12,
+  13,
+  13,
+  13,
+  13,
+  13,
+  10,
+  12,
+  12,
+  12,
+  12,
+  12,
+  12,
+  12,
+  12,
+  13,
+  13,
+  13,
+  13,
+  13,
+  13,
+  13,
+  10,
+  13,
+  12,
+  12,
+  12,
+  12,
+  12,
+  12,
+  13,
+  13,
+  13,
+  13,
+  13,
+  13,
+  13,
+  13,
+  10,
+  9,
+  9,
+  9,
+  9,
+  9,
+  9,
+  9,
+  9,
+  9,
+  9,
+  9,
+  10,
+  10,
+  10,
+  10,
+  6
+];
+o0.t32l = [
+  1 + 0,
+  4 + 1,
+  4 + 1,
+  5 + 2,
+  4 + 1,
+  6 + 2,
+  5 + 2,
+  6 + 3,
+  4 + 1,
+  5 + 2,
+  5 + 2,
+  6 + 3,
+  5 + 2,
+  6 + 3,
+  6 + 3,
+  6 + 4
+];
+o0.t33l = [
+  4 + 0,
+  4 + 1,
+  4 + 1,
+  4 + 2,
+  4 + 1,
+  4 + 2,
+  4 + 2,
+  4 + 3,
+  4 + 1,
+  4 + 2,
+  4 + 2,
+  4 + 3,
+  4 + 2,
+  4 + 3,
+  4 + 3,
+  4 + 4
+];
+o0.ht = [
+  /* xlen, linmax, table, hlen */
+  new q0(0, 0, null, null),
+  new q0(2, 0, o0.t1HB, o0.t1l),
+  new q0(3, 0, o0.t2HB, o0.t2l),
+  new q0(3, 0, o0.t3HB, o0.t3l),
+  new q0(0, 0, null, null),
+  /* Apparently not used */
+  new q0(4, 0, o0.t5HB, o0.t5l),
+  new q0(4, 0, o0.t6HB, o0.t6l),
+  new q0(6, 0, o0.t7HB, o0.t7l),
+  new q0(6, 0, o0.t8HB, o0.t8l),
+  new q0(6, 0, o0.t9HB, o0.t9l),
+  new q0(8, 0, o0.t10HB, o0.t10l),
+  new q0(8, 0, o0.t11HB, o0.t11l),
+  new q0(8, 0, o0.t12HB, o0.t12l),
+  new q0(16, 0, o0.t13HB, o0.t13l),
+  new q0(0, 0, null, o0.t16_5l),
+  /* Apparently not used */
+  new q0(16, 0, o0.t15HB, o0.t15l),
+  new q0(1, 1, o0.t16HB, o0.t16l),
+  new q0(2, 3, o0.t16HB, o0.t16l),
+  new q0(3, 7, o0.t16HB, o0.t16l),
+  new q0(4, 15, o0.t16HB, o0.t16l),
+  new q0(6, 63, o0.t16HB, o0.t16l),
+  new q0(8, 255, o0.t16HB, o0.t16l),
+  new q0(10, 1023, o0.t16HB, o0.t16l),
+  new q0(13, 8191, o0.t16HB, o0.t16l),
+  new q0(4, 15, o0.t24HB, o0.t24l),
+  new q0(5, 31, o0.t24HB, o0.t24l),
+  new q0(6, 63, o0.t24HB, o0.t24l),
+  new q0(7, 127, o0.t24HB, o0.t24l),
+  new q0(8, 255, o0.t24HB, o0.t24l),
+  new q0(9, 511, o0.t24HB, o0.t24l),
+  new q0(11, 2047, o0.t24HB, o0.t24l),
+  new q0(13, 8191, o0.t24HB, o0.t24l),
+  new q0(0, 0, o0.t32HB, o0.t32l),
+  new q0(0, 0, o0.t33HB, o0.t33l)
+];
+o0.largetbl = [
+  65540,
+  327685,
+  458759,
+  589832,
+  655369,
+  655370,
+  720906,
+  720907,
+  786443,
+  786444,
+  786444,
+  851980,
+  851980,
+  851980,
+  917517,
+  655370,
+  262149,
+  393222,
+  524295,
+  589832,
+  655369,
+  720906,
+  720906,
+  720907,
+  786443,
+  786443,
+  786444,
+  851980,
+  917516,
+  851980,
+  917516,
+  655370,
+  458759,
+  524295,
+  589832,
+  655369,
+  720905,
+  720906,
+  786442,
+  786443,
+  851979,
+  786443,
+  851979,
+  851980,
+  851980,
+  917516,
+  917517,
+  720905,
+  589832,
+  589832,
+  655369,
+  720905,
+  720906,
+  786442,
+  786442,
+  786443,
+  851979,
+  851979,
+  917515,
+  917516,
+  917516,
+  983052,
+  983052,
+  786441,
+  655369,
+  655369,
+  720905,
+  720906,
+  786442,
+  786442,
+  851978,
+  851979,
+  851979,
+  917515,
+  917516,
+  917516,
+  983052,
+  983052,
+  983053,
+  720905,
+  655370,
+  655369,
+  720906,
+  720906,
+  786442,
+  851978,
+  851979,
+  917515,
+  851979,
+  917515,
+  917516,
+  983052,
+  983052,
+  983052,
+  1048588,
+  786441,
+  720906,
+  720906,
+  720906,
+  786442,
+  851978,
+  851979,
+  851979,
+  851979,
+  917515,
+  917516,
+  917516,
+  917516,
+  983052,
+  983052,
+  1048589,
+  786441,
+  720907,
+  720906,
+  786442,
+  786442,
+  851979,
+  851979,
+  851979,
+  917515,
+  917516,
+  983052,
+  983052,
+  983052,
+  983052,
+  1114125,
+  1114125,
+  786442,
+  720907,
+  786443,
+  786443,
+  851979,
+  851979,
+  851979,
+  917515,
+  917515,
+  983051,
+  983052,
+  983052,
+  983052,
+  1048588,
+  1048589,
+  1048589,
+  786442,
+  786443,
+  786443,
+  786443,
+  851979,
+  851979,
+  917515,
+  917515,
+  983052,
+  983052,
+  983052,
+  983052,
+  1048588,
+  983053,
+  1048589,
+  983053,
+  851978,
+  786444,
+  851979,
+  786443,
+  851979,
+  917515,
+  917516,
+  917516,
+  917516,
+  983052,
+  1048588,
+  1048588,
+  1048589,
+  1114125,
+  1114125,
+  1048589,
+  786442,
+  851980,
+  851980,
+  851979,
+  851979,
+  917515,
+  917516,
+  983052,
+  1048588,
+  1048588,
+  1048588,
+  1048588,
+  1048589,
+  1048589,
+  983053,
+  1048589,
+  851978,
+  851980,
+  917516,
+  917516,
+  917516,
+  917516,
+  983052,
+  983052,
+  983052,
+  983052,
+  1114124,
+  1048589,
+  1048589,
+  1048589,
+  1048589,
+  1179661,
+  851978,
+  983052,
+  917516,
+  917516,
+  917516,
+  983052,
+  983052,
+  1048588,
+  1048588,
+  1048589,
+  1179661,
+  1114125,
+  1114125,
+  1114125,
+  1245197,
+  1114125,
+  851978,
+  917517,
+  983052,
+  851980,
+  917516,
+  1048588,
+  1048588,
+  983052,
+  1048589,
+  1048589,
+  1114125,
+  1179661,
+  1114125,
+  1245197,
+  1114125,
+  1048589,
+  851978,
+  655369,
+  655369,
+  655369,
+  720905,
+  720905,
+  786441,
+  786441,
+  786441,
+  851977,
+  851977,
+  851977,
+  851978,
+  851978,
+  851978,
+  851978,
+  655366
+];
+o0.table23 = [
+  65538,
+  262147,
+  458759,
+  262148,
+  327684,
+  458759,
+  393222,
+  458759,
+  524296
+];
+o0.table56 = [
+  65539,
+  262148,
+  458758,
+  524296,
+  262148,
+  327684,
+  524294,
+  589831,
+  458757,
+  524294,
+  589831,
+  655368,
+  524295,
+  524295,
+  589832,
+  655369
+];
+o0.bitrate_table = [
+  [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, -1],
+  /* MPEG 2 */
+  [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, -1],
+  /* MPEG 1 */
+  [0, 8, 16, 24, 32, 40, 48, 56, 64, -1, -1, -1, -1, -1, -1, -1]
+  /* MPEG 2.5 */
+];
+o0.samplerate_table = [
+  [22050, 24e3, 16e3, -1],
+  [44100, 48e3, 32e3, -1],
+  [11025, 12e3, 8e3, -1]
+];
+o0.scfsi_band = [0, 6, 11, 16, 21];
+var He = o0;
+var Me;
+var ra;
+function Va() {
+  if (ra)
+    return Me;
+  ra = 1;
+  var w = Ia, Z = Q0, X = Z.VbrMode, z = Z.Float, u0 = Z.Util, W = Z.new_float, Q = Z.new_int, D = Z.assert, g = t1(), f0 = Ha, A = ne;
+  m.Q_MAX = 256 + 1, m.Q_MAX2 = 116, m.LARGE_BITS = 1e5, m.IXMAX_VAL = 8206;
+  function m() {
+    var O = Ve(), s0 = null, K = null, t0 = null;
+    this.setModules = function(S, L, V) {
+      s0 = S, K = L, t0 = V;
+    };
+    function U(S) {
+      return D(0 <= S + m.Q_MAX2 && S < m.Q_MAX), p[S + m.Q_MAX2];
+    }
+    this.IPOW20 = function(S) {
+      return D(0 <= S && S < m.Q_MAX), H[S];
+    };
+    var R = 2220446049250313e-31, o = m.IXMAX_VAL, u = o + 2, d = m.Q_MAX, e = m.Q_MAX2;
+    m.LARGE_BITS;
+    var l = 100;
+    this.nr_of_sfb_block = [
+      [[6, 5, 5, 5], [9, 9, 9, 9], [6, 9, 9, 9]],
+      [[6, 5, 7, 3], [9, 9, 12, 6], [6, 9, 12, 6]],
+      [[11, 10, 0, 0], [18, 18, 0, 0], [15, 18, 0, 0]],
+      [[7, 7, 7, 0], [12, 12, 12, 0], [6, 15, 12, 0]],
+      [[6, 6, 6, 3], [12, 9, 9, 6], [6, 12, 9, 6]],
+      [[8, 8, 5, 0], [15, 12, 9, 0], [6, 18, 9, 0]]
+    ];
+    var M = [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      1,
+      1,
+      1,
+      2,
+      2,
+      3,
+      3,
+      3,
+      2,
+      0
+    ];
+    this.pretab = M, this.sfBandIndex = [
+      // Table B.2.b: 22.05 kHz
+      new w(
+        [
+          0,
+          6,
+          12,
+          18,
+          24,
+          30,
+          36,
+          44,
+          54,
+          66,
+          80,
+          96,
+          116,
+          140,
+          168,
+          200,
+          238,
+          284,
+          336,
+          396,
+          464,
+          522,
+          576
+        ],
+        [0, 4, 8, 12, 18, 24, 32, 42, 56, 74, 100, 132, 174, 192],
+        [0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0]
+        //  sfb12 pseudo sub bands
+      ),
+      /* Table B.2.c: 24 kHz */
+      /* docs: 332. mpg123(broken): 330 */
+      new w(
+        [
+          0,
+          6,
+          12,
+          18,
+          24,
+          30,
+          36,
+          44,
+          54,
+          66,
+          80,
+          96,
+          114,
+          136,
+          162,
+          194,
+          232,
+          278,
+          332,
+          394,
+          464,
+          540,
+          576
+        ],
+        [0, 4, 8, 12, 18, 26, 36, 48, 62, 80, 104, 136, 180, 192],
+        [0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0]
+        /*  sfb12 pseudo sub bands */
+      ),
+      /* Table B.2.a: 16 kHz */
+      new w(
+        [
+          0,
+          6,
+          12,
+          18,
+          24,
+          30,
+          36,
+          44,
+          54,
+          66,
+          80,
+          96,
+          116,
+          140,
+          168,
+          200,
+          238,
+          284,
+          336,
+          396,
+          464,
+          522,
+          576
+        ],
+        [0, 4, 8, 12, 18, 26, 36, 48, 62, 80, 104, 134, 174, 192],
+        [0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0]
+        /*  sfb12 pseudo sub bands */
+      ),
+      /* Table B.8.b: 44.1 kHz */
+      new w(
+        [
+          0,
+          4,
+          8,
+          12,
+          16,
+          20,
+          24,
+          30,
+          36,
+          44,
+          52,
+          62,
+          74,
+          90,
+          110,
+          134,
+          162,
+          196,
+          238,
+          288,
+          342,
+          418,
+          576
+        ],
+        [0, 4, 8, 12, 16, 22, 30, 40, 52, 66, 84, 106, 136, 192],
+        [0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0]
+        /*  sfb12 pseudo sub bands */
+      ),
+      /* Table B.8.c: 48 kHz */
+      new w(
+        [
+          0,
+          4,
+          8,
+          12,
+          16,
+          20,
+          24,
+          30,
+          36,
+          42,
+          50,
+          60,
+          72,
+          88,
+          106,
+          128,
+          156,
+          190,
+          230,
+          276,
+          330,
+          384,
+          576
+        ],
+        [0, 4, 8, 12, 16, 22, 28, 38, 50, 64, 80, 100, 126, 192],
+        [0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0]
+        /*  sfb12 pseudo sub bands */
+      ),
+      /* Table B.8.a: 32 kHz */
+      new w(
+        [
+          0,
+          4,
+          8,
+          12,
+          16,
+          20,
+          24,
+          30,
+          36,
+          44,
+          54,
+          66,
+          82,
+          102,
+          126,
+          156,
+          194,
+          240,
+          296,
+          364,
+          448,
+          550,
+          576
+        ],
+        [0, 4, 8, 12, 16, 22, 30, 42, 58, 78, 104, 138, 180, 192],
+        [0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0]
+        /*  sfb12 pseudo sub bands */
+      ),
+      /* MPEG-2.5 11.025 kHz */
+      new w(
+        [
+          0,
+          6,
+          12,
+          18,
+          24,
+          30,
+          36,
+          44,
+          54,
+          66,
+          80,
+          96,
+          116,
+          140,
+          168,
+          200,
+          238,
+          284,
+          336,
+          396,
+          464,
+          522,
+          576
+        ],
+        [
+          0 / 3,
+          12 / 3,
+          24 / 3,
+          36 / 3,
+          54 / 3,
+          78 / 3,
+          108 / 3,
+          144 / 3,
+          186 / 3,
+          240 / 3,
+          312 / 3,
+          402 / 3,
+          522 / 3,
+          576 / 3
+        ],
+        [0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0]
+        /*  sfb12 pseudo sub bands */
+      ),
+      /* MPEG-2.5 12 kHz */
+      new w(
+        [
+          0,
+          6,
+          12,
+          18,
+          24,
+          30,
+          36,
+          44,
+          54,
+          66,
+          80,
+          96,
+          116,
+          140,
+          168,
+          200,
+          238,
+          284,
+          336,
+          396,
+          464,
+          522,
+          576
+        ],
+        [
+          0 / 3,
+          12 / 3,
+          24 / 3,
+          36 / 3,
+          54 / 3,
+          78 / 3,
+          108 / 3,
+          144 / 3,
+          186 / 3,
+          240 / 3,
+          312 / 3,
+          402 / 3,
+          522 / 3,
+          576 / 3
+        ],
+        [0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0]
+        /*  sfb12 pseudo sub bands */
+      ),
+      /* MPEG-2.5 8 kHz */
+      new w(
+        [
+          0,
+          12,
+          24,
+          36,
+          48,
+          60,
+          72,
+          88,
+          108,
+          132,
+          160,
+          192,
+          232,
+          280,
+          336,
+          400,
+          476,
+          566,
+          568,
+          570,
+          572,
+          574,
+          576
+        ],
+        [
+          0 / 3,
+          24 / 3,
+          48 / 3,
+          72 / 3,
+          108 / 3,
+          156 / 3,
+          216 / 3,
+          288 / 3,
+          372 / 3,
+          480 / 3,
+          486 / 3,
+          492 / 3,
+          498 / 3,
+          576 / 3
+        ],
+        [0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0]
+        /*  sfb12 pseudo sub bands */
+      )
+    ];
+    var p = W(d + e + 1), H = W(d), B = W(u), I = W(u);
+    this.adj43 = I;
+    function v0(S, L) {
+      var V = t0.ATHformula(L, S);
+      return V -= l, V = Math.pow(10, V / 10 + S.ATHlower), V;
+    }
+    function b(S) {
+      for (var L = S.internal_flags.ATH.l, V = S.internal_flags.ATH.psfb21, N = S.internal_flags.ATH.s, P = S.internal_flags.ATH.psfb12, E = S.internal_flags, i = S.out_samplerate, s = 0; s < g.SBMAX_l; s++) {
+        var r = E.scalefac_band.l[s], n = E.scalefac_band.l[s + 1];
+        L[s] = z.MAX_VALUE;
+        for (var f = r; f < n; f++) {
+          var Y = f * i / 1152, J = v0(S, Y);
+          L[s] = Math.min(L[s], J);
+        }
+      }
+      for (var s = 0; s < g.PSFB21; s++) {
+        var r = E.scalefac_band.psfb21[s], n = E.scalefac_band.psfb21[s + 1];
+        V[s] = z.MAX_VALUE;
+        for (var f = r; f < n; f++) {
+          var Y = f * i / 1152, J = v0(S, Y);
+          V[s] = Math.min(V[s], J);
+        }
+      }
+      for (var s = 0; s < g.SBMAX_s; s++) {
+        var r = E.scalefac_band.s[s], n = E.scalefac_band.s[s + 1];
+        N[s] = z.MAX_VALUE;
+        for (var f = r; f < n; f++) {
+          var Y = f * i / 384, J = v0(S, Y);
+          N[s] = Math.min(N[s], J);
+        }
+        N[s] *= E.scalefac_band.s[s + 1] - E.scalefac_band.s[s];
+      }
+      for (var s = 0; s < g.PSFB12; s++) {
+        var r = E.scalefac_band.psfb12[s], n = E.scalefac_band.psfb12[s + 1];
+        P[s] = z.MAX_VALUE;
+        for (var f = r; f < n; f++) {
+          var Y = f * i / 384, J = v0(S, Y);
+          P[s] = Math.min(P[s], J);
+        }
+        P[s] *= E.scalefac_band.s[13] - E.scalefac_band.s[12];
+      }
+      if (S.noATH) {
+        for (var s = 0; s < g.SBMAX_l; s++)
+          L[s] = 1e-20;
+        for (var s = 0; s < g.PSFB21; s++)
+          V[s] = 1e-20;
+        for (var s = 0; s < g.SBMAX_s; s++)
+          N[s] = 1e-20;
+        for (var s = 0; s < g.PSFB12; s++)
+          P[s] = 1e-20;
+      }
+      E.ATH.floor = 10 * Math.log10(v0(S, -1));
+    }
+    this.iteration_init = function(S) {
+      var L = S.internal_flags, V = L.l3_side, N;
+      if (L.iteration_init_init == 0) {
+        for (L.iteration_init_init = 1, V.main_data_begin = 0, b(S), B[0] = 0, N = 1; N < u; N++)
+          B[N] = Math.pow(N, 4 / 3);
+        for (N = 0; N < u - 1; N++)
+          I[N] = N + 1 - Math.pow(
+            0.5 * (B[N] + B[N + 1]),
+            0.75
+          );
+        for (I[N] = 0.5, N = 0; N < d; N++)
+          H[N] = Math.pow(2, (N - 210) * -0.1875);
+        for (N = 0; N <= d + e; N++)
+          p[N] = Math.pow(2, (N - 210 - e) * 0.25);
+        s0.huffman_init(L);
+        {
+          var P, E, i, s;
+          for (N = S.exp_nspsytune >> 2 & 63, N >= 32 && (N -= 64), P = Math.pow(10, N / 4 / 10), N = S.exp_nspsytune >> 8 & 63, N >= 32 && (N -= 64), E = Math.pow(10, N / 4 / 10), N = S.exp_nspsytune >> 14 & 63, N >= 32 && (N -= 64), i = Math.pow(10, N / 4 / 10), N = S.exp_nspsytune >> 20 & 63, N >= 32 && (N -= 64), s = i * Math.pow(10, N / 4 / 10), N = 0; N < g.SBMAX_l; N++) {
+            var r;
+            N <= 6 ? r = P : N <= 13 ? r = E : N <= 20 ? r = i : r = s, L.nsPsy.longfact[N] = r;
+          }
+          for (N = 0; N < g.SBMAX_s; N++) {
+            var r;
+            N <= 5 ? r = P : N <= 10 ? r = E : N <= 11 ? r = i : r = s, L.nsPsy.shortfact[N] = r;
+          }
+        }
+      }
+    }, this.on_pe = function(S, L, V, N, P, E) {
+      var i = S.internal_flags, s = 0, r, n = Q(2), f, Y = new f0(s), J = K.ResvMaxBits(S, N, Y, E);
+      s = Y.bits;
+      var T = s + J;
+      for (T > A.MAX_BITS_PER_GRANULE && (T = A.MAX_BITS_PER_GRANULE), r = 0, f = 0; f < i.channels_out; ++f)
+        V[f] = Math.min(
+          A.MAX_BITS_PER_CHANNEL,
+          s / i.channels_out
+        ), n[f] = 0 | V[f] * L[P][f] / 700 - V[f], n[f] > N * 3 / 4 && (n[f] = N * 3 / 4), n[f] < 0 && (n[f] = 0), n[f] + V[f] > A.MAX_BITS_PER_CHANNEL && (n[f] = Math.max(
+          0,
+          A.MAX_BITS_PER_CHANNEL - V[f]
+        )), r += n[f];
+      if (r > J)
+        for (f = 0; f < i.channels_out; ++f)
+          n[f] = J * n[f] / r;
+      for (f = 0; f < i.channels_out; ++f)
+        V[f] += n[f], J -= n[f];
+      for (r = 0, f = 0; f < i.channels_out; ++f)
+        r += V[f];
+      if (r > A.MAX_BITS_PER_GRANULE) {
+        var q = 0;
+        for (f = 0; f < i.channels_out; ++f)
+          V[f] *= A.MAX_BITS_PER_GRANULE, V[f] /= r, q += V[f];
+      }
+      return T;
+    }, this.reduce_side = function(S, L, V, N) {
+      D(S[0] + S[1] <= A.MAX_BITS_PER_GRANULE);
+      var P = 0.33 * (0.5 - L) / 0.5;
+      P < 0 && (P = 0), P > 0.5 && (P = 0.5);
+      var E = 0 | P * 0.5 * (S[0] + S[1]);
+      E > A.MAX_BITS_PER_CHANNEL - S[0] && (E = A.MAX_BITS_PER_CHANNEL - S[0]), E < 0 && (E = 0), S[1] >= 125 && (S[1] - E > 125 ? (S[0] < V && (S[0] += E), S[1] -= E) : (S[0] += S[1] - 125, S[1] = 125)), E = S[0] + S[1], E > N && (S[0] = N * S[0] / E, S[1] = N * S[1] / E), D(S[0] <= A.MAX_BITS_PER_CHANNEL), D(S[1] <= A.MAX_BITS_PER_CHANNEL), D(S[0] + S[1] <= A.MAX_BITS_PER_GRANULE);
+    }, this.athAdjust = function(S, L, V) {
+      var N = 90.30873362, P = 94.82444863, E = u0.FAST_LOG10_X(L, 10), i = S * S, s = 0;
+      return E -= V, i > 1e-20 && (s = 1 + u0.FAST_LOG10_X(i, 10 / N)), s < 0 && (s = 0), E *= s, E += V + N - P, Math.pow(10, 0.1 * E);
+    }, this.calc_xmin = function(S, L, V, N) {
+      var P = 0, E = S.internal_flags, i, s = 0, r = 0, n = E.ATH, f = V.xr, Y = S.VBR == X.vbr_mtrh ? 1 : 0, J = E.masking_lower;
+      for ((S.VBR == X.vbr_mtrh || S.VBR == X.vbr_mt) && (J = 1), i = 0; i < V.psy_lmax; i++) {
+        var T, q, i0, h0, d0, M0;
+        S.VBR == X.vbr_rh || S.VBR == X.vbr_mtrh ? q = athAdjust(n.adjust, n.l[i], n.floor) : q = n.adjust * n.l[i], d0 = V.width[i], i0 = q / d0, h0 = R, M0 = d0 >> 1, T = 0;
+        do {
+          var R0, A0;
+          R0 = f[s] * f[s], T += R0, h0 += R0 < i0 ? R0 : i0, s++, A0 = f[s] * f[s], T += A0, h0 += A0 < i0 ? A0 : i0, s++;
+        } while (--M0 > 0);
+        if (T > q && r++, i == g.SBPSY_l) {
+          var w0 = q * E.nsPsy.longfact[i];
+          h0 < w0 && (h0 = w0);
+        }
+        if (Y != 0 && (q = h0), !S.ATHonly) {
+          var $0 = L.en.l[i];
+          if ($0 > 0) {
+            var w0;
+            w0 = T * L.thm.l[i] * J / $0, Y != 0 && (w0 *= E.nsPsy.longfact[i]), q < w0 && (q = w0);
+          }
+        }
+        Y != 0 ? N[P++] = q : N[P++] = q * E.nsPsy.longfact[i];
+      }
+      var f1 = 575;
+      if (V.block_type != g.SHORT_TYPE)
+        for (var t = 576; t-- != 0 && O.EQ(f[t], 0); )
+          f1 = t;
+      V.max_nonzero_coeff = f1;
+      for (var _ = V.sfb_smin; i < V.psymax; _++, i += 3) {
+        var d0, S0, E0;
+        for (S.VBR == X.vbr_rh || S.VBR == X.vbr_mtrh ? E0 = athAdjust(n.adjust, n.s[_], n.floor) : E0 = n.adjust * n.s[_], d0 = V.width[i], S0 = 0; S0 < 3; S0++) {
+          var T = 0, q, i0, h0, M0 = d0 >> 1;
+          i0 = E0 / d0, h0 = R;
+          do {
+            var R0, A0;
+            R0 = f[s] * f[s], T += R0, h0 += R0 < i0 ? R0 : i0, s++, A0 = f[s] * f[s], T += A0, h0 += A0 < i0 ? A0 : i0, s++;
+          } while (--M0 > 0);
+          if (T > E0 && r++, _ == g.SBPSY_s) {
+            var w0 = E0 * E.nsPsy.shortfact[_];
+            h0 < w0 && (h0 = w0);
+          }
+          if (Y != 0 ? q = h0 : q = E0, !S.ATHonly && !S.ATHshort) {
+            var $0 = L.en.s[_][S0];
+            if ($0 > 0) {
+              var w0;
+              w0 = T * L.thm.s[_][S0] * J / $0, Y != 0 && (w0 *= E.nsPsy.shortfact[_]), q < w0 && (q = w0);
+            }
+          }
+          Y != 0 ? N[P++] = q : N[P++] = q * E.nsPsy.shortfact[_];
+        }
+        S.useTemporal && (N[P - 3] > N[P - 3 + 1] && (N[P - 3 + 1] += (N[P - 3] - N[P - 3 + 1]) * E.decay), N[P - 3 + 1] > N[P - 3 + 2] && (N[P - 3 + 2] += (N[P - 3 + 1] - N[P - 3 + 2]) * E.decay));
+      }
+      return r;
+    };
+    function a(S) {
+      this.s = S;
+    }
+    this.calc_noise_core = function(S, L, V, N) {
+      var P = 0, E = L.s, i = S.l3_enc;
+      if (E > S.count1)
+        for (; V-- != 0; ) {
+          var s;
+          s = S.xr[E], E++, P += s * s, s = S.xr[E], E++, P += s * s;
+        }
+      else if (E > S.big_values) {
+        var r = W(2);
+        for (r[0] = 0, r[1] = N; V-- != 0; ) {
+          var s;
+          s = Math.abs(S.xr[E]) - r[i[E]], E++, P += s * s, s = Math.abs(S.xr[E]) - r[i[E]], E++, P += s * s;
+        }
+      } else
+        for (; V-- != 0; ) {
+          var s;
+          s = Math.abs(S.xr[E]) - B[i[E]] * N, E++, P += s * s, s = Math.abs(S.xr[E]) - B[i[E]] * N, E++, P += s * s;
+        }
+      return L.s = E, P;
+    }, this.calc_noise = function(S, L, V, N, P) {
+      var E = 0, i = 0, s, r, n = 0, f = 0, Y = 0, J = -20, T = 0, q = S.scalefac, i0 = 0;
+      for (N.over_SSD = 0, s = 0; s < S.psymax; s++) {
+        var h0 = S.global_gain - (q[i0++] + (S.preflag != 0 ? M[s] : 0) << S.scalefac_scale + 1) - S.subblock_gain[S.window[s]] * 8, d0 = 0;
+        if (P != null && P.step[s] == h0)
+          d0 = P.noise[s], T += S.width[s], V[E++] = d0 / L[i++], d0 = P.noise_log[s];
+        else {
+          var M0 = U(h0);
+          if (r = S.width[s] >> 1, T + S.width[s] > S.max_nonzero_coeff) {
+            var R0;
+            R0 = S.max_nonzero_coeff - T + 1, R0 > 0 ? r = R0 >> 1 : r = 0;
+          }
+          var A0 = new a(T);
+          d0 = this.calc_noise_core(S, A0, r, M0), T = A0.s, P != null && (P.step[s] = h0, P.noise[s] = d0), d0 = V[E++] = d0 / L[i++], d0 = u0.FAST_LOG10(Math.max(d0, 1e-20)), P != null && (P.noise_log[s] = d0);
+        }
+        if (P != null && (P.global_gain = S.global_gain), Y += d0, d0 > 0) {
+          var w0;
+          w0 = Math.max(0 | d0 * 10 + 0.5, 1), N.over_SSD += w0 * w0, n++, f += d0;
+        }
+        J = Math.max(J, d0);
+      }
+      return N.over_count = n, N.tot_noise = Y, N.over_noise = f, N.max_noise = J, n;
+    }, this.set_pinfo = function(S, L, V, N, P) {
+      var E = S.internal_flags, i, s, r, n, f, Y = L.scalefac_scale == 0 ? 0.5 : 1, J = L.scalefac, T = W(L3Side.SFBMAX), q = W(L3Side.SFBMAX), i0 = new CalcNoiseResult();
+      calc_xmin(S, V, L, T), calc_noise(L, T, q, i0, null);
+      var h0 = 0;
+      for (s = L.sfb_lmax, L.block_type != g.SHORT_TYPE && L.mixed_block_flag == 0 && (s = 22), i = 0; i < s; i++) {
+        var d0 = E.scalefac_band.l[i], M0 = E.scalefac_band.l[i + 1], R0 = M0 - d0;
+        for (n = 0; h0 < M0; h0++)
+          n += L.xr[h0] * L.xr[h0];
+        n /= R0, f = 1e15, E.pinfo.en[N][P][i] = f * n, E.pinfo.xfsf[N][P][i] = f * T[i] * q[i] / R0, V.en.l[i] > 0 && !S.ATHonly ? n = n / V.en.l[i] : n = 0, E.pinfo.thr[N][P][i] = f * Math.max(n * V.thm.l[i], E.ATH.l[i]), E.pinfo.LAMEsfb[N][P][i] = 0, L.preflag != 0 && i >= 11 && (E.pinfo.LAMEsfb[N][P][i] = -Y * M[i]), i < g.SBPSY_l && (D(J[i] >= 0), E.pinfo.LAMEsfb[N][P][i] -= Y * J[i]);
+      }
+      if (L.block_type == g.SHORT_TYPE)
+        for (s = i, i = L.sfb_smin; i < g.SBMAX_s; i++)
+          for (var d0 = E.scalefac_band.s[i], M0 = E.scalefac_band.s[i + 1], R0 = M0 - d0, A0 = 0; A0 < 3; A0++) {
+            for (n = 0, r = d0; r < M0; r++)
+              n += L.xr[h0] * L.xr[h0], h0++;
+            n = Math.max(n / R0, 1e-20), f = 1e15, E.pinfo.en_s[N][P][3 * i + A0] = f * n, E.pinfo.xfsf_s[N][P][3 * i + A0] = f * T[s] * q[s] / R0, V.en.s[i][A0] > 0 ? n = n / V.en.s[i][A0] : n = 0, (S.ATHonly || S.ATHshort) && (n = 0), E.pinfo.thr_s[N][P][3 * i + A0] = f * Math.max(
+              n * V.thm.s[i][A0],
+              E.ATH.s[i]
+            ), E.pinfo.LAMEsfb_s[N][P][3 * i + A0] = -2 * L.subblock_gain[A0], i < g.SBPSY_s && (E.pinfo.LAMEsfb_s[N][P][3 * i + A0] -= Y * J[s]), s++;
+          }
+      E.pinfo.LAMEqss[N][P] = L.global_gain, E.pinfo.LAMEmainbits[N][P] = L.part2_3_length + L.part2_length, E.pinfo.LAMEsfbits[N][P] = L.part2_length, E.pinfo.over[N][P] = i0.over_count, E.pinfo.max_noise[N][P] = i0.max_noise * 10, E.pinfo.over_noise[N][P] = i0.over_noise * 10, E.pinfo.tot_noise[N][P] = i0.tot_noise * 10, E.pinfo.over_SSD[N][P] = i0.over_SSD;
+    };
+  }
+  return Me = m, Me;
+}
+var Ee;
+var ta;
+function Oa() {
+  if (ta)
+    return Ee;
+  ta = 1;
+  var w = Q0, Z = w.System, X = w.Arrays, z = w.new_int, u0 = w.assert, W = t1(), Q = He, D = Le, g = Va();
+  function f0() {
+    var A = null;
+    this.qupvt = null, this.setModules = function(E) {
+      this.qupvt = E, A = E;
+    };
+    function m(E) {
+      this.bits = 0 | E;
+    }
+    var O = [
+      [0, 0],
+      /* 0 bands */
+      [0, 0],
+      /* 1 bands */
+      [0, 0],
+      /* 2 bands */
+      [0, 0],
+      /* 3 bands */
+      [0, 0],
+      /* 4 bands */
+      [0, 1],
+      /* 5 bands */
+      [1, 1],
+      /* 6 bands */
+      [1, 1],
+      /* 7 bands */
+      [1, 2],
+      /* 8 bands */
+      [2, 2],
+      /* 9 bands */
+      [2, 3],
+      /* 10 bands */
+      [2, 3],
+      /* 11 bands */
+      [3, 4],
+      /* 12 bands */
+      [3, 4],
+      /* 13 bands */
+      [3, 4],
+      /* 14 bands */
+      [4, 5],
+      /* 15 bands */
+      [4, 5],
+      /* 16 bands */
+      [4, 6],
+      /* 17 bands */
+      [5, 6],
+      /* 18 bands */
+      [5, 6],
+      /* 19 bands */
+      [5, 7],
+      /* 20 bands */
+      [6, 7],
+      /* 21 bands */
+      [6, 7]
+      /* 22 bands */
+    ];
+    function s0(E, i, s, r, n, f) {
+      var Y = 0.5946 / i;
+      for (E = E >> 1; E-- != 0; )
+        n[f++] = Y > s[r++] ? 0 : 1, n[f++] = Y > s[r++] ? 0 : 1;
+    }
+    function K(E, i, s, r, n, f) {
+      E = E >> 1;
+      var Y = E % 2;
+      for (E = E >> 1; E-- != 0; ) {
+        var J, T, q, i0, h0, d0, M0, R0;
+        J = s[r++] * i, T = s[r++] * i, h0 = 0 | J, q = s[r++] * i, d0 = 0 | T, i0 = s[r++] * i, M0 = 0 | q, J += A.adj43[h0], R0 = 0 | i0, T += A.adj43[d0], n[f++] = 0 | J, q += A.adj43[M0], n[f++] = 0 | T, i0 += A.adj43[R0], n[f++] = 0 | q, n[f++] = 0 | i0;
+      }
+      if (Y != 0) {
+        var J, T, h0, d0;
+        J = s[r++] * i, T = s[r++] * i, h0 = 0 | J, d0 = 0 | T, J += A.adj43[h0], T += A.adj43[d0], n[f++] = 0 | J, n[f++] = 0 | T;
+      }
+    }
+    function t0(E, i, s, r, n) {
+      var f, Y, J = 0, T, q = 0, i0 = 0, h0 = 0, d0 = i, M0 = 0, R0 = d0, A0 = 0, w0 = E, $0 = 0;
+      for (T = n != null && r.global_gain == n.global_gain, r.block_type == W.SHORT_TYPE ? Y = 38 : Y = 21, f = 0; f <= Y; f++) {
+        var f1 = -1;
+        if ((T || r.block_type == W.NORM_TYPE) && (f1 = r.global_gain - (r.scalefac[f] + (r.preflag != 0 ? A.pretab[f] : 0) << r.scalefac_scale + 1) - r.subblock_gain[r.window[f]] * 8), u0(r.width[f] >= 0), T && n.step[f] == f1)
+          q != 0 && (K(
+            q,
+            s,
+            w0,
+            $0,
+            R0,
+            A0
+          ), q = 0), i0 != 0 && (s0(
+            i0,
+            s,
+            w0,
+            $0,
+            R0,
+            A0
+          ), i0 = 0);
+        else {
+          var t = r.width[f];
+          if (J + r.width[f] > r.max_nonzero_coeff) {
+            var _;
+            _ = r.max_nonzero_coeff - J + 1, X.fill(i, r.max_nonzero_coeff, 576, 0), t = _, t < 0 && (t = 0), f = Y + 1;
+          }
+          if (q == 0 && i0 == 0 && (R0 = d0, A0 = M0, w0 = E, $0 = h0), n != null && n.sfb_count1 > 0 && f >= n.sfb_count1 && n.step[f] > 0 && f1 >= n.step[f] ? (q != 0 && (K(
+            q,
+            s,
+            w0,
+            $0,
+            R0,
+            A0
+          ), q = 0, R0 = d0, A0 = M0, w0 = E, $0 = h0), i0 += t) : (i0 != 0 && (s0(
+            i0,
+            s,
+            w0,
+            $0,
+            R0,
+            A0
+          ), i0 = 0, R0 = d0, A0 = M0, w0 = E, $0 = h0), q += t), t <= 0) {
+            i0 != 0 && (s0(
+              i0,
+              s,
+              w0,
+              $0,
+              R0,
+              A0
+            ), i0 = 0), q != 0 && (K(
+              q,
+              s,
+              w0,
+              $0,
+              R0,
+              A0
+            ), q = 0);
+            break;
+          }
+        }
+        f <= Y && (M0 += r.width[f], h0 += r.width[f], J += r.width[f]);
+      }
+      q != 0 && (K(
+        q,
+        s,
+        w0,
+        $0,
+        R0,
+        A0
+      ), q = 0), i0 != 0 && (s0(
+        i0,
+        s,
+        w0,
+        $0,
+        R0,
+        A0
+      ), i0 = 0);
+    }
+    function U(E, i, s) {
+      var r = 0, n = 0;
+      do {
+        var f = E[i++], Y = E[i++];
+        r < f && (r = f), n < Y && (n = Y);
+      } while (i < s);
+      return r < n && (r = n), r;
+    }
+    function R(E, i, s, r, n, f) {
+      var Y = Q.ht[r].xlen * 65536 + Q.ht[n].xlen, J = 0, T;
+      do {
+        var q = E[i++], i0 = E[i++];
+        q != 0 && (q > 14 && (q = 15, J += Y), q *= 16), i0 != 0 && (i0 > 14 && (i0 = 15, J += Y), q += i0), J += Q.largetbl[q];
+      } while (i < s);
+      return T = J & 65535, J >>= 16, J > T && (J = T, r = n), f.bits += J, r;
+    }
+    function o(E, i, s, r) {
+      var n = 0, f = Q.ht[1].hlen;
+      do {
+        var Y = E[i + 0] * 2 + E[i + 1];
+        i += 2, n += f[Y];
+      } while (i < s);
+      return r.bits += n, 1;
+    }
+    function u(E, i, s, r, n) {
+      var f = 0, Y, J = Q.ht[r].xlen, T;
+      r == 2 ? T = Q.table23 : T = Q.table56;
+      do {
+        var q = E[i + 0] * J + E[i + 1];
+        i += 2, f += T[q];
+      } while (i < s);
+      return Y = f & 65535, f >>= 16, f > Y && (f = Y, r++), n.bits += f, r;
+    }
+    function d(E, i, s, r, n) {
+      var f = 0, Y = 0, J = 0, T = Q.ht[r].xlen, q = Q.ht[r].hlen, i0 = Q.ht[r + 1].hlen, h0 = Q.ht[r + 2].hlen;
+      do {
+        var d0 = E[i + 0] * T + E[i + 1];
+        i += 2, f += q[d0], Y += i0[d0], J += h0[d0];
+      } while (i < s);
+      var M0 = r;
+      return f > Y && (f = Y, M0++), f > J && (f = J, M0 = r + 2), n.bits += f, M0;
+    }
+    var e = [
+      1,
+      2,
+      5,
+      7,
+      7,
+      10,
+      10,
+      13,
+      13,
+      13,
+      13,
+      13,
+      13,
+      13,
+      13
+    ];
+    function l(E, i, s, r) {
+      var n = U(E, i, s);
+      switch (n) {
+        case 0:
+          return n;
+        case 1:
+          return o(E, i, s, r);
+        case 2:
+        case 3:
+          return u(
+            E,
+            i,
+            s,
+            e[n - 1],
+            r
+          );
+        case 4:
+        case 5:
+        case 6:
+        case 7:
+        case 8:
+        case 9:
+        case 10:
+        case 11:
+        case 12:
+        case 13:
+        case 14:
+        case 15:
+          return d(
+            E,
+            i,
+            s,
+            e[n - 1],
+            r
+          );
+        default:
+          if (n > g.IXMAX_VAL)
+            return r.bits = g.LARGE_BITS, -1;
+          n -= 15;
+          var f;
+          for (f = 24; f < 32 && !(Q.ht[f].linmax >= n); f++)
+            ;
+          var Y;
+          for (Y = f - 8; Y < 24 && !(Q.ht[Y].linmax >= n); Y++)
+            ;
+          return R(E, i, s, Y, f, r);
+      }
+    }
+    this.noquant_count_bits = function(E, i, s) {
+      var r = i.l3_enc, n = Math.min(576, i.max_nonzero_coeff + 2 >> 1 << 1);
+      for (s != null && (s.sfb_count1 = 0); n > 1 && !(r[n - 1] | r[n - 2]); n -= 2)
+        ;
+      i.count1 = n;
+      for (var f = 0, Y = 0; n > 3; n -= 4) {
+        var J;
+        if (((r[n - 1] | r[n - 2] | r[n - 3] | r[n - 4]) & 2147483647) > 1)
+          break;
+        J = ((r[n - 4] * 2 + r[n - 3]) * 2 + r[n - 2]) * 2 + r[n - 1], f += Q.t32l[J], Y += Q.t33l[J];
+      }
+      var T = f;
+      if (i.count1table_select = 0, f > Y && (T = Y, i.count1table_select = 1), i.count1bits = T, i.big_values = n, n == 0)
+        return T;
+      if (i.block_type == W.SHORT_TYPE)
+        f = 3 * E.scalefac_band.s[3], f > i.big_values && (f = i.big_values), Y = i.big_values;
+      else if (i.block_type == W.NORM_TYPE) {
+        if (f = i.region0_count = E.bv_scf[n - 2], Y = i.region1_count = E.bv_scf[n - 1], u0(f + Y + 2 < W.SBPSY_l), Y = E.scalefac_band.l[f + Y + 2], f = E.scalefac_band.l[f + 1], Y < n) {
+          var q = new m(T);
+          i.table_select[2] = l(r, Y, n, q), T = q.bits;
+        }
+      } else
+        i.region0_count = 7, i.region1_count = W.SBMAX_l - 1 - 7 - 1, f = E.scalefac_band.l[7 + 1], Y = n, f > Y && (f = Y);
+      if (f = Math.min(f, n), Y = Math.min(Y, n), 0 < f) {
+        var q = new m(T);
+        i.table_select[0] = l(r, 0, f, q), T = q.bits;
+      }
+      if (f < Y) {
+        var q = new m(T);
+        i.table_select[1] = l(r, f, Y, q), T = q.bits;
+      }
+      if (E.use_best_huffman == 2 && (i.part2_3_length = T, best_huffman_divide(E, i), T = i.part2_3_length), s != null && i.block_type == W.NORM_TYPE) {
+        for (var i0 = 0; E.scalefac_band.l[i0] < i.big_values; )
+          i0++;
+        s.sfb_count1 = i0;
+      }
+      return T;
+    }, this.count_bits = function(E, i, s, r) {
+      var n = s.l3_enc, f = g.IXMAX_VAL / A.IPOW20(s.global_gain);
+      if (s.xrpow_max > f)
+        return g.LARGE_BITS;
+      if (t0(i, n, A.IPOW20(s.global_gain), s, r), E.substep_shaping & 2)
+        for (var Y = 0, J = s.global_gain + s.scalefac_scale, T = 0.634521682242439 / A.IPOW20(J), q = 0; q < s.sfbmax; q++) {
+          var i0 = s.width[q];
+          if (E.pseudohalf[q] == 0)
+            Y += i0;
+          else {
+            var h0;
+            for (h0 = Y, Y += i0; h0 < Y; ++h0)
+              n[h0] = i[h0] >= T ? n[h0] : 0;
+          }
+        }
+      return this.noquant_count_bits(E, s, r);
+    };
+    function M(E, i, s, r, n, f, Y) {
+      for (var J = i.big_values, T = 0; T <= 7 + 15; T++)
+        r[T] = g.LARGE_BITS;
+      for (var T = 0; T < 16; T++) {
+        var q = E.scalefac_band.l[T + 1];
+        if (q >= J)
+          break;
+        var i0 = 0, h0 = new m(i0), d0 = l(s, 0, q, h0);
+        i0 = h0.bits;
+        for (var M0 = 0; M0 < 8; M0++) {
+          var R0 = E.scalefac_band.l[T + M0 + 2];
+          if (R0 >= J)
+            break;
+          var A0 = i0;
+          h0 = new m(A0);
+          var w0 = l(s, q, R0, h0);
+          A0 = h0.bits, r[T + M0] > A0 && (r[T + M0] = A0, n[T + M0] = T, f[T + M0] = d0, Y[T + M0] = w0);
+        }
+      }
+    }
+    function p(E, i, s, r, n, f, Y, J) {
+      for (var T = i.big_values, q = 2; q < W.SBMAX_l + 1; q++) {
+        var i0 = E.scalefac_band.l[q];
+        if (i0 >= T)
+          break;
+        var h0 = n[q - 2] + i.count1bits;
+        if (s.part2_3_length <= h0)
+          break;
+        var d0 = new m(h0), M0 = l(r, i0, T, d0);
+        h0 = d0.bits, !(s.part2_3_length <= h0) && (s.assign(i), s.part2_3_length = h0, s.region0_count = f[q - 2], s.region1_count = q - 2 - f[q - 2], s.table_select[0] = Y[q - 2], s.table_select[1] = J[q - 2], s.table_select[2] = M0);
+      }
+    }
+    this.best_huffman_divide = function(E, i) {
+      var s = new D(), r = i.l3_enc, n = z(7 + 15 + 1), f = z(7 + 15 + 1), Y = z(7 + 15 + 1), J = z(7 + 15 + 1);
+      if (!(i.block_type == W.SHORT_TYPE && E.mode_gr == 1)) {
+        s.assign(i), i.block_type == W.NORM_TYPE && (M(E, i, r, n, f, Y, J), p(
+          E,
+          s,
+          i,
+          r,
+          n,
+          f,
+          Y,
+          J
+        ));
+        var T = s.big_values;
+        if (!(T == 0 || (r[T - 2] | r[T - 1]) > 1) && (T = i.count1 + 2, !(T > 576))) {
+          s.assign(i), s.count1 = T;
+          for (var q = 0, i0 = 0; T > s.big_values; T -= 4) {
+            var h0 = ((r[T - 4] * 2 + r[T - 3]) * 2 + r[T - 2]) * 2 + r[T - 1];
+            q += Q.t32l[h0], i0 += Q.t33l[h0];
+          }
+          if (s.big_values = T, s.count1table_select = 0, q > i0 && (q = i0, s.count1table_select = 1), s.count1bits = q, s.block_type == W.NORM_TYPE)
+            p(
+              E,
+              s,
+              i,
+              r,
+              n,
+              f,
+              Y,
+              J
+            );
+          else {
+            if (s.part2_3_length = q, q = E.scalefac_band.l[7 + 1], q > T && (q = T), q > 0) {
+              var d0 = new m(s.part2_3_length);
+              s.table_select[0] = l(r, 0, q, d0), s.part2_3_length = d0.bits;
+            }
+            if (T > q) {
+              var d0 = new m(s.part2_3_length);
+              s.table_select[1] = l(r, q, T, d0), s.part2_3_length = d0.bits;
+            }
+            i.part2_3_length > s.part2_3_length && i.assign(s);
+          }
+        }
+      }
+    };
+    var H = [1, 1, 1, 1, 8, 2, 2, 2, 4, 4, 4, 8, 8, 8, 16, 16], B = [1, 2, 4, 8, 1, 2, 4, 8, 2, 4, 8, 2, 4, 8, 4, 8], I = [0, 0, 0, 0, 3, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4], v0 = [0, 1, 2, 3, 0, 1, 2, 3, 1, 2, 3, 1, 2, 3, 2, 3];
+    f0.slen1_tab = I, f0.slen2_tab = v0;
+    function b(E, i) {
+      for (var s, r = i.tt[1][E], n = i.tt[0][E], f = 0; f < Q.scfsi_band.length - 1; f++) {
+        for (s = Q.scfsi_band[f]; s < Q.scfsi_band[f + 1] && !(n.scalefac[s] != r.scalefac[s] && r.scalefac[s] >= 0); s++)
+          ;
+        if (s == Q.scfsi_band[f + 1]) {
+          for (s = Q.scfsi_band[f]; s < Q.scfsi_band[f + 1]; s++)
+            r.scalefac[s] = -1;
+          i.scfsi[E][f] = 1;
+        }
+      }
+      var Y = 0, J = 0;
+      for (s = 0; s < 11; s++)
+        r.scalefac[s] != -1 && (J++, Y < r.scalefac[s] && (Y = r.scalefac[s]));
+      for (var T = 0, q = 0; s < W.SBPSY_l; s++)
+        r.scalefac[s] != -1 && (q++, T < r.scalefac[s] && (T = r.scalefac[s]));
+      for (var f = 0; f < 16; f++)
+        if (Y < H[f] && T < B[f]) {
+          var i0 = I[f] * J + v0[f] * q;
+          r.part2_length > i0 && (r.part2_length = i0, r.scalefac_compress = f);
+        }
+    }
+    this.best_scalefac_store = function(E, i, s, r) {
+      var n = r.tt[i][s], f, Y, J, T, q = 0;
+      for (J = 0, f = 0; f < n.sfbmax; f++) {
+        var i0 = n.width[f];
+        for (J += i0, T = -i0; T < 0 && n.l3_enc[T + J] == 0; T++)
+          ;
+        T == 0 && (n.scalefac[f] = q = -2);
+      }
+      if (n.scalefac_scale == 0 && n.preflag == 0) {
+        var h0 = 0;
+        for (f = 0; f < n.sfbmax; f++)
+          n.scalefac[f] > 0 && (h0 |= n.scalefac[f]);
+        if (!(h0 & 1) && h0 != 0) {
+          for (f = 0; f < n.sfbmax; f++)
+            n.scalefac[f] > 0 && (n.scalefac[f] >>= 1);
+          n.scalefac_scale = q = 1;
+        }
+      }
+      if (n.preflag == 0 && n.block_type != W.SHORT_TYPE && E.mode_gr == 2) {
+        for (f = 11; f < W.SBPSY_l && !(n.scalefac[f] < A.pretab[f] && n.scalefac[f] != -2); f++)
+          ;
+        if (f == W.SBPSY_l) {
+          for (f = 11; f < W.SBPSY_l; f++)
+            n.scalefac[f] > 0 && (n.scalefac[f] -= A.pretab[f]);
+          n.preflag = q = 1;
+        }
+      }
+      for (Y = 0; Y < 4; Y++)
+        r.scfsi[s][Y] = 0;
+      for (E.mode_gr == 2 && i == 1 && r.tt[0][s].block_type != W.SHORT_TYPE && r.tt[1][s].block_type != W.SHORT_TYPE && (b(s, r), q = 0), f = 0; f < n.sfbmax; f++)
+        n.scalefac[f] == -2 && (n.scalefac[f] = 0);
+      q != 0 && (E.mode_gr == 2 ? this.scale_bitcount(n) : this.scale_bitcount_lsf(E, n));
+    };
+    function a(E, i) {
+      for (var s = 0; s < i; ++s)
+        if (E[s] < 0)
+          return false;
+      return true;
+    }
+    var S = [
+      0,
+      18,
+      36,
+      54,
+      54,
+      36,
+      54,
+      72,
+      54,
+      72,
+      90,
+      72,
+      90,
+      108,
+      108,
+      126
+    ], L = [
+      0,
+      18,
+      36,
+      54,
+      51,
+      35,
+      53,
+      71,
+      52,
+      70,
+      88,
+      69,
+      87,
+      105,
+      104,
+      122
+    ], V = [
+      0,
+      10,
+      20,
+      30,
+      33,
+      21,
+      31,
+      41,
+      32,
+      42,
+      52,
+      43,
+      53,
+      63,
+      64,
+      74
+    ];
+    this.scale_bitcount = function(E) {
+      var i, s, r = 0, n = 0, f, Y = E.scalefac;
+      if (u0(a(Y, E.sfbmax)), E.block_type == W.SHORT_TYPE)
+        f = S, E.mixed_block_flag != 0 && (f = L);
+      else if (f = V, E.preflag == 0) {
+        for (s = 11; s < W.SBPSY_l && !(Y[s] < A.pretab[s]); s++)
+          ;
+        if (s == W.SBPSY_l)
+          for (E.preflag = 1, s = 11; s < W.SBPSY_l; s++)
+            Y[s] -= A.pretab[s];
+      }
+      for (s = 0; s < E.sfbdivide; s++)
+        r < Y[s] && (r = Y[s]);
+      for (; s < E.sfbmax; s++)
+        n < Y[s] && (n = Y[s]);
+      for (E.part2_length = g.LARGE_BITS, i = 0; i < 16; i++)
+        r < H[i] && n < B[i] && E.part2_length > f[i] && (E.part2_length = f[i], E.scalefac_compress = i);
+      return E.part2_length == g.LARGE_BITS;
+    };
+    var N = [
+      [15, 15, 7, 7],
+      [15, 15, 7, 0],
+      [7, 3, 0, 0],
+      [15, 31, 31, 0],
+      [7, 7, 7, 0],
+      [3, 3, 0, 0]
+    ];
+    this.scale_bitcount_lsf = function(E, i) {
+      var s, r, n, f, Y, J, T, q, i0 = z(4), h0 = i.scalefac;
+      for (i.preflag != 0 ? s = 2 : s = 0, T = 0; T < 4; T++)
+        i0[T] = 0;
+      if (i.block_type == W.SHORT_TYPE) {
+        r = 1;
+        var d0 = A.nr_of_sfb_block[s][r];
+        for (q = 0, n = 0; n < 4; n++)
+          for (f = d0[n] / 3, T = 0; T < f; T++, q++)
+            for (Y = 0; Y < 3; Y++)
+              h0[q * 3 + Y] > i0[n] && (i0[n] = h0[q * 3 + Y]);
+      } else {
+        r = 0;
+        var d0 = A.nr_of_sfb_block[s][r];
+        for (q = 0, n = 0; n < 4; n++)
+          for (f = d0[n], T = 0; T < f; T++, q++)
+            h0[q] > i0[n] && (i0[n] = h0[q]);
+      }
+      for (J = false, n = 0; n < 4; n++)
+        i0[n] > N[s][n] && (J = true);
+      if (!J) {
+        var M0, R0, A0, w0;
+        for (i.sfb_partition_table = A.nr_of_sfb_block[s][r], n = 0; n < 4; n++)
+          i.slen[n] = P[i0[n]];
+        switch (M0 = i.slen[0], R0 = i.slen[1], A0 = i.slen[2], w0 = i.slen[3], s) {
+          case 0:
+            i.scalefac_compress = (M0 * 5 + R0 << 4) + (A0 << 2) + w0;
+            break;
+          case 1:
+            i.scalefac_compress = 400 + (M0 * 5 + R0 << 2) + A0;
+            break;
+          case 2:
+            i.scalefac_compress = 500 + M0 * 3 + R0;
+            break;
+          default:
+            Z.err.printf(`intensity stereo not implemented yet
+`);
+            break;
+        }
+      }
+      if (!J)
+        for (u0(i.sfb_partition_table != null), i.part2_length = 0, n = 0; n < 4; n++)
+          i.part2_length += i.slen[n] * i.sfb_partition_table[n];
+      return J;
+    };
+    var P = [
+      0,
+      1,
+      2,
+      2,
+      3,
+      3,
+      3,
+      3,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4
+    ];
+    this.huffman_init = function(E) {
+      for (var i = 2; i <= 576; i += 2) {
+        for (var s = 0, r; E.scalefac_band.l[++s] < i; )
+          ;
+        for (r = O[s][0]; E.scalefac_band.l[r + 1] > i; )
+          r--;
+        for (r < 0 && (r = O[s][0]), E.bv_scf[i - 2] = r, r = O[s][1]; E.scalefac_band.l[r + E.bv_scf[i - 2] + 2] > i; )
+          r--;
+        r < 0 && (r = O[s][1]), E.bv_scf[i - 1] = r;
+      }
+    };
+  }
+  return Ee = f0, Ee;
+}
+var Be;
+var sa;
+function Ve() {
+  if (sa)
+    return Be;
+  sa = 1;
+  var w = Q0, Z = w.System, X = w.Arrays, z = w.new_byte, u0 = w.new_float_n, W = w.new_int, Q = w.assert, D = Oa(), g = He, f0 = t1(), A = ne;
+  m.EQ = function(O, s0) {
+    return Math.abs(O) > Math.abs(s0) ? Math.abs(O - s0) <= Math.abs(O) * 1e-6 : Math.abs(O - s0) <= Math.abs(s0) * 1e-6;
+  }, m.NEQ = function(O, s0) {
+    return !m.EQ(O, s0);
+  };
+  function m() {
+    var O = Oe(), s0 = this, K = 32773, t0 = null, U = null, R = null, o = null;
+    this.setModules = function(i, s, r, n) {
+      t0 = i, U = s, R = r, o = n;
+    };
+    var u = null, d = 0, e = 0, l = 0;
+    this.getframebits = function(i) {
+      var s = i.internal_flags, r;
+      s.bitrate_index != 0 ? r = g.bitrate_table[i.version][s.bitrate_index] : r = i.brate;
+      var n = 0 | (i.version + 1) * 72e3 * r / i.out_samplerate + s.padding;
+      return 8 * n;
+    };
+    function M(i) {
+      Z.arraycopy(i.header[i.w_ptr].buf, 0, u, e, i.sideinfo_len), e += i.sideinfo_len, d += i.sideinfo_len * 8, i.w_ptr = i.w_ptr + 1 & A.MAX_HEADER_BUF - 1;
+    }
+    function p(i, s, r) {
+      for (; r > 0; ) {
+        var n;
+        l == 0 && (l = 8, e++, Q(e < O.LAME_MAXMP3BUFFER), Q(i.header[i.w_ptr].write_timing >= d), i.header[i.w_ptr].write_timing == d && M(i), u[e] = 0), n = Math.min(r, l), r -= n, l -= n, u[e] |= s >> r << l, d += n;
+      }
+    }
+    function H(i, s, r) {
+      for (; r > 0; ) {
+        var n;
+        l == 0 && (l = 8, e++, Q(e < O.LAME_MAXMP3BUFFER), u[e] = 0), n = Math.min(r, l), r -= n, l -= n, u[e] |= s >> r << l, d += n;
+      }
+    }
+    function B(i, s) {
+      var r = i.internal_flags, n;
+      if (s >= 8 && (p(r, 76, 8), s -= 8), s >= 8 && (p(r, 65, 8), s -= 8), s >= 8 && (p(r, 77, 8), s -= 8), s >= 8 && (p(r, 69, 8), s -= 8), s >= 32) {
+        var f = R.getLameShortVersion();
+        if (s >= 32)
+          for (n = 0; n < f.length && s >= 8; ++n)
+            s -= 8, p(r, f.charAt(n), 8);
+      }
+      for (; s >= 1; s -= 1)
+        p(r, r.ancillary_flag, 1), r.ancillary_flag ^= i.disable_reservoir ? 0 : 1;
+    }
+    function I(i, s, r) {
+      for (var n = i.header[i.h_ptr].ptr; r > 0; ) {
+        var f = Math.min(r, 8 - (n & 7));
+        r -= f, i.header[i.h_ptr].buf[n >> 3] |= s >> r << 8 - (n & 7) - f, n += f;
+      }
+      i.header[i.h_ptr].ptr = n;
+    }
+    function v0(i, s) {
+      i <<= 8;
+      for (var r = 0; r < 8; r++)
+        i <<= 1, s <<= 1, (s ^ i) & 65536 && (s ^= K);
+      return s;
+    }
+    this.CRC_writeheader = function(i, s) {
+      var r = 65535;
+      r = v0(s[2] & 255, r), r = v0(s[3] & 255, r);
+      for (var n = 6; n < i.sideinfo_len; n++)
+        r = v0(s[n] & 255, r);
+      s[4] = byte(r >> 8), s[5] = byte(r & 255);
+    };
+    function b(i, s) {
+      var r = i.internal_flags, n, f, Y;
+      if (n = r.l3_side, r.header[r.h_ptr].ptr = 0, X.fill(r.header[r.h_ptr].buf, 0, r.sideinfo_len, 0), i.out_samplerate < 16e3 ? I(r, 4094, 12) : I(r, 4095, 12), I(r, i.version, 1), I(r, 4 - 3, 2), I(r, i.error_protection ? 0 : 1, 1), I(r, r.bitrate_index, 4), I(r, r.samplerate_index, 2), I(r, r.padding, 1), I(r, i.extension, 1), I(r, i.mode.ordinal(), 2), I(r, r.mode_ext, 2), I(r, i.copyright, 1), I(r, i.original, 1), I(r, i.emphasis, 2), i.error_protection && I(r, 0, 16), i.version == 1) {
+        for (Q(n.main_data_begin >= 0), I(r, n.main_data_begin, 9), r.channels_out == 2 ? I(r, n.private_bits, 3) : I(r, n.private_bits, 5), Y = 0; Y < r.channels_out; Y++) {
+          var J;
+          for (J = 0; J < 4; J++)
+            I(r, n.scfsi[Y][J], 1);
+        }
+        for (f = 0; f < 2; f++)
+          for (Y = 0; Y < r.channels_out; Y++) {
+            var T = n.tt[f][Y];
+            I(r, T.part2_3_length + T.part2_length, 12), I(r, T.big_values / 2, 9), I(r, T.global_gain, 8), I(r, T.scalefac_compress, 4), T.block_type != f0.NORM_TYPE ? (I(r, 1, 1), I(r, T.block_type, 2), I(r, T.mixed_block_flag, 1), T.table_select[0] == 14 && (T.table_select[0] = 16), I(r, T.table_select[0], 5), T.table_select[1] == 14 && (T.table_select[1] = 16), I(r, T.table_select[1], 5), I(r, T.subblock_gain[0], 3), I(r, T.subblock_gain[1], 3), I(r, T.subblock_gain[2], 3)) : (I(r, 0, 1), T.table_select[0] == 14 && (T.table_select[0] = 16), I(r, T.table_select[0], 5), T.table_select[1] == 14 && (T.table_select[1] = 16), I(r, T.table_select[1], 5), T.table_select[2] == 14 && (T.table_select[2] = 16), I(r, T.table_select[2], 5), Q(0 <= T.region0_count && T.region0_count < 16), Q(0 <= T.region1_count && T.region1_count < 8), I(r, T.region0_count, 4), I(r, T.region1_count, 3)), I(r, T.preflag, 1), I(r, T.scalefac_scale, 1), I(r, T.count1table_select, 1);
+          }
+      } else
+        for (Q(n.main_data_begin >= 0), I(r, n.main_data_begin, 8), I(r, n.private_bits, r.channels_out), f = 0, Y = 0; Y < r.channels_out; Y++) {
+          var T = n.tt[f][Y];
+          I(r, T.part2_3_length + T.part2_length, 12), I(r, T.big_values / 2, 9), I(r, T.global_gain, 8), I(r, T.scalefac_compress, 9), T.block_type != f0.NORM_TYPE ? (I(r, 1, 1), I(r, T.block_type, 2), I(r, T.mixed_block_flag, 1), T.table_select[0] == 14 && (T.table_select[0] = 16), I(r, T.table_select[0], 5), T.table_select[1] == 14 && (T.table_select[1] = 16), I(r, T.table_select[1], 5), I(r, T.subblock_gain[0], 3), I(r, T.subblock_gain[1], 3), I(r, T.subblock_gain[2], 3)) : (I(r, 0, 1), T.table_select[0] == 14 && (T.table_select[0] = 16), I(r, T.table_select[0], 5), T.table_select[1] == 14 && (T.table_select[1] = 16), I(r, T.table_select[1], 5), T.table_select[2] == 14 && (T.table_select[2] = 16), I(r, T.table_select[2], 5), Q(0 <= T.region0_count && T.region0_count < 16), Q(0 <= T.region1_count && T.region1_count < 8), I(r, T.region0_count, 4), I(r, T.region1_count, 3)), I(r, T.scalefac_scale, 1), I(r, T.count1table_select, 1);
+        }
+      i.error_protection && CRC_writeheader(r, r.header[r.h_ptr].buf);
+      {
+        var q = r.h_ptr;
+        Q(r.header[q].ptr == r.sideinfo_len * 8), r.h_ptr = q + 1 & A.MAX_HEADER_BUF - 1, r.header[r.h_ptr].write_timing = r.header[q].write_timing + s, r.h_ptr == r.w_ptr && Z.err.println(`Error: MAX_HEADER_BUF too small in bitstream.c 
+`);
+      }
+    }
+    function a(i, s) {
+      var r = g.ht[s.count1table_select + 32], n, f = 0, Y = s.big_values, J = s.big_values;
+      for (Q(s.count1table_select < 2), n = (s.count1 - s.big_values) / 4; n > 0; --n) {
+        var T = 0, q = 0, i0;
+        i0 = s.l3_enc[Y + 0], i0 != 0 && (q += 8, s.xr[J + 0] < 0 && T++), i0 = s.l3_enc[Y + 1], i0 != 0 && (q += 4, T *= 2, s.xr[J + 1] < 0 && T++), i0 = s.l3_enc[Y + 2], i0 != 0 && (q += 2, T *= 2, s.xr[J + 2] < 0 && T++), i0 = s.l3_enc[Y + 3], i0 != 0 && (q++, T *= 2, s.xr[J + 3] < 0 && T++), Y += 4, J += 4, p(i, T + r.table[q], r.hlen[q]), f += r.hlen[q];
+      }
+      return f;
+    }
+    function S(i, s, r, n, f) {
+      var Y = g.ht[s], J = 0;
+      if (s == 0)
+        return J;
+      for (var T = r; T < n; T += 2) {
+        var q = 0, i0 = 0, h0 = Y.xlen, d0 = Y.xlen, M0 = 0, R0 = f.l3_enc[T], A0 = f.l3_enc[T + 1];
+        if (R0 != 0 && (f.xr[T] < 0 && M0++, q--), s > 15) {
+          if (R0 > 14) {
+            var w0 = R0 - 15;
+            Q(w0 <= Y.linmax), M0 |= w0 << 1, i0 = h0, R0 = 15;
+          }
+          if (A0 > 14) {
+            var $0 = A0 - 15;
+            Q($0 <= Y.linmax), M0 <<= h0, M0 |= $0, i0 += h0, A0 = 15;
+          }
+          d0 = 16;
+        }
+        A0 != 0 && (M0 <<= 1, f.xr[T + 1] < 0 && M0++, q--), R0 = R0 * d0 + A0, i0 -= q, q += Y.hlen[R0], p(i, Y.table[R0], q), p(i, M0, i0), J += q + i0;
+      }
+      return J;
+    }
+    function L(i, s) {
+      var r = 3 * i.scalefac_band.s[3];
+      r > s.big_values && (r = s.big_values);
+      var n = S(i, s.table_select[0], 0, r, s);
+      return n += S(
+        i,
+        s.table_select[1],
+        r,
+        s.big_values,
+        s
+      ), n;
+    }
+    function V(i, s) {
+      var r, n, f, Y;
+      r = s.big_values;
+      var J = s.region0_count + 1;
+      return Q(J < i.scalefac_band.l.length), f = i.scalefac_band.l[J], J += s.region1_count + 1, Q(J < i.scalefac_band.l.length), Y = i.scalefac_band.l[J], f > r && (f = r), Y > r && (Y = r), n = S(i, s.table_select[0], 0, f, s), n += S(
+        i,
+        s.table_select[1],
+        f,
+        Y,
+        s
+      ), n += S(
+        i,
+        s.table_select[2],
+        Y,
+        r,
+        s
+      ), n;
+    }
+    function N(i) {
+      var s, r, n, f, Y = 0, J = i.internal_flags, T = J.l3_side;
+      if (i.version == 1)
+        for (s = 0; s < 2; s++)
+          for (r = 0; r < J.channels_out; r++) {
+            var q = T.tt[s][r], i0 = D.slen1_tab[q.scalefac_compress], h0 = D.slen2_tab[q.scalefac_compress];
+            for (f = 0, n = 0; n < q.sfbdivide; n++)
+              q.scalefac[n] != -1 && (p(J, q.scalefac[n], i0), f += i0);
+            for (; n < q.sfbmax; n++)
+              q.scalefac[n] != -1 && (p(J, q.scalefac[n], h0), f += h0);
+            Q(f == q.part2_length), q.block_type == f0.SHORT_TYPE ? f += L(J, q) : f += V(J, q), f += a(J, q), Q(f == q.part2_3_length + q.part2_length), Y += f;
+          }
+      else
+        for (s = 0, r = 0; r < J.channels_out; r++) {
+          var q = T.tt[s][r], d0, M0, R0 = 0;
+          if (Q(q.sfb_partition_table != null), f = 0, n = 0, M0 = 0, q.block_type == f0.SHORT_TYPE) {
+            for (; M0 < 4; M0++) {
+              var A0 = q.sfb_partition_table[M0] / 3, w0 = q.slen[M0];
+              for (d0 = 0; d0 < A0; d0++, n++)
+                p(
+                  J,
+                  Math.max(q.scalefac[n * 3 + 0], 0),
+                  w0
+                ), p(
+                  J,
+                  Math.max(q.scalefac[n * 3 + 1], 0),
+                  w0
+                ), p(
+                  J,
+                  Math.max(q.scalefac[n * 3 + 2], 0),
+                  w0
+                ), R0 += 3 * w0;
+            }
+            f += L(J, q);
+          } else {
+            for (; M0 < 4; M0++) {
+              var A0 = q.sfb_partition_table[M0], w0 = q.slen[M0];
+              for (d0 = 0; d0 < A0; d0++, n++)
+                p(J, Math.max(q.scalefac[n], 0), w0), R0 += w0;
+            }
+            f += V(J, q);
+          }
+          f += a(J, q), Q(f == q.part2_3_length), Q(R0 == q.part2_length), Y += R0 + f;
+        }
+      return Y;
+    }
+    function P() {
+      this.total = 0;
+    }
+    function E(i, s) {
+      var r = i.internal_flags, n, f, Y, J, T;
+      return T = r.w_ptr, J = r.h_ptr - 1, J == -1 && (J = A.MAX_HEADER_BUF - 1), n = r.header[J].write_timing - d, s.total = n, n >= 0 && (f = 1 + J - T, J < T && (f = 1 + J - T + A.MAX_HEADER_BUF), n -= f * 8 * r.sideinfo_len), Y = s0.getframebits(i), n += Y, s.total += Y, s.total % 8 != 0 ? s.total = 1 + s.total / 8 : s.total = s.total / 8, s.total += e + 1, n < 0 && Z.err.println(`strange error flushing buffer ... 
+`), n;
+    }
+    this.flush_bitstream = function(i) {
+      var s = i.internal_flags, r, n, f = s.h_ptr - 1;
+      if (f == -1 && (f = A.MAX_HEADER_BUF - 1), r = s.l3_side, !((n = E(i, new P())) < 0)) {
+        if (B(i, n), Q(s.header[f].write_timing + this.getframebits(i) == d), s.ResvSize = 0, r.main_data_begin = 0, s.findReplayGain) {
+          var Y = t0.GetTitleGain(s.rgdata);
+          Q(NEQ(Y, GainAnalysis.GAIN_NOT_ENOUGH_SAMPLES)), s.RadioGain = Math.floor(Y * 10 + 0.5) | 0;
+        }
+        s.findPeakSample && (s.noclipGainChange = Math.ceil(Math.log10(s.PeakSample / 32767) * 20 * 10) | 0, s.noclipGainChange > 0 && (EQ(i.scale, 1) || EQ(i.scale, 0)) ? s.noclipScale = Math.floor(32767 / s.PeakSample * 100) / 100 : s.noclipScale = -1);
+      }
+    }, this.add_dummy_byte = function(i, s, r) {
+      for (var n = i.internal_flags, f; r-- > 0; )
+        for (H(n, s, 8), f = 0; f < A.MAX_HEADER_BUF; ++f)
+          n.header[f].write_timing += 8;
+    }, this.format_bitstream = function(i) {
+      var s = i.internal_flags, r;
+      r = s.l3_side;
+      var n = this.getframebits(i);
+      B(i, r.resvDrain_pre), b(i, n);
+      var f = 8 * s.sideinfo_len;
+      if (f += N(i), B(i, r.resvDrain_post), f += r.resvDrain_post, r.main_data_begin += (n - f) / 8, E(i, new P()) != s.ResvSize && Z.err.println("Internal buffer inconsistency. flushbits <> ResvSize"), r.main_data_begin * 8 != s.ResvSize && (Z.err.printf(
+        `bit reservoir error: 
+l3_side.main_data_begin: %d 
+Resvoir size:             %d 
+resv drain (post)         %d 
+resv drain (pre)          %d 
+header and sideinfo:      %d 
+data bits:                %d 
+total bits:               %d (remainder: %d) 
+bitsperframe:             %d 
+`,
+        8 * r.main_data_begin,
+        s.ResvSize,
+        r.resvDrain_post,
+        r.resvDrain_pre,
+        8 * s.sideinfo_len,
+        f - r.resvDrain_post - 8 * s.sideinfo_len,
+        f,
+        f % 8,
+        n
+      ), Z.err.println("This is a fatal error.  It has several possible causes:"), Z.err.println("90%%  LAME compiled with buggy version of gcc using advanced optimizations"), Z.err.println(" 9%%  Your system is overclocked"), Z.err.println(" 1%%  bug in LAME encoding library"), s.ResvSize = r.main_data_begin * 8), d > 1e9) {
+        var Y;
+        for (Y = 0; Y < A.MAX_HEADER_BUF; ++Y)
+          s.header[Y].write_timing -= d;
+        d = 0;
+      }
+      return 0;
+    }, this.copy_buffer = function(i, s, r, n, f) {
+      var Y = e + 1;
+      if (Y <= 0)
+        return 0;
+      if (n != 0 && Y > n)
+        return -1;
+      if (Z.arraycopy(u, 0, s, r, Y), e = -1, l = 0, f != 0) {
+        var J = W(1);
+        if (J[0] = i.nMusicCRC, o.updateMusicCRC(J, s, r, Y), i.nMusicCRC = J[0], Y > 0 && (i.VBR_seek_table.nBytesWritten += Y), i.decode_on_the_fly) {
+          for (var T = u0([2, 1152]), q = Y, i0 = -1, h0; i0 != 0; )
+            if (i0 = U.hip_decode1_unclipped(
+              i.hip,
+              s,
+              r,
+              q,
+              T[0],
+              T[1]
+            ), q = 0, i0 == -1 && (i0 = 0), i0 > 0) {
+              if (i.findPeakSample) {
+                for (h0 = 0; h0 < i0; h0++)
+                  T[0][h0] > i.PeakSample ? i.PeakSample = T[0][h0] : -T[0][h0] > i.PeakSample && (i.PeakSample = -T[0][h0]);
+                if (i.channels_out > 1)
+                  for (h0 = 0; h0 < i0; h0++)
+                    T[1][h0] > i.PeakSample ? i.PeakSample = T[1][h0] : -T[1][h0] > i.PeakSample && (i.PeakSample = -T[1][h0]);
+              }
+              if (i.findReplayGain && t0.AnalyzeSamples(
+                i.rgdata,
+                T[0],
+                0,
+                T[1],
+                0,
+                i0,
+                i.channels_out
+              ) == GainAnalysis.GAIN_ANALYSIS_ERROR)
+                return -6;
+            }
+        }
+      }
+      return Y;
+    }, this.init_bit_stream_w = function(i) {
+      u = z(O.LAME_MAXMP3BUFFER), i.h_ptr = i.w_ptr = 0, i.header[i.h_ptr].write_timing = 0, e = -1, l = 0, d = 0;
+    };
+  }
+  return Be = m, Be;
+}
+var Te;
+var ia;
+function Oe() {
+  if (ia)
+    return Te;
+  ia = 1;
+  var w = Q0, Z = w.System, X = w.VbrMode, z = w.ShortBlock, u0 = w.new_float, W = w.new_int_n, Q = w.new_short_n, D = w.assert, g = Qa, f0 = za, A = ne, m = x2, O = E2, s0 = N2, K = Ve(), t0 = He, U = t1();
+  function R() {
+    var o = j1, u = this, d = 128 * 1024;
+    R.V9 = 410, R.V8 = 420, R.V7 = 430, R.V6 = 440, R.V5 = 450, R.V4 = 460, R.V3 = 470, R.V2 = 480, R.V1 = 490, R.V0 = 500, R.R3MIX = 1e3, R.STANDARD = 1001, R.EXTREME = 1002, R.INSANE = 1003, R.STANDARD_FAST = 1004, R.EXTREME_FAST = 1005, R.MEDIUM = 1006, R.MEDIUM_FAST = 1007;
+    var e = 16384 + d;
+    R.LAME_MAXMP3BUFFER = e;
+    var l, M, p, H, B, I = new g(), v0, b, a;
+    this.enc = new U(), this.setModules = function(t, _, S0, E0, V0, H0, y0, T0, F0) {
+      l = t, M = _, p = S0, H = E0, B = V0, v0 = H0, b = T0, a = F0, this.enc.setModules(M, I, H, v0);
+    };
+    function S() {
+      this.mask_adjust = 0, this.mask_adjust_short = 0, this.bo_l_weight = u0(U.SBMAX_l), this.bo_s_weight = u0(U.SBMAX_s);
+    }
+    function L() {
+      this.lowerlimit = 0;
+    }
+    function V(t, _) {
+      this.lowpass = _;
+    }
+    var N = 4294479419;
+    function P(t) {
+      var _;
+      return t.class_id = N, _ = t.internal_flags = new A(), t.mode = o.NOT_SET, t.original = 1, t.in_samplerate = 44100, t.num_channels = 2, t.num_samples = -1, t.bWriteVbrTag = true, t.quality = -1, t.short_blocks = null, _.subblock_gain = -1, t.lowpassfreq = 0, t.highpassfreq = 0, t.lowpasswidth = -1, t.highpasswidth = -1, t.VBR = X.vbr_off, t.VBR_q = 4, t.ATHcurve = -1, t.VBR_mean_bitrate_kbps = 128, t.VBR_min_bitrate_kbps = 0, t.VBR_max_bitrate_kbps = 0, t.VBR_hard_min = 0, _.VBR_min_bitrate = 1, _.VBR_max_bitrate = 13, t.quant_comp = -1, t.quant_comp_short = -1, t.msfix = -1, _.resample_ratio = 1, _.OldValue[0] = 180, _.OldValue[1] = 180, _.CurrentStep[0] = 4, _.CurrentStep[1] = 4, _.masking_lower = 1, _.nsPsy.attackthre = -1, _.nsPsy.attackthre_s = -1, t.scale = -1, t.athaa_type = -1, t.ATHtype = -1, t.athaa_loudapprox = -1, t.athaa_sensitivity = 0, t.useTemporal = null, t.interChRatio = -1, _.mf_samples_to_encode = U.ENCDELAY + U.POSTDELAY, t.encoder_padding = 0, _.mf_size = U.ENCDELAY - U.MDCTDELAY, t.findReplayGain = false, t.decode_on_the_fly = false, _.decode_on_the_fly = false, _.findReplayGain = false, _.findPeakSample = false, _.RadioGain = 0, _.AudiophileGain = 0, _.noclipGainChange = 0, _.noclipScale = -1, t.preset = 0, t.write_id3tag_automatic = true, 0;
+    }
+    this.lame_init = function() {
+      var t = new f0();
+      return P(t), t.lame_allocated_gfp = 1, t;
+    };
+    function E(t) {
+      return t > 1 ? 0 : t <= 0 ? 1 : Math.cos(Math.PI / 2 * t);
+    }
+    this.nearestBitrateFullIndex = function(t) {
+      var _ = [
+        8,
+        16,
+        24,
+        32,
+        40,
+        48,
+        56,
+        64,
+        80,
+        96,
+        112,
+        128,
+        160,
+        192,
+        224,
+        256,
+        320
+      ], S0 = 0, E0 = 0, V0 = 0, H0 = 0;
+      H0 = _[16], V0 = 16, E0 = _[16], S0 = 16;
+      for (var y0 = 0; y0 < 16; y0++)
+        if (Math.max(t, _[y0 + 1]) != t) {
+          H0 = _[y0 + 1], V0 = y0 + 1, E0 = _[y0], S0 = y0;
+          break;
+        }
+      return H0 - t > t - E0 ? S0 : V0;
+    };
+    function i(t, _) {
+      var S0 = 44100;
+      return _ >= 48e3 ? S0 = 48e3 : _ >= 44100 ? S0 = 44100 : _ >= 32e3 ? S0 = 32e3 : _ >= 24e3 ? S0 = 24e3 : _ >= 22050 ? S0 = 22050 : _ >= 16e3 ? S0 = 16e3 : _ >= 12e3 ? S0 = 12e3 : _ >= 11025 ? S0 = 11025 : _ >= 8e3 && (S0 = 8e3), t == -1 ? S0 : (t <= 15960 && (S0 = 44100), t <= 15250 && (S0 = 32e3), t <= 11220 && (S0 = 24e3), t <= 9970 && (S0 = 22050), t <= 7230 && (S0 = 16e3), t <= 5420 && (S0 = 12e3), t <= 4510 && (S0 = 11025), t <= 3970 && (S0 = 8e3), _ < S0 ? _ > 44100 ? 48e3 : _ > 32e3 ? 44100 : _ > 24e3 ? 32e3 : _ > 22050 ? 24e3 : _ > 16e3 ? 22050 : _ > 12e3 ? 16e3 : _ > 11025 ? 12e3 : _ > 8e3 ? 11025 : 8e3 : S0);
+    }
+    function s(t, _) {
+      switch (t) {
+        case 44100:
+          return _.version = 1, 0;
+        case 48e3:
+          return _.version = 1, 1;
+        case 32e3:
+          return _.version = 1, 2;
+        case 22050:
+          return _.version = 0, 0;
+        case 24e3:
+          return _.version = 0, 1;
+        case 16e3:
+          return _.version = 0, 2;
+        case 11025:
+          return _.version = 0, 0;
+        case 12e3:
+          return _.version = 0, 1;
+        case 8e3:
+          return _.version = 0, 2;
+        default:
+          return _.version = 0, -1;
+      }
+    }
+    function r(t, _, S0) {
+      S0 < 16e3 && (_ = 2);
+      for (var E0 = t0.bitrate_table[_][1], V0 = 2; V0 <= 14; V0++)
+        t0.bitrate_table[_][V0] > 0 && Math.abs(t0.bitrate_table[_][V0] - t) < Math.abs(E0 - t) && (E0 = t0.bitrate_table[_][V0]);
+      return E0;
+    }
+    function n(t, _, S0) {
+      S0 < 16e3 && (_ = 2);
+      for (var E0 = 0; E0 <= 14; E0++)
+        if (t0.bitrate_table[_][E0] > 0 && t0.bitrate_table[_][E0] == t)
+          return E0;
+      return -1;
+    }
+    function f(t, _) {
+      var S0 = [
+        new V(8, 2e3),
+        new V(16, 3700),
+        new V(24, 3900),
+        new V(32, 5500),
+        new V(40, 7e3),
+        new V(48, 7500),
+        new V(56, 1e4),
+        new V(64, 11e3),
+        new V(80, 13500),
+        new V(96, 15100),
+        new V(112, 15600),
+        new V(128, 17e3),
+        new V(160, 17500),
+        new V(192, 18600),
+        new V(224, 19400),
+        new V(256, 19700),
+        new V(320, 20500)
+      ], E0 = u.nearestBitrateFullIndex(_);
+      t.lowerlimit = S0[E0].lowpass;
+    }
+    function Y(t) {
+      var _ = t.internal_flags, S0 = 32, E0 = -1;
+      if (_.lowpass1 > 0) {
+        for (var V0 = 999, H0 = 0; H0 <= 31; H0++) {
+          var y0 = H0 / 31;
+          y0 >= _.lowpass2 && (S0 = Math.min(S0, H0)), _.lowpass1 < y0 && y0 < _.lowpass2 && (V0 = Math.min(V0, H0));
+        }
+        V0 == 999 ? _.lowpass1 = (S0 - 0.75) / 31 : _.lowpass1 = (V0 - 0.75) / 31, _.lowpass2 = S0 / 31;
+      }
+      if (_.highpass2 > 0 && _.highpass2 < 0.9 * (0.75 / 31) && (_.highpass1 = 0, _.highpass2 = 0, Z.err.println(`Warning: highpass filter disabled.  highpass frequency too small
+`)), _.highpass2 > 0) {
+        for (var T0 = -1, H0 = 0; H0 <= 31; H0++) {
+          var y0 = H0 / 31;
+          y0 <= _.highpass1 && (E0 = Math.max(E0, H0)), _.highpass1 < y0 && y0 < _.highpass2 && (T0 = Math.max(T0, H0));
+        }
+        _.highpass1 = E0 / 31, T0 == -1 ? _.highpass2 = (E0 + 0.75) / 31 : _.highpass2 = (T0 + 0.75) / 31;
+      }
+      for (var H0 = 0; H0 < 32; H0++) {
+        var F0, I0, y0 = H0 / 31;
+        _.highpass2 > _.highpass1 ? F0 = E((_.highpass2 - y0) / (_.highpass2 - _.highpass1 + 1e-20)) : F0 = 1, _.lowpass2 > _.lowpass1 ? I0 = E((y0 - _.lowpass1) / (_.lowpass2 - _.lowpass1 + 1e-20)) : I0 = 1, _.amp_filter[H0] = F0 * I0;
+      }
+    }
+    function J(t) {
+      var _ = t.internal_flags;
+      switch (t.quality) {
+        default:
+        case 9:
+          _.psymodel = 0, _.noise_shaping = 0, _.noise_shaping_amp = 0, _.noise_shaping_stop = 0, _.use_best_huffman = 0, _.full_outer_loop = 0;
+          break;
+        case 8:
+          t.quality = 7;
+        case 7:
+          _.psymodel = 1, _.noise_shaping = 0, _.noise_shaping_amp = 0, _.noise_shaping_stop = 0, _.use_best_huffman = 0, _.full_outer_loop = 0;
+          break;
+        case 6:
+          _.psymodel = 1, _.noise_shaping == 0 && (_.noise_shaping = 1), _.noise_shaping_amp = 0, _.noise_shaping_stop = 0, _.subblock_gain == -1 && (_.subblock_gain = 1), _.use_best_huffman = 0, _.full_outer_loop = 0;
+          break;
+        case 5:
+          _.psymodel = 1, _.noise_shaping == 0 && (_.noise_shaping = 1), _.noise_shaping_amp = 0, _.noise_shaping_stop = 0, _.subblock_gain == -1 && (_.subblock_gain = 1), _.use_best_huffman = 0, _.full_outer_loop = 0;
+          break;
+        case 4:
+          _.psymodel = 1, _.noise_shaping == 0 && (_.noise_shaping = 1), _.noise_shaping_amp = 0, _.noise_shaping_stop = 0, _.subblock_gain == -1 && (_.subblock_gain = 1), _.use_best_huffman = 1, _.full_outer_loop = 0;
+          break;
+        case 3:
+          _.psymodel = 1, _.noise_shaping == 0 && (_.noise_shaping = 1), _.noise_shaping_amp = 1, _.noise_shaping_stop = 1, _.subblock_gain == -1 && (_.subblock_gain = 1), _.use_best_huffman = 1, _.full_outer_loop = 0;
+          break;
+        case 2:
+          _.psymodel = 1, _.noise_shaping == 0 && (_.noise_shaping = 1), _.substep_shaping == 0 && (_.substep_shaping = 2), _.noise_shaping_amp = 1, _.noise_shaping_stop = 1, _.subblock_gain == -1 && (_.subblock_gain = 1), _.use_best_huffman = 1, _.full_outer_loop = 0;
+          break;
+        case 1:
+          _.psymodel = 1, _.noise_shaping == 0 && (_.noise_shaping = 1), _.substep_shaping == 0 && (_.substep_shaping = 2), _.noise_shaping_amp = 2, _.noise_shaping_stop = 1, _.subblock_gain == -1 && (_.subblock_gain = 1), _.use_best_huffman = 1, _.full_outer_loop = 0;
+          break;
+        case 0:
+          _.psymodel = 1, _.noise_shaping == 0 && (_.noise_shaping = 1), _.substep_shaping == 0 && (_.substep_shaping = 2), _.noise_shaping_amp = 2, _.noise_shaping_stop = 1, _.subblock_gain == -1 && (_.subblock_gain = 1), _.use_best_huffman = 1, _.full_outer_loop = 0;
+          break;
+      }
+    }
+    function T(t) {
+      var _ = t.internal_flags;
+      t.frameNum = 0, t.write_id3tag_automatic && b.id3tag_write_v2(t), _.bitrate_stereoMode_Hist = W([16, 4 + 1]), _.bitrate_blockType_Hist = W([16, 4 + 1 + 1]), _.PeakSample = 0, t.bWriteVbrTag && v0.InitVbrTag(t);
+    }
+    this.lame_init_params = function(t) {
+      var _ = t.internal_flags;
+      if (_.Class_ID = 0, _.ATH == null && (_.ATH = new m()), _.PSY == null && (_.PSY = new S()), _.rgdata == null && (_.rgdata = new O()), _.channels_in = t.num_channels, _.channels_in == 1 && (t.mode = o.MONO), _.channels_out = t.mode == o.MONO ? 1 : 2, _.mode_ext = U.MPG_MD_MS_LR, t.mode == o.MONO && (t.force_ms = false), t.VBR == X.vbr_off && t.VBR_mean_bitrate_kbps != 128 && t.brate == 0 && (t.brate = t.VBR_mean_bitrate_kbps), t.VBR == X.vbr_off || t.VBR == X.vbr_mtrh || t.VBR == X.vbr_mt || (t.free_format = false), t.VBR == X.vbr_off && t.brate == 0 && K.EQ(t.compression_ratio, 0) && (t.compression_ratio = 11.025), t.VBR == X.vbr_off && t.compression_ratio > 0 && (t.out_samplerate == 0 && (t.out_samplerate = map2MP3Frequency(int(0.97 * t.in_samplerate))), t.brate = 0 | t.out_samplerate * 16 * _.channels_out / (1e3 * t.compression_ratio), _.samplerate_index = s(t.out_samplerate, t), t.free_format || (t.brate = r(
+        t.brate,
+        t.version,
+        t.out_samplerate
+      ))), t.out_samplerate != 0 && (t.out_samplerate < 16e3 ? (t.VBR_mean_bitrate_kbps = Math.max(
+        t.VBR_mean_bitrate_kbps,
+        8
+      ), t.VBR_mean_bitrate_kbps = Math.min(
+        t.VBR_mean_bitrate_kbps,
+        64
+      )) : t.out_samplerate < 32e3 ? (t.VBR_mean_bitrate_kbps = Math.max(
+        t.VBR_mean_bitrate_kbps,
+        8
+      ), t.VBR_mean_bitrate_kbps = Math.min(
+        t.VBR_mean_bitrate_kbps,
+        160
+      )) : (t.VBR_mean_bitrate_kbps = Math.max(
+        t.VBR_mean_bitrate_kbps,
+        32
+      ), t.VBR_mean_bitrate_kbps = Math.min(
+        t.VBR_mean_bitrate_kbps,
+        320
+      ))), t.lowpassfreq == 0) {
+        var S0 = 16e3;
+        switch (t.VBR) {
+          case X.vbr_off: {
+            var E0 = new L();
+            f(E0, t.brate), S0 = E0.lowerlimit;
+            break;
+          }
+          case X.vbr_abr: {
+            var E0 = new L();
+            f(E0, t.VBR_mean_bitrate_kbps), S0 = E0.lowerlimit;
+            break;
+          }
+          case X.vbr_rh: {
+            var V0 = [
+              19500,
+              19e3,
+              18600,
+              18e3,
+              17500,
+              16e3,
+              15600,
+              14900,
+              12500,
+              1e4,
+              3950
+            ];
+            if (0 <= t.VBR_q && t.VBR_q <= 9) {
+              var H0 = V0[t.VBR_q], y0 = V0[t.VBR_q + 1], T0 = t.VBR_q_frac;
+              S0 = linear_int(H0, y0, T0);
+            } else
+              S0 = 19500;
+            break;
+          }
+          default: {
+            var V0 = [
+              19500,
+              19e3,
+              18500,
+              18e3,
+              17500,
+              16500,
+              15500,
+              14500,
+              12500,
+              9500,
+              3950
+            ];
+            if (0 <= t.VBR_q && t.VBR_q <= 9) {
+              var H0 = V0[t.VBR_q], y0 = V0[t.VBR_q + 1], T0 = t.VBR_q_frac;
+              S0 = linear_int(H0, y0, T0);
+            } else
+              S0 = 19500;
+          }
+        }
+        t.mode == o.MONO && (t.VBR == X.vbr_off || t.VBR == X.vbr_abr) && (S0 *= 1.5), t.lowpassfreq = S0 | 0;
+      }
+      if (t.out_samplerate == 0 && (2 * t.lowpassfreq > t.in_samplerate && (t.lowpassfreq = t.in_samplerate / 2), t.out_samplerate = i(
+        t.lowpassfreq | 0,
+        t.in_samplerate
+      )), t.lowpassfreq = Math.min(20500, t.lowpassfreq), t.lowpassfreq = Math.min(t.out_samplerate / 2, t.lowpassfreq), t.VBR == X.vbr_off && (t.compression_ratio = t.out_samplerate * 16 * _.channels_out / (1e3 * t.brate)), t.VBR == X.vbr_abr && (t.compression_ratio = t.out_samplerate * 16 * _.channels_out / (1e3 * t.VBR_mean_bitrate_kbps)), t.bWriteVbrTag || (t.findReplayGain = false, t.decode_on_the_fly = false, _.findPeakSample = false), _.findReplayGain = t.findReplayGain, _.decode_on_the_fly = t.decode_on_the_fly, _.decode_on_the_fly && (_.findPeakSample = true), _.findReplayGain && l.InitGainAnalysis(_.rgdata, t.out_samplerate) == GainAnalysis.INIT_GAIN_ANALYSIS_ERROR)
+        return t.internal_flags = null, -6;
+      switch (_.decode_on_the_fly && !t.decode_only && (_.hip != null && a.hip_decode_exit(_.hip), _.hip = a.hip_decode_init()), _.mode_gr = t.out_samplerate <= 24e3 ? 1 : 2, t.framesize = 576 * _.mode_gr, t.encoder_delay = U.ENCDELAY, _.resample_ratio = t.in_samplerate / t.out_samplerate, t.VBR) {
+        case X.vbr_mt:
+        case X.vbr_rh:
+        case X.vbr_mtrh:
+          {
+            var F0 = [
+              5.7,
+              6.5,
+              7.3,
+              8.2,
+              10,
+              11.9,
+              13,
+              14,
+              15,
+              16.5
+            ];
+            t.compression_ratio = F0[t.VBR_q];
+          }
+          break;
+        case X.vbr_abr:
+          t.compression_ratio = t.out_samplerate * 16 * _.channels_out / (1e3 * t.VBR_mean_bitrate_kbps);
+          break;
+        default:
+          t.compression_ratio = t.out_samplerate * 16 * _.channels_out / (1e3 * t.brate);
+          break;
+      }
+      if (t.mode == o.NOT_SET && (t.mode = o.JOINT_STEREO), t.highpassfreq > 0 ? (_.highpass1 = 2 * t.highpassfreq, t.highpasswidth >= 0 ? _.highpass2 = 2 * (t.highpassfreq + t.highpasswidth) : _.highpass2 = (1 + 0) * 2 * t.highpassfreq, _.highpass1 /= t.out_samplerate, _.highpass2 /= t.out_samplerate) : (_.highpass1 = 0, _.highpass2 = 0), t.lowpassfreq > 0 ? (_.lowpass2 = 2 * t.lowpassfreq, t.lowpasswidth >= 0 ? (_.lowpass1 = 2 * (t.lowpassfreq - t.lowpasswidth), _.lowpass1 < 0 && (_.lowpass1 = 0)) : _.lowpass1 = (1 - 0) * 2 * t.lowpassfreq, _.lowpass1 /= t.out_samplerate, _.lowpass2 /= t.out_samplerate) : (_.lowpass1 = 0, _.lowpass2 = 0), Y(t), _.samplerate_index = s(t.out_samplerate, t), _.samplerate_index < 0)
+        return t.internal_flags = null, -1;
+      if (t.VBR == X.vbr_off) {
+        if (t.free_format)
+          _.bitrate_index = 0;
+        else if (t.brate = r(
+          t.brate,
+          t.version,
+          t.out_samplerate
+        ), _.bitrate_index = n(
+          t.brate,
+          t.version,
+          t.out_samplerate
+        ), _.bitrate_index <= 0)
+          return t.internal_flags = null, -1;
+      } else
+        _.bitrate_index = 1;
+      t.analysis && (t.bWriteVbrTag = false), _.pinfo != null && (t.bWriteVbrTag = false), M.init_bit_stream_w(_);
+      for (var I0 = _.samplerate_index + 3 * t.version + 6 * (t.out_samplerate < 16e3 ? 1 : 0), b0 = 0; b0 < U.SBMAX_l + 1; b0++)
+        _.scalefac_band.l[b0] = H.sfBandIndex[I0].l[b0];
+      for (var b0 = 0; b0 < U.PSFB21 + 1; b0++) {
+        var G0 = (_.scalefac_band.l[22] - _.scalefac_band.l[21]) / U.PSFB21, e1 = _.scalefac_band.l[21] + b0 * G0;
+        _.scalefac_band.psfb21[b0] = e1;
+      }
+      _.scalefac_band.psfb21[U.PSFB21] = 576;
+      for (var b0 = 0; b0 < U.SBMAX_s + 1; b0++)
+        _.scalefac_band.s[b0] = H.sfBandIndex[I0].s[b0];
+      for (var b0 = 0; b0 < U.PSFB12 + 1; b0++) {
+        var G0 = (_.scalefac_band.s[13] - _.scalefac_band.s[12]) / U.PSFB12, e1 = _.scalefac_band.s[12] + b0 * G0;
+        _.scalefac_band.psfb12[b0] = e1;
+      }
+      _.scalefac_band.psfb12[U.PSFB12] = 192, t.version == 1 ? _.sideinfo_len = _.channels_out == 1 ? 4 + 17 : 4 + 32 : _.sideinfo_len = _.channels_out == 1 ? 4 + 9 : 4 + 17, t.error_protection && (_.sideinfo_len += 2), T(t), _.Class_ID = N;
+      {
+        var Y0;
+        for (Y0 = 0; Y0 < 19; Y0++)
+          _.nsPsy.pefirbuf[Y0] = 700 * _.mode_gr * _.channels_out;
+        t.ATHtype == -1 && (t.ATHtype = 4);
+      }
+      switch (D(t.VBR_q <= 9), D(t.VBR_q >= 0), t.VBR) {
+        case X.vbr_mt:
+          t.VBR = X.vbr_mtrh;
+        case X.vbr_mtrh: {
+          t.useTemporal == null && (t.useTemporal = false), p.apply_preset(t, 500 - t.VBR_q * 10, 0), t.quality < 0 && (t.quality = LAME_DEFAULT_QUALITY), t.quality < 5 && (t.quality = 0), t.quality > 5 && (t.quality = 5), _.PSY.mask_adjust = t.maskingadjust, _.PSY.mask_adjust_short = t.maskingadjust_short, t.experimentalY ? _.sfb21_extra = false : _.sfb21_extra = t.out_samplerate > 44e3, _.iteration_loop = new VBRNewIterationLoop(B);
+          break;
+        }
+        case X.vbr_rh: {
+          p.apply_preset(t, 500 - t.VBR_q * 10, 0), _.PSY.mask_adjust = t.maskingadjust, _.PSY.mask_adjust_short = t.maskingadjust_short, t.experimentalY ? _.sfb21_extra = false : _.sfb21_extra = t.out_samplerate > 44e3, t.quality > 6 && (t.quality = 6), t.quality < 0 && (t.quality = LAME_DEFAULT_QUALITY), _.iteration_loop = new VBROldIterationLoop(B);
+          break;
+        }
+        default: {
+          var v;
+          _.sfb21_extra = false, t.quality < 0 && (t.quality = LAME_DEFAULT_QUALITY), v = t.VBR, v == X.vbr_off && (t.VBR_mean_bitrate_kbps = t.brate), p.apply_preset(t, t.VBR_mean_bitrate_kbps, 0), t.VBR = v, _.PSY.mask_adjust = t.maskingadjust, _.PSY.mask_adjust_short = t.maskingadjust_short, v == X.vbr_off ? _.iteration_loop = new s0(B) : _.iteration_loop = new ABRIterationLoop(B);
+          break;
+        }
+      }
+      if (D(t.scale >= 0), t.VBR != X.vbr_off) {
+        if (_.VBR_min_bitrate = 1, _.VBR_max_bitrate = 14, t.out_samplerate < 16e3 && (_.VBR_max_bitrate = 8), t.VBR_min_bitrate_kbps != 0 && (t.VBR_min_bitrate_kbps = r(
+          t.VBR_min_bitrate_kbps,
+          t.version,
+          t.out_samplerate
+        ), _.VBR_min_bitrate = n(
+          t.VBR_min_bitrate_kbps,
+          t.version,
+          t.out_samplerate
+        ), _.VBR_min_bitrate < 0) || t.VBR_max_bitrate_kbps != 0 && (t.VBR_max_bitrate_kbps = r(
+          t.VBR_max_bitrate_kbps,
+          t.version,
+          t.out_samplerate
+        ), _.VBR_max_bitrate = n(
+          t.VBR_max_bitrate_kbps,
+          t.version,
+          t.out_samplerate
+        ), _.VBR_max_bitrate < 0))
+          return -1;
+        t.VBR_min_bitrate_kbps = t0.bitrate_table[t.version][_.VBR_min_bitrate], t.VBR_max_bitrate_kbps = t0.bitrate_table[t.version][_.VBR_max_bitrate], t.VBR_mean_bitrate_kbps = Math.min(
+          t0.bitrate_table[t.version][_.VBR_max_bitrate],
+          t.VBR_mean_bitrate_kbps
+        ), t.VBR_mean_bitrate_kbps = Math.max(
+          t0.bitrate_table[t.version][_.VBR_min_bitrate],
+          t.VBR_mean_bitrate_kbps
+        );
+      }
+      return t.tune && (_.PSY.mask_adjust += t.tune_value_a, _.PSY.mask_adjust_short += t.tune_value_a), J(t), D(t.scale >= 0), t.athaa_type < 0 ? _.ATH.useAdjust = 3 : _.ATH.useAdjust = t.athaa_type, _.ATH.aaSensitivityP = Math.pow(10, t.athaa_sensitivity / -10), t.short_blocks == null && (t.short_blocks = z.short_block_allowed), t.short_blocks == z.short_block_allowed && (t.mode == o.JOINT_STEREO || t.mode == o.STEREO) && (t.short_blocks = z.short_block_coupled), t.quant_comp < 0 && (t.quant_comp = 1), t.quant_comp_short < 0 && (t.quant_comp_short = 0), t.msfix < 0 && (t.msfix = 0), t.exp_nspsytune = t.exp_nspsytune | 1, t.internal_flags.nsPsy.attackthre < 0 && (t.internal_flags.nsPsy.attackthre = g.NSATTACKTHRE), t.internal_flags.nsPsy.attackthre_s < 0 && (t.internal_flags.nsPsy.attackthre_s = g.NSATTACKTHRE_S), D(t.scale >= 0), t.scale < 0 && (t.scale = 1), t.ATHtype < 0 && (t.ATHtype = 4), t.ATHcurve < 0 && (t.ATHcurve = 4), t.athaa_loudapprox < 0 && (t.athaa_loudapprox = 2), t.interChRatio < 0 && (t.interChRatio = 0), t.useTemporal == null && (t.useTemporal = true), _.slot_lag = _.frac_SpF = 0, t.VBR == X.vbr_off && (_.slot_lag = _.frac_SpF = (t.version + 1) * 72e3 * t.brate % t.out_samplerate | 0), H.iteration_init(t), I.psymodel_init(t), D(t.scale >= 0), 0;
+    };
+    function q(t, _) {
+      (t.in_buffer_0 == null || t.in_buffer_nsamples < _) && (t.in_buffer_0 = u0(_), t.in_buffer_1 = u0(_), t.in_buffer_nsamples = _);
+    }
+    this.lame_encode_flush = function(t, _, S0, E0) {
+      var V0 = t.internal_flags, H0 = Q([2, 1152]), y0 = 0, T0, F0, I0, b0, G0 = V0.mf_samples_to_encode - U.POSTDELAY, e1 = i0(t);
+      if (V0.mf_samples_to_encode < 1)
+        return 0;
+      for (T0 = 0, t.in_samplerate != t.out_samplerate && (G0 += 16 * t.out_samplerate / t.in_samplerate), I0 = t.framesize - G0 % t.framesize, I0 < 576 && (I0 += t.framesize), t.encoder_padding = I0, b0 = (G0 + I0) / t.framesize; b0 > 0 && y0 >= 0; ) {
+        var Y0 = e1 - V0.mf_size, v = t.frameNum;
+        Y0 *= t.in_samplerate, Y0 /= t.out_samplerate, Y0 > 1152 && (Y0 = 1152), Y0 < 1 && (Y0 = 1), F0 = E0 - T0, E0 == 0 && (F0 = 0), y0 = this.lame_encode_buffer(
+          t,
+          H0[0],
+          H0[1],
+          Y0,
+          _,
+          S0,
+          F0
+        ), S0 += y0, T0 += y0, b0 -= v != t.frameNum ? 1 : 0;
+      }
+      if (V0.mf_samples_to_encode = 0, y0 < 0 || (F0 = E0 - T0, E0 == 0 && (F0 = 0), M.flush_bitstream(t), y0 = M.copy_buffer(
+        V0,
+        _,
+        S0,
+        F0,
+        1
+      ), y0 < 0))
+        return y0;
+      if (S0 += y0, T0 += y0, F0 = E0 - T0, E0 == 0 && (F0 = 0), t.write_id3tag_automatic) {
+        if (b.id3tag_write_v1(t), y0 = M.copy_buffer(
+          V0,
+          _,
+          S0,
+          F0,
+          0
+        ), y0 < 0)
+          return y0;
+        T0 += y0;
+      }
+      return T0;
+    }, this.lame_encode_buffer = function(t, _, S0, E0, V0, H0, y0) {
+      var T0 = t.internal_flags, F0 = [null, null];
+      if (T0.Class_ID != N)
+        return -3;
+      if (E0 == 0)
+        return 0;
+      q(T0, E0), F0[0] = T0.in_buffer_0, F0[1] = T0.in_buffer_1;
+      for (var I0 = 0; I0 < E0; I0++)
+        F0[0][I0] = _[I0], T0.channels_in > 1 && (F0[1][I0] = S0[I0]);
+      return h0(
+        t,
+        F0[0],
+        F0[1],
+        E0,
+        V0,
+        H0,
+        y0
+      );
+    };
+    function i0(t) {
+      var _ = U.BLKSIZE + t.framesize - U.FFTOFFSET;
+      return _ = Math.max(_, 512 + t.framesize - 32), _;
+    }
+    function h0(t, _, S0, E0, V0, H0, y0) {
+      var T0 = t.internal_flags, F0 = 0, I0, b0, G0, e1, Y0, v = [null, null], h = [null, null];
+      if (T0.Class_ID != N)
+        return -3;
+      if (E0 == 0)
+        return 0;
+      if (Y0 = M.copy_buffer(T0, V0, H0, y0, 0), Y0 < 0)
+        return Y0;
+      if (H0 += Y0, F0 += Y0, h[0] = _, h[1] = S0, K.NEQ(t.scale, 0) && K.NEQ(t.scale, 1))
+        for (b0 = 0; b0 < E0; ++b0)
+          h[0][b0] *= t.scale, T0.channels_out == 2 && (h[1][b0] *= t.scale);
+      if (K.NEQ(t.scale_left, 0) && K.NEQ(t.scale_left, 1))
+        for (b0 = 0; b0 < E0; ++b0)
+          h[0][b0] *= t.scale_left;
+      if (K.NEQ(t.scale_right, 0) && K.NEQ(t.scale_right, 1))
+        for (b0 = 0; b0 < E0; ++b0)
+          h[1][b0] *= t.scale_right;
+      if (t.num_channels == 2 && T0.channels_out == 1)
+        for (b0 = 0; b0 < E0; ++b0)
+          h[0][b0] = 0.5 * (h[0][b0] + h[1][b0]), h[1][b0] = 0;
+      e1 = i0(t), v[0] = T0.mfbuf[0], v[1] = T0.mfbuf[1];
+      for (var x = 0; E0 > 0; ) {
+        var y = [null, null], k = 0, c = 0;
+        y[0] = h[0], y[1] = h[1];
+        var C = new M0();
+        if (f1(
+          t,
+          v,
+          y,
+          x,
+          E0,
+          C
+        ), k = C.n_in, c = C.n_out, T0.findReplayGain && !T0.decode_on_the_fly && l.AnalyzeSamples(
+          T0.rgdata,
+          v[0],
+          T0.mf_size,
+          v[1],
+          T0.mf_size,
+          c,
+          T0.channels_out
+        ) == GainAnalysis.GAIN_ANALYSIS_ERROR)
+          return -6;
+        if (E0 -= k, x += k, T0.channels_out == 2, T0.mf_size += c, D(T0.mf_size <= A.MFSIZE), T0.mf_samples_to_encode < 1 && (T0.mf_samples_to_encode = U.ENCDELAY + U.POSTDELAY), T0.mf_samples_to_encode += c, T0.mf_size >= e1) {
+          var G = y0 - F0;
+          if (y0 == 0 && (G = 0), I0 = d0(
+            t,
+            v[0],
+            v[1],
+            V0,
+            H0,
+            G
+          ), I0 < 0)
+            return I0;
+          for (H0 += I0, F0 += I0, T0.mf_size -= t.framesize, T0.mf_samples_to_encode -= t.framesize, G0 = 0; G0 < T0.channels_out; G0++)
+            for (b0 = 0; b0 < T0.mf_size; b0++)
+              v[G0][b0] = v[G0][b0 + t.framesize];
+        }
+      }
+      return F0;
+    }
+    function d0(t, _, S0, E0, V0, H0) {
+      var y0 = u.enc.lame_encode_mp3_frame(
+        t,
+        _,
+        S0,
+        E0,
+        V0,
+        H0
+      );
+      return t.frameNum++, y0;
+    }
+    function M0() {
+      this.n_in = 0, this.n_out = 0;
+    }
+    function R0() {
+      this.num_used = 0;
+    }
+    function A0(t, _) {
+      return _ != 0 ? A0(_, t % _) : t;
+    }
+    function w0(t, _, S0) {
+      var E0 = Math.PI * _;
+      t /= S0, t < 0 && (t = 0), t > 1 && (t = 1);
+      var V0 = t - 0.5, H0 = 0.42 - 0.5 * Math.cos(2 * t * Math.PI) + 0.08 * Math.cos(4 * t * Math.PI);
+      return Math.abs(V0) < 1e-9 ? E0 / Math.PI : H0 * Math.sin(S0 * E0 * V0) / (Math.PI * S0 * V0);
+    }
+    function $0(t, _, S0, E0, V0, H0, y0, T0, F0) {
+      var I0 = t.internal_flags, b0, G0 = 0, e1, Y0 = t.out_samplerate / A0(t.out_samplerate, t.in_samplerate);
+      Y0 > A.BPC && (Y0 = A.BPC);
+      var v = Math.abs(I0.resample_ratio - Math.floor(0.5 + I0.resample_ratio)) < 1e-4 ? 1 : 0, h = 1 / I0.resample_ratio;
+      h > 1 && (h = 1);
+      var x = 31;
+      x % 2 == 0 && --x, x += v;
+      var y = x + 1;
+      if (I0.fill_buffer_resample_init == 0) {
+        for (I0.inbuf_old[0] = u0(y), I0.inbuf_old[1] = u0(y), b0 = 0; b0 <= 2 * Y0; ++b0)
+          I0.blackfilt[b0] = u0(y);
+        for (I0.itime[0] = 0, I0.itime[1] = 0, G0 = 0; G0 <= 2 * Y0; G0++) {
+          var k = 0, c = (G0 - Y0) / (2 * Y0);
+          for (b0 = 0; b0 <= x; b0++)
+            k += I0.blackfilt[G0][b0] = w0(
+              b0 - c,
+              h,
+              x
+            );
+          for (b0 = 0; b0 <= x; b0++)
+            I0.blackfilt[G0][b0] /= k;
+        }
+        I0.fill_buffer_resample_init = 1;
+      }
+      var C = I0.inbuf_old[F0];
+      for (e1 = 0; e1 < E0; e1++) {
+        var G, F;
+        if (G = e1 * I0.resample_ratio, G0 = 0 | Math.floor(G - I0.itime[F0]), x + G0 - x / 2 >= y0)
+          break;
+        var c = G - I0.itime[F0] - (G0 + 0.5 * (x % 2));
+        F = 0 | Math.floor(c * 2 * Y0 + Y0 + 0.5);
+        var e0 = 0;
+        for (b0 = 0; b0 <= x; ++b0) {
+          var $ = 0 | b0 + G0 - x / 2, a0;
+          a0 = $ < 0 ? C[y + $] : V0[H0 + $], e0 += a0 * I0.blackfilt[F][b0];
+        }
+        _[S0 + e1] = e0;
+      }
+      if (T0.num_used = Math.min(y0, x + G0 - x / 2), I0.itime[F0] += T0.num_used - e1 * I0.resample_ratio, T0.num_used >= y)
+        for (b0 = 0; b0 < y; b0++)
+          C[b0] = V0[H0 + T0.num_used + b0 - y];
+      else {
+        var m0 = y - T0.num_used;
+        for (b0 = 0; b0 < m0; ++b0)
+          C[b0] = C[b0 + T0.num_used];
+        for (G0 = 0; b0 < y; ++b0, ++G0)
+          C[b0] = V0[H0 + G0];
+        D(G0 == T0.num_used);
+      }
+      return e1;
+    }
+    function f1(t, _, S0, E0, V0, H0) {
+      var y0 = t.internal_flags;
+      if (y0.resample_ratio < 0.9999 || y0.resample_ratio > 1.0001)
+        for (var T0 = 0; T0 < y0.channels_out; T0++) {
+          var F0 = new R0();
+          H0.n_out = $0(
+            t,
+            _[T0],
+            y0.mf_size,
+            t.framesize,
+            S0[T0],
+            E0,
+            V0,
+            F0,
+            T0
+          ), H0.n_in = F0.num_used;
+        }
+      else {
+        H0.n_out = Math.min(t.framesize, V0), H0.n_in = H0.n_out;
+        for (var I0 = 0; I0 < H0.n_out; ++I0)
+          _[0][y0.mf_size + I0] = S0[0][E0 + I0], y0.channels_out == 2 && (_[1][y0.mf_size + I0] = S0[1][E0 + I0]);
+      }
+    }
+  }
+  return Te = R, Te;
+}
+var p2 = Q0;
+var M1 = p2.VbrMode;
+function H2() {
+  var w = Oe();
+  function Z(A, m, O, s0, K, t0, U, R, o, u, d, e, l, M, p) {
+    this.vbr_q = A, this.quant_comp = m, this.quant_comp_s = O, this.expY = s0, this.st_lrm = K, this.st_s = t0, this.masking_adj = U, this.masking_adj_short = R, this.ath_lower = o, this.ath_curve = u, this.ath_sensitivity = d, this.interch = e, this.safejoint = l, this.sfb21mod = M, this.msfix = p;
+  }
+  function X(A, m, O, s0, K, t0, U, R, o, u, d, e, l, M) {
+    this.quant_comp = m, this.quant_comp_s = O, this.safejoint = s0, this.nsmsfix = K, this.st_lrm = t0, this.st_s = U, this.nsbass = R, this.scale = o, this.masking_adj = u, this.ath_lower = d, this.ath_curve = e, this.interch = l, this.sfscale = M;
+  }
+  var z;
+  this.setModules = function(A) {
+    z = A;
+  };
+  var u0 = [
+    new Z(0, 9, 9, 0, 5.2, 125, -4.2, -6.3, 4.8, 1, 0, 0, 2, 21, 0.97),
+    new Z(1, 9, 9, 0, 5.3, 125, -3.6, -5.6, 4.5, 1.5, 0, 0, 2, 21, 1.35),
+    new Z(2, 9, 9, 0, 5.6, 125, -2.2, -3.5, 2.8, 2, 0, 0, 2, 21, 1.49),
+    new Z(3, 9, 9, 1, 5.8, 130, -1.8, -2.8, 2.6, 3, -4, 0, 2, 20, 1.64),
+    new Z(4, 9, 9, 1, 6, 135, -0.7, -1.1, 1.1, 3.5, -8, 0, 2, 0, 1.79),
+    new Z(5, 9, 9, 1, 6.4, 140, 0.5, 0.4, -7.5, 4, -12, 2e-4, 0, 0, 1.95),
+    new Z(6, 9, 9, 1, 6.6, 145, 0.67, 0.65, -14.7, 6.5, -19, 4e-4, 0, 0, 2.3),
+    new Z(7, 9, 9, 1, 6.6, 145, 0.8, 0.75, -19.7, 8, -22, 6e-4, 0, 0, 2.7),
+    new Z(8, 9, 9, 1, 6.6, 145, 1.2, 1.15, -27.5, 10, -23, 7e-4, 0, 0, 0),
+    new Z(9, 9, 9, 1, 6.6, 145, 1.6, 1.6, -36, 11, -25, 8e-4, 0, 0, 0),
+    new Z(10, 9, 9, 1, 6.6, 145, 2, 2, -36, 12, -25, 8e-4, 0, 0, 0)
+  ], W = [
+    new Z(0, 9, 9, 0, 4.2, 25, -7, -4, 7.5, 1, 0, 0, 2, 26, 0.97),
+    new Z(1, 9, 9, 0, 4.2, 25, -5.6, -3.6, 4.5, 1.5, 0, 0, 2, 21, 1.35),
+    new Z(2, 9, 9, 0, 4.2, 25, -4.4, -1.8, 2, 2, 0, 0, 2, 18, 1.49),
+    new Z(3, 9, 9, 1, 4.2, 25, -3.4, -1.25, 1.1, 3, -4, 0, 2, 15, 1.64),
+    new Z(4, 9, 9, 1, 4.2, 25, -2.2, 0.1, 0, 3.5, -8, 0, 2, 0, 1.79),
+    new Z(5, 9, 9, 1, 4.2, 25, -1, 1.65, -7.7, 4, -12, 2e-4, 0, 0, 1.95),
+    new Z(6, 9, 9, 1, 4.2, 25, -0, 2.47, -7.7, 6.5, -19, 4e-4, 0, 0, 2),
+    new Z(7, 9, 9, 1, 4.2, 25, 0.5, 2, -14.5, 8, -22, 6e-4, 0, 0, 2),
+    new Z(8, 9, 9, 1, 4.2, 25, 1, 2.4, -22, 10, -23, 7e-4, 0, 0, 2),
+    new Z(9, 9, 9, 1, 4.2, 25, 1.5, 2.95, -30, 11, -25, 8e-4, 0, 0, 2),
+    new Z(10, 9, 9, 1, 4.2, 25, 2, 2.95, -36, 12, -30, 8e-4, 0, 0, 2)
+  ];
+  function Q(A, m, O) {
+    var s0 = A.VBR == M1.vbr_rh ? u0 : W, K = A.VBR_q_frac, t0 = s0[m], U = s0[m + 1], R = t0;
+    t0.st_lrm = t0.st_lrm + K * (U.st_lrm - t0.st_lrm), t0.st_s = t0.st_s + K * (U.st_s - t0.st_s), t0.masking_adj = t0.masking_adj + K * (U.masking_adj - t0.masking_adj), t0.masking_adj_short = t0.masking_adj_short + K * (U.masking_adj_short - t0.masking_adj_short), t0.ath_lower = t0.ath_lower + K * (U.ath_lower - t0.ath_lower), t0.ath_curve = t0.ath_curve + K * (U.ath_curve - t0.ath_curve), t0.ath_sensitivity = t0.ath_sensitivity + K * (U.ath_sensitivity - t0.ath_sensitivity), t0.interch = t0.interch + K * (U.interch - t0.interch), t0.msfix = t0.msfix + K * (U.msfix - t0.msfix), f0(A, R.vbr_q), O != 0 ? A.quant_comp = R.quant_comp : Math.abs(A.quant_comp - -1) > 0 || (A.quant_comp = R.quant_comp), O != 0 ? A.quant_comp_short = R.quant_comp_s : Math.abs(A.quant_comp_short - -1) > 0 || (A.quant_comp_short = R.quant_comp_s), R.expY != 0 && (A.experimentalY = R.expY != 0), O != 0 ? A.internal_flags.nsPsy.attackthre = R.st_lrm : Math.abs(A.internal_flags.nsPsy.attackthre - -1) > 0 || (A.internal_flags.nsPsy.attackthre = R.st_lrm), O != 0 ? A.internal_flags.nsPsy.attackthre_s = R.st_s : Math.abs(A.internal_flags.nsPsy.attackthre_s - -1) > 0 || (A.internal_flags.nsPsy.attackthre_s = R.st_s), O != 0 ? A.maskingadjust = R.masking_adj : Math.abs(A.maskingadjust - 0) > 0 || (A.maskingadjust = R.masking_adj), O != 0 ? A.maskingadjust_short = R.masking_adj_short : Math.abs(A.maskingadjust_short - 0) > 0 || (A.maskingadjust_short = R.masking_adj_short), O != 0 ? A.ATHlower = -R.ath_lower / 10 : Math.abs(-A.ATHlower * 10 - 0) > 0 || (A.ATHlower = -R.ath_lower / 10), O != 0 ? A.ATHcurve = R.ath_curve : Math.abs(A.ATHcurve - -1) > 0 || (A.ATHcurve = R.ath_curve), O != 0 ? A.athaa_sensitivity = R.ath_sensitivity : Math.abs(A.athaa_sensitivity - -1) > 0 || (A.athaa_sensitivity = R.ath_sensitivity), R.interch > 0 && (O != 0 ? A.interChRatio = R.interch : Math.abs(A.interChRatio - -1) > 0 || (A.interChRatio = R.interch)), R.safejoint > 0 && (A.exp_nspsytune = A.exp_nspsytune | R.safejoint), R.sfb21mod > 0 && (A.exp_nspsytune = A.exp_nspsytune | R.sfb21mod << 20), O != 0 ? A.msfix = R.msfix : Math.abs(A.msfix - -1) > 0 || (A.msfix = R.msfix), O == 0 && (A.VBR_q = m, A.VBR_q_frac = K);
+  }
+  var D = [
+    new X(8, 9, 9, 0, 0, 6.6, 145, 0, 0.95, 0, -30, 11, 12e-4, 1),
+    /*   8, impossible to use in stereo */
+    new X(16, 9, 9, 0, 0, 6.6, 145, 0, 0.95, 0, -25, 11, 1e-3, 1),
+    /*  16 */
+    new X(24, 9, 9, 0, 0, 6.6, 145, 0, 0.95, 0, -20, 11, 1e-3, 1),
+    /*  24 */
+    new X(32, 9, 9, 0, 0, 6.6, 145, 0, 0.95, 0, -15, 11, 1e-3, 1),
+    /*  32 */
+    new X(40, 9, 9, 0, 0, 6.6, 145, 0, 0.95, 0, -10, 11, 9e-4, 1),
+    /*  40 */
+    new X(48, 9, 9, 0, 0, 6.6, 145, 0, 0.95, 0, -10, 11, 9e-4, 1),
+    /*  48 */
+    new X(56, 9, 9, 0, 0, 6.6, 145, 0, 0.95, 0, -6, 11, 8e-4, 1),
+    /*  56 */
+    new X(64, 9, 9, 0, 0, 6.6, 145, 0, 0.95, 0, -2, 11, 8e-4, 1),
+    /*  64 */
+    new X(80, 9, 9, 0, 0, 6.6, 145, 0, 0.95, 0, 0, 8, 7e-4, 1),
+    /*  80 */
+    new X(96, 9, 9, 0, 2.5, 6.6, 145, 0, 0.95, 0, 1, 5.5, 6e-4, 1),
+    /*  96 */
+    new X(112, 9, 9, 0, 2.25, 6.6, 145, 0, 0.95, 0, 2, 4.5, 5e-4, 1),
+    /* 112 */
+    new X(128, 9, 9, 0, 1.95, 6.4, 140, 0, 0.95, 0, 3, 4, 2e-4, 1),
+    /* 128 */
+    new X(160, 9, 9, 1, 1.79, 6, 135, 0, 0.95, -2, 5, 3.5, 0, 1),
+    /* 160 */
+    new X(192, 9, 9, 1, 1.49, 5.6, 125, 0, 0.97, -4, 7, 3, 0, 0),
+    /* 192 */
+    new X(224, 9, 9, 1, 1.25, 5.2, 125, 0, 0.98, -6, 9, 2, 0, 0),
+    /* 224 */
+    new X(256, 9, 9, 1, 0.97, 5.2, 125, 0, 1, -8, 10, 1, 0, 0),
+    /* 256 */
+    new X(320, 9, 9, 1, 0.9, 5.2, 125, 0, 1, -10, 12, 0, 0, 0)
+    /* 320 */
+  ];
+  function g(A, m, O) {
+    var s0 = m, K = z.nearestBitrateFullIndex(m);
+    if (A.VBR = M1.vbr_abr, A.VBR_mean_bitrate_kbps = s0, A.VBR_mean_bitrate_kbps = Math.min(A.VBR_mean_bitrate_kbps, 320), A.VBR_mean_bitrate_kbps = Math.max(A.VBR_mean_bitrate_kbps, 8), A.brate = A.VBR_mean_bitrate_kbps, A.VBR_mean_bitrate_kbps > 320 && (A.disable_reservoir = true), D[K].safejoint > 0 && (A.exp_nspsytune = A.exp_nspsytune | 2), D[K].sfscale > 0 && (A.internal_flags.noise_shaping = 2), Math.abs(D[K].nsbass) > 0) {
+      var t0 = int(D[K].nsbass * 4);
+      t0 < 0 && (t0 += 64), A.exp_nspsytune = A.exp_nspsytune | t0 << 2;
+    }
+    return O != 0 ? A.quant_comp = D[K].quant_comp : Math.abs(A.quant_comp - -1) > 0 || (A.quant_comp = D[K].quant_comp), O != 0 ? A.quant_comp_short = D[K].quant_comp_s : Math.abs(A.quant_comp_short - -1) > 0 || (A.quant_comp_short = D[K].quant_comp_s), O != 0 ? A.msfix = D[K].nsmsfix : Math.abs(A.msfix - -1) > 0 || (A.msfix = D[K].nsmsfix), O != 0 ? A.internal_flags.nsPsy.attackthre = D[K].st_lrm : Math.abs(A.internal_flags.nsPsy.attackthre - -1) > 0 || (A.internal_flags.nsPsy.attackthre = D[K].st_lrm), O != 0 ? A.internal_flags.nsPsy.attackthre_s = D[K].st_s : Math.abs(A.internal_flags.nsPsy.attackthre_s - -1) > 0 || (A.internal_flags.nsPsy.attackthre_s = D[K].st_s), O != 0 ? A.scale = D[K].scale : Math.abs(A.scale - -1) > 0 || (A.scale = D[K].scale), O != 0 ? A.maskingadjust = D[K].masking_adj : Math.abs(A.maskingadjust - 0) > 0 || (A.maskingadjust = D[K].masking_adj), D[K].masking_adj > 0 ? O != 0 ? A.maskingadjust_short = D[K].masking_adj * 0.9 : Math.abs(A.maskingadjust_short - 0) > 0 || (A.maskingadjust_short = D[K].masking_adj * 0.9) : O != 0 ? A.maskingadjust_short = D[K].masking_adj * 1.1 : Math.abs(A.maskingadjust_short - 0) > 0 || (A.maskingadjust_short = D[K].masking_adj * 1.1), O != 0 ? A.ATHlower = -D[K].ath_lower / 10 : Math.abs(-A.ATHlower * 10 - 0) > 0 || (A.ATHlower = -D[K].ath_lower / 10), O != 0 ? A.ATHcurve = D[K].ath_curve : Math.abs(A.ATHcurve - -1) > 0 || (A.ATHcurve = D[K].ath_curve), O != 0 ? A.interChRatio = D[K].interch : Math.abs(A.interChRatio - -1) > 0 || (A.interChRatio = D[K].interch), m;
+  }
+  this.apply_preset = function(A, m, O) {
+    switch (m) {
+      case w.R3MIX: {
+        m = w.V3, A.VBR = M1.vbr_mtrh;
+        break;
+      }
+      case w.MEDIUM: {
+        m = w.V4, A.VBR = M1.vbr_rh;
+        break;
+      }
+      case w.MEDIUM_FAST: {
+        m = w.V4, A.VBR = M1.vbr_mtrh;
+        break;
+      }
+      case w.STANDARD: {
+        m = w.V2, A.VBR = M1.vbr_rh;
+        break;
+      }
+      case w.STANDARD_FAST: {
+        m = w.V2, A.VBR = M1.vbr_mtrh;
+        break;
+      }
+      case w.EXTREME: {
+        m = w.V0, A.VBR = M1.vbr_rh;
+        break;
+      }
+      case w.EXTREME_FAST: {
+        m = w.V0, A.VBR = M1.vbr_mtrh;
+        break;
+      }
+      case w.INSANE:
+        return m = 320, A.preset = m, g(A, m, O), A.VBR = M1.vbr_off, m;
+    }
+    switch (A.preset = m, m) {
+      case w.V9:
+        return Q(A, 9, O), m;
+      case w.V8:
+        return Q(A, 8, O), m;
+      case w.V7:
+        return Q(A, 7, O), m;
+      case w.V6:
+        return Q(A, 6, O), m;
+      case w.V5:
+        return Q(A, 5, O), m;
+      case w.V4:
+        return Q(A, 4, O), m;
+      case w.V3:
+        return Q(A, 3, O), m;
+      case w.V2:
+        return Q(A, 2, O), m;
+      case w.V1:
+        return Q(A, 1, O), m;
+      case w.V0:
+        return Q(A, 0, O), m;
+    }
+    return 8 <= m && m <= 320 ? g(A, m, O) : (A.preset = 0, m);
+  };
+  function f0(A, m) {
+    var O = 0;
+    return 0 > m && (O = -1, m = 0), 9 < m && (O = -1, m = 9), A.VBR_q = m, A.VBR_q_frac = 0, O;
+  }
+}
+var V2 = H2;
+function O2() {
+  this.setModules = function(w, Z) {
+  };
+}
+var C2 = O2;
+function F2() {
+  this.over_noise = 0, this.tot_noise = 0, this.max_noise = 0, this.over_count = 0, this.over_SSD = 0, this.bits = 0;
+}
+var k2 = F2;
+var Ca = Q0;
+var na = Ca.new_float;
+var X2 = Ca.new_int;
+function Y2() {
+  this.global_gain = 0, this.sfb_count1 = 0, this.step = X2(39), this.noise = na(39), this.noise_log = na(39);
+}
+var q2 = Y2;
+var q1 = Q0;
+var y1 = q1.System;
+var _a = q1.VbrMode;
+var ye = q1.Util;
+var X1 = q1.Arrays;
+var K1 = q1.new_float;
+var U1 = q1.assert;
+var D2 = C2;
+var we = k2;
+var G2 = q2;
+var D0 = t1();
+var la = Le;
+var va = ie;
+function $2() {
+  var w;
+  this.rv = null;
+  var Z;
+  this.qupvt = null;
+  var X, z = new D2(), u0;
+  this.setModules = function(R, o, u, d) {
+    w = R, Z = o, this.rv = o, X = u, this.qupvt = u, u0 = d, z.setModules(X, u0);
+  }, this.ms_convert = function(R, o) {
+    for (var u = 0; u < 576; ++u) {
+      var d = R.tt[o][0].xr[u], e = R.tt[o][1].xr[u];
+      R.tt[o][0].xr[u] = (d + e) * (ye.SQRT2 * 0.5), R.tt[o][1].xr[u] = (d - e) * (ye.SQRT2 * 0.5);
+    }
+  };
+  function W(R, o, u, d) {
+    d = 0;
+    for (var e = 0; e <= u; ++e) {
+      var l = Math.abs(R.xr[e]);
+      d += l, o[e] = Math.sqrt(l * Math.sqrt(l)), o[e] > R.xrpow_max && (R.xrpow_max = o[e]);
+    }
+    return d;
+  }
+  this.init_xrpow = function(R, o, u) {
+    var d = 0, e = 0 | o.max_nonzero_coeff;
+    if (o.xrpow_max = 0, X1.fill(u, e, 576, 0), d = W(o, u, e, d), d > 1e-20) {
+      var l = 0;
+      R.substep_shaping & 2 && (l = 1);
+      for (var M = 0; M < o.psymax; M++)
+        R.pseudohalf[M] = l;
+      return true;
+    }
+    return X1.fill(o.l3_enc, 0, 576, 0), false;
+  };
+  function Q(R, o) {
+    var u = R.ATH, d = o.xr;
+    if (o.block_type != D0.SHORT_TYPE)
+      for (var e = false, l = D0.PSFB21 - 1; l >= 0 && !e; l--) {
+        var M = R.scalefac_band.psfb21[l], p = R.scalefac_band.psfb21[l + 1], H = X.athAdjust(
+          u.adjust,
+          u.psfb21[l],
+          u.floor
+        );
+        R.nsPsy.longfact[21] > 1e-12 && (H *= R.nsPsy.longfact[21]);
+        for (var B = p - 1; B >= M; B--)
+          if (Math.abs(d[B]) < H)
+            d[B] = 0;
+          else {
+            e = true;
+            break;
+          }
+      }
+    else
+      for (var I = 0; I < 3; I++)
+        for (var e = false, l = D0.PSFB12 - 1; l >= 0 && !e; l--) {
+          var M = R.scalefac_band.s[12] * 3 + (R.scalefac_band.s[13] - R.scalefac_band.s[12]) * I + (R.scalefac_band.psfb12[l] - R.scalefac_band.psfb12[0]), p = M + (R.scalefac_band.psfb12[l + 1] - R.scalefac_band.psfb12[l]), v0 = X.athAdjust(
+            u.adjust,
+            u.psfb12[l],
+            u.floor
+          );
+          R.nsPsy.shortfact[12] > 1e-12 && (v0 *= R.nsPsy.shortfact[12]);
+          for (var B = p - 1; B >= M; B--)
+            if (Math.abs(d[B]) < v0)
+              d[B] = 0;
+            else {
+              e = true;
+              break;
+            }
+        }
+  }
+  this.init_outer_loop = function(R, o) {
+    o.part2_3_length = 0, o.big_values = 0, o.count1 = 0, o.global_gain = 210, o.scalefac_compress = 0, o.table_select[0] = 0, o.table_select[1] = 0, o.table_select[2] = 0, o.subblock_gain[0] = 0, o.subblock_gain[1] = 0, o.subblock_gain[2] = 0, o.subblock_gain[3] = 0, o.region0_count = 0, o.region1_count = 0, o.preflag = 0, o.scalefac_scale = 0, o.count1table_select = 0, o.part2_length = 0, o.sfb_lmax = D0.SBPSY_l, o.sfb_smin = D0.SBPSY_s, o.psy_lmax = R.sfb21_extra ? D0.SBMAX_l : D0.SBPSY_l, o.psymax = o.psy_lmax, o.sfbmax = o.sfb_lmax, o.sfbdivide = 11;
+    for (var u = 0; u < D0.SBMAX_l; u++)
+      o.width[u] = R.scalefac_band.l[u + 1] - R.scalefac_band.l[u], o.window[u] = 3;
+    if (o.block_type == D0.SHORT_TYPE) {
+      var d = K1(576);
+      o.sfb_smin = 0, o.sfb_lmax = 0, o.mixed_block_flag != 0 && (o.sfb_smin = 3, o.sfb_lmax = R.mode_gr * 2 + 4), o.psymax = o.sfb_lmax + 3 * ((R.sfb21_extra ? D0.SBMAX_s : D0.SBPSY_s) - o.sfb_smin), o.sfbmax = o.sfb_lmax + 3 * (D0.SBPSY_s - o.sfb_smin), o.sfbdivide = o.sfbmax - 18, o.psy_lmax = o.sfb_lmax;
+      var e = R.scalefac_band.l[o.sfb_lmax];
+      y1.arraycopy(o.xr, 0, d, 0, 576);
+      for (var u = o.sfb_smin; u < D0.SBMAX_s; u++)
+        for (var l = R.scalefac_band.s[u], M = R.scalefac_band.s[u + 1], p = 0; p < 3; p++)
+          for (var H = l; H < M; H++)
+            o.xr[e++] = d[3 * H + p];
+      for (var B = o.sfb_lmax, u = o.sfb_smin; u < D0.SBMAX_s; u++)
+        o.width[B] = o.width[B + 1] = o.width[B + 2] = R.scalefac_band.s[u + 1] - R.scalefac_band.s[u], o.window[B] = 0, o.window[B + 1] = 1, o.window[B + 2] = 2, B += 3;
+    }
+    o.count1bits = 0, o.sfb_partition_table = X.nr_of_sfb_block[0][0], o.slen[0] = 0, o.slen[1] = 0, o.slen[2] = 0, o.slen[3] = 0, o.max_nonzero_coeff = 575, X1.fill(o.scalefac, 0), Q(R, o);
+  };
+  function D(R) {
+    this.ordinal = R;
+  }
+  D.BINSEARCH_NONE = new D(0), D.BINSEARCH_UP = new D(1), D.BINSEARCH_DOWN = new D(2);
+  function g(R, o, u, d, e) {
+    var l, M = R.CurrentStep[d], p = false, H = R.OldValue[d], B = D.BINSEARCH_NONE;
+    for (o.global_gain = H, u -= o.part2_length; ; ) {
+      var I;
+      if (l = u0.count_bits(R, e, o, null), M == 1 || l == u)
+        break;
+      l > u ? (B == D.BINSEARCH_DOWN && (p = true), p && (M /= 2), B = D.BINSEARCH_UP, I = M) : (B == D.BINSEARCH_UP && (p = true), p && (M /= 2), B = D.BINSEARCH_DOWN, I = -M), o.global_gain += I, o.global_gain < 0 && (o.global_gain = 0, p = true), o.global_gain > 255 && (o.global_gain = 255, p = true);
+    }
+    for (U1(o.global_gain >= 0), U1(o.global_gain < 256); l > u && o.global_gain < 255; )
+      o.global_gain++, l = u0.count_bits(R, e, o, null);
+    return R.CurrentStep[d] = H - o.global_gain >= 4 ? 4 : 2, R.OldValue[d] = o.global_gain, o.part2_3_length = l, l;
+  }
+  this.trancate_smallspectrums = function(R, o, u, d) {
+    var e = K1(va.SFBMAX);
+    if (!(!(R.substep_shaping & 4) && o.block_type == D0.SHORT_TYPE || R.substep_shaping & 128)) {
+      X.calc_noise(o, u, e, new we(), null);
+      for (var M = 0; M < 576; M++) {
+        var l = 0;
+        o.l3_enc[M] != 0 && (l = Math.abs(o.xr[M])), d[M] = l;
+      }
+      var M = 0, p = 8;
+      o.block_type == D0.SHORT_TYPE && (p = 6);
+      do {
+        var H, B, I, v0, b = o.width[p];
+        if (M += b, !(e[p] >= 1) && (X1.sort(d, M - b, b), !BitStream.EQ(d[M - 1], 0))) {
+          H = (1 - e[p]) * u[p], B = 0, v0 = 0;
+          do {
+            var a;
+            for (I = 1; v0 + I < b && !BitStream.NEQ(d[v0 + M - b], d[v0 + M + I - b]); I++)
+              ;
+            if (a = d[v0 + M - b] * d[v0 + M - b] * I, H < a) {
+              v0 != 0 && (B = d[v0 + M - b - 1]);
+              break;
+            }
+            H -= a, v0 += I;
+          } while (v0 < b);
+          if (!BitStream.EQ(B, 0))
+            do
+              Math.abs(o.xr[M - b]) <= B && (o.l3_enc[M - b] = 0);
+            while (--b > 0);
+        }
+      } while (++p < o.psymax);
+      o.part2_3_length = u0.noquant_count_bits(R, o, null);
+    }
+  };
+  function f0(R) {
+    for (var o = 0; o < R.sfbmax; o++)
+      if (R.scalefac[o] + R.subblock_gain[R.window[o]] == 0)
+        return false;
+    return true;
+  }
+  function A(R) {
+    return ye.FAST_LOG10(0.368 + 0.632 * R * R * R);
+  }
+  function m(R, o) {
+    for (var u = 1e-37, d = 0; d < o.psymax; d++)
+      u += A(R[d]);
+    return Math.max(1e-20, u);
+  }
+  function O(R, o, u, d, e) {
+    var l;
+    switch (R) {
+      default:
+      case 9: {
+        o.over_count > 0 ? (l = u.over_SSD <= o.over_SSD, u.over_SSD == o.over_SSD && (l = u.bits < o.bits)) : l = u.max_noise < 0 && u.max_noise * 10 + u.bits <= o.max_noise * 10 + o.bits;
+        break;
+      }
+      case 0:
+        l = u.over_count < o.over_count || u.over_count == o.over_count && u.over_noise < o.over_noise || u.over_count == o.over_count && BitStream.EQ(u.over_noise, o.over_noise) && u.tot_noise < o.tot_noise;
+        break;
+      case 8:
+        u.max_noise = m(e, d);
+      case 1:
+        l = u.max_noise < o.max_noise;
+        break;
+      case 2:
+        l = u.tot_noise < o.tot_noise;
+        break;
+      case 3:
+        l = u.tot_noise < o.tot_noise && u.max_noise < o.max_noise;
+        break;
+      case 4:
+        l = u.max_noise <= 0 && o.max_noise > 0.2 || u.max_noise <= 0 && o.max_noise < 0 && o.max_noise > u.max_noise - 0.2 && u.tot_noise < o.tot_noise || u.max_noise <= 0 && o.max_noise > 0 && o.max_noise > u.max_noise - 0.2 && u.tot_noise < o.tot_noise + o.over_noise || u.max_noise > 0 && o.max_noise > -0.05 && o.max_noise > u.max_noise - 0.1 && u.tot_noise + u.over_noise < o.tot_noise + o.over_noise || u.max_noise > 0 && o.max_noise > -0.1 && o.max_noise > u.max_noise - 0.15 && u.tot_noise + u.over_noise + u.over_noise < o.tot_noise + o.over_noise + o.over_noise;
+        break;
+      case 5:
+        l = u.over_noise < o.over_noise || BitStream.EQ(u.over_noise, o.over_noise) && u.tot_noise < o.tot_noise;
+        break;
+      case 6:
+        l = u.over_noise < o.over_noise || BitStream.EQ(u.over_noise, o.over_noise) && (u.max_noise < o.max_noise || BitStream.EQ(u.max_noise, o.max_noise) && u.tot_noise <= o.tot_noise);
+        break;
+      case 7:
+        l = u.over_count < o.over_count || u.over_noise < o.over_noise;
+        break;
+    }
+    return o.over_count == 0 && (l = l && u.bits < o.bits), l;
+  }
+  function s0(R, o, u, d, e) {
+    var l = R.internal_flags, M;
+    o.scalefac_scale == 0 ? M = 1.2968395546510096 : M = 1.6817928305074292;
+    for (var p = 0, H = 0; H < o.sfbmax; H++)
+      p < u[H] && (p = u[H]);
+    var B = l.noise_shaping_amp;
+    switch (B == 3 && (e ? B = 2 : B = 1), B) {
+      case 2:
+        break;
+      case 1:
+        p > 1 ? p = Math.pow(p, 0.5) : p *= 0.95;
+        break;
+      case 0:
+      default:
+        p > 1 ? p = 1 : p *= 0.95;
+        break;
+    }
+    for (var I = 0, H = 0; H < o.sfbmax; H++) {
+      var v0 = o.width[H], b;
+      if (I += v0, !(u[H] < p)) {
+        if (l.substep_shaping & 2 && (l.pseudohalf[H] = l.pseudohalf[H] == 0 ? 1 : 0, l.pseudohalf[H] == 0 && l.noise_shaping_amp == 2))
+          return;
+        for (o.scalefac[H]++, b = -v0; b < 0; b++)
+          d[I + b] *= M, d[I + b] > o.xrpow_max && (o.xrpow_max = d[I + b]);
+        if (l.noise_shaping_amp == 2)
+          return;
+      }
+    }
+  }
+  function K(R, o) {
+    for (var u = 1.2968395546510096, d = 0, e = 0; e < R.sfbmax; e++) {
+      var l = R.width[e], M = R.scalefac[e];
+      if (R.preflag != 0 && (M += X.pretab[e]), d += l, M & 1) {
+        M++;
+        for (var p = -l; p < 0; p++)
+          o[d + p] *= u, o[d + p] > R.xrpow_max && (R.xrpow_max = o[d + p]);
+      }
+      R.scalefac[e] = M >> 1;
+    }
+    R.preflag = 0, R.scalefac_scale = 1;
+  }
+  function t0(R, o, u) {
+    var d, e = o.scalefac;
+    for (d = 0; d < o.sfb_lmax; d++)
+      if (e[d] >= 16)
+        return true;
+    for (var l = 0; l < 3; l++) {
+      var M = 0, p = 0;
+      for (d = o.sfb_lmax + l; d < o.sfbdivide; d += 3)
+        M < e[d] && (M = e[d]);
+      for (; d < o.sfbmax; d += 3)
+        p < e[d] && (p = e[d]);
+      if (!(M < 16 && p < 8)) {
+        if (o.subblock_gain[l] >= 7)
+          return true;
+        o.subblock_gain[l]++;
+        var H = R.scalefac_band.l[o.sfb_lmax];
+        for (d = o.sfb_lmax + l; d < o.sfbmax; d += 3) {
+          var B, I = o.width[d], v0 = e[d];
+          if (v0 = v0 - (4 >> o.scalefac_scale), v0 >= 0) {
+            e[d] = v0, H += I * 3;
+            continue;
+          }
+          e[d] = 0;
+          {
+            var b = 210 + (v0 << o.scalefac_scale + 1);
+            B = X.IPOW20(b);
+          }
+          H += I * (l + 1);
+          for (var a = -I; a < 0; a++)
+            u[H + a] *= B, u[H + a] > o.xrpow_max && (o.xrpow_max = u[H + a]);
+          H += I * (3 - l - 1);
+        }
+        {
+          var B = X.IPOW20(202);
+          H += o.width[d] * (l + 1);
+          for (var a = -o.width[d]; a < 0; a++)
+            u[H + a] *= B, u[H + a] > o.xrpow_max && (o.xrpow_max = u[H + a]);
+        }
+      }
+    }
+    return false;
+  }
+  function U(R, o, u, d, e) {
+    var l = R.internal_flags;
+    s0(R, o, u, d, e);
+    var M = f0(o);
+    return M ? false : (l.mode_gr == 2 ? M = u0.scale_bitcount(o) : M = u0.scale_bitcount_lsf(l, o), M ? (l.noise_shaping > 1 && (X1.fill(l.pseudohalf, 0), o.scalefac_scale == 0 ? (K(o, d), M = false) : o.block_type == D0.SHORT_TYPE && l.subblock_gain > 0 && (M = t0(l, o, d) || f0(o))), M || (l.mode_gr == 2 ? M = u0.scale_bitcount(o) : M = u0.scale_bitcount_lsf(l, o)), !M) : true);
+  }
+  this.outer_loop = function(R, o, u, d, e, l) {
+    var M = R.internal_flags, p = new la(), H = K1(576), B = K1(va.SFBMAX), I = new we(), v0, b = new G2(), a = 9999999, S = false, L = false, V = 0;
+    if (g(M, o, l, e, d), M.noise_shaping == 0)
+      return 100;
+    X.calc_noise(
+      o,
+      u,
+      B,
+      I,
+      b
+    ), I.bits = o.part2_3_length, p.assign(o);
+    var N = 0;
+    for (y1.arraycopy(d, 0, H, 0, 576); !S; ) {
+      do {
+        var P = new we(), E, i = 255;
+        if (M.substep_shaping & 2 ? E = 20 : E = 3, M.sfb21_extra && (B[p.sfbmax] > 1 || p.block_type == D0.SHORT_TYPE && (B[p.sfbmax + 1] > 1 || B[p.sfbmax + 2] > 1)) || !U(R, p, B, d, L))
+          break;
+        p.scalefac_scale != 0 && (i = 254);
+        var s = l - p.part2_length;
+        if (s <= 0)
+          break;
+        for (; (p.part2_3_length = u0.count_bits(
+          M,
+          d,
+          p,
+          b
+        )) > s && p.global_gain <= i; )
+          p.global_gain++;
+        if (p.global_gain > i)
+          break;
+        if (I.over_count == 0) {
+          for (; (p.part2_3_length = u0.count_bits(
+            M,
+            d,
+            p,
+            b
+          )) > a && p.global_gain <= i; )
+            p.global_gain++;
+          if (p.global_gain > i)
+            break;
+        }
+        if (X.calc_noise(
+          p,
+          u,
+          B,
+          P,
+          b
+        ), P.bits = p.part2_3_length, o.block_type != D0.SHORT_TYPE ? v0 = R.quant_comp : v0 = R.quant_comp_short, v0 = O(
+          v0,
+          I,
+          P,
+          p,
+          B
+        ) ? 1 : 0, v0 != 0)
+          a = o.part2_3_length, I = P, o.assign(p), N = 0, y1.arraycopy(d, 0, H, 0, 576);
+        else if (M.full_outer_loop == 0 && (++N > E && I.over_count == 0 || M.noise_shaping_amp == 3 && L && N > 30 || M.noise_shaping_amp == 3 && L && p.global_gain - V > 15))
+          break;
+      } while (p.global_gain + p.scalefac_scale < 255);
+      M.noise_shaping_amp == 3 ? L ? S = true : (p.assign(o), y1.arraycopy(H, 0, d, 0, 576), N = 0, V = p.global_gain, L = true) : S = true;
+    }
+    return U1(o.global_gain + o.scalefac_scale <= 255), R.VBR == _a.vbr_rh || R.VBR == _a.vbr_mtrh ? y1.arraycopy(H, 0, d, 0, 576) : M.substep_shaping & 1 && trancate_smallspectrums(M, o, u, d), I.over_count;
+  }, this.iteration_finish_one = function(R, o, u) {
+    var d = R.l3_side, e = d.tt[o][u];
+    u0.best_scalefac_store(R, o, u, d), R.use_best_huffman == 1 && u0.best_huffman_divide(R, e), Z.ResvAdjust(R, e);
+  }, this.VBR_encode_granule = function(R, o, u, d, e, l, M) {
+    var p = R.internal_flags, H = new la(), B = K1(576), I = M, v0 = M + 1, b = (M + l) / 2, a, S, L = 0, V = p.sfb21_extra;
+    U1(I <= LameInternalFlags.MAX_BITS_PER_CHANNEL), X1.fill(H.l3_enc, 0);
+    do
+      b > I - 42 ? p.sfb21_extra = false : p.sfb21_extra = V, S = outer_loop(R, o, u, d, e, b), S <= 0 ? (L = 1, v0 = o.part2_3_length, H.assign(o), y1.arraycopy(d, 0, B, 0, 576), M = v0 - 32, a = M - l, b = (M + l) / 2) : (l = b + 32, a = M - l, b = (M + l) / 2, L != 0 && (L = 2, o.assign(H), y1.arraycopy(B, 0, d, 0, 576)));
+    while (a > 12);
+    p.sfb21_extra = V, L == 2 && y1.arraycopy(H.l3_enc, 0, o.l3_enc, 0, 576), U1(o.part2_3_length <= I);
+  }, this.get_framebits = function(R, o) {
+    var u = R.internal_flags;
+    u.bitrate_index = u.VBR_min_bitrate;
+    var d = w.getframebits(R);
+    u.bitrate_index = 1, d = w.getframebits(R);
+    for (var e = 1; e <= u.VBR_max_bitrate; e++) {
+      u.bitrate_index = e;
+      var l = new MeanBits(d);
+      o[e] = Z.ResvFrameBegin(R, l), d = l.bits;
+    }
+  }, this.VBR_old_prepare = function(R, o, u, d, e, l, M, p, H) {
+    var B = R.internal_flags, I, v0 = 0, b = 1, a = 0;
+    B.bitrate_index = B.VBR_max_bitrate;
+    var S = Z.ResvFrameBegin(R, new MeanBits(0)) / B.mode_gr;
+    get_framebits(R, l);
+    for (var L = 0; L < B.mode_gr; L++) {
+      var V = X.on_pe(R, o, p[L], S, L, 0);
+      B.mode_ext == D0.MPG_MD_MS_LR && (ms_convert(B.l3_side, L), X.reduce_side(p[L], u[L], S, V));
+      for (var N = 0; N < B.channels_out; ++N) {
+        var P = B.l3_side.tt[L][N];
+        P.block_type != D0.SHORT_TYPE ? (v0 = 1.28 / (1 + Math.exp(3.5 - o[L][N] / 300)) - 0.05, I = B.PSY.mask_adjust - v0) : (v0 = 2.56 / (1 + Math.exp(3.5 - o[L][N] / 300)) - 0.14, I = B.PSY.mask_adjust_short - v0), B.masking_lower = Math.pow(
+          10,
+          I * 0.1
+        ), init_outer_loop(B, P), H[L][N] = X.calc_xmin(
+          R,
+          d[L][N],
+          P,
+          e[L][N]
+        ), H[L][N] != 0 && (b = 0), M[L][N] = 126, a += p[L][N];
+      }
+    }
+    for (var L = 0; L < B.mode_gr; L++)
+      for (var N = 0; N < B.channels_out; N++)
+        a > l[B.VBR_max_bitrate] && (p[L][N] *= l[B.VBR_max_bitrate], p[L][N] /= a), M[L][N] > p[L][N] && (M[L][N] = p[L][N]);
+    return b;
+  }, this.bitpressure_strategy = function(R, o, u, d) {
+    for (var e = 0; e < R.mode_gr; e++)
+      for (var l = 0; l < R.channels_out; l++) {
+        for (var M = R.l3_side.tt[e][l], p = o[e][l], H = 0, B = 0; B < M.psy_lmax; B++)
+          p[H++] *= 1 + 0.029 * B * B / D0.SBMAX_l / D0.SBMAX_l;
+        if (M.block_type == D0.SHORT_TYPE)
+          for (var B = M.sfb_smin; B < D0.SBMAX_s; B++)
+            p[H++] *= 1 + 0.029 * B * B / D0.SBMAX_s / D0.SBMAX_s, p[H++] *= 1 + 0.029 * B * B / D0.SBMAX_s / D0.SBMAX_s, p[H++] *= 1 + 0.029 * B * B / D0.SBMAX_s / D0.SBMAX_s;
+        d[e][l] = 0 | Math.max(
+          u[e][l],
+          0.9 * d[e][l]
+        );
+      }
+  }, this.VBR_new_prepare = function(R, o, u, d, e, l) {
+    var M = R.internal_flags, p = 1, H = 0, B = 0, I;
+    if (R.free_format) {
+      M.bitrate_index = 0;
+      var v0 = new MeanBits(H);
+      I = Z.ResvFrameBegin(R, v0), H = v0.bits, e[0] = I;
+    } else {
+      M.bitrate_index = M.VBR_max_bitrate;
+      var v0 = new MeanBits(H);
+      Z.ResvFrameBegin(R, v0), H = v0.bits, get_framebits(R, e), I = e[M.VBR_max_bitrate];
+    }
+    for (var b = 0; b < M.mode_gr; b++) {
+      X.on_pe(R, o, l[b], H, b, 0), M.mode_ext == D0.MPG_MD_MS_LR && ms_convert(M.l3_side, b);
+      for (var a = 0; a < M.channels_out; ++a) {
+        var S = M.l3_side.tt[b][a];
+        M.masking_lower = Math.pow(
+          10,
+          M.PSY.mask_adjust * 0.1
+        ), init_outer_loop(M, S), X.calc_xmin(
+          R,
+          u[b][a],
+          S,
+          d[b][a]
+        ) != 0 && (p = 0), B += l[b][a];
+      }
+    }
+    for (var b = 0; b < M.mode_gr; b++)
+      for (var a = 0; a < M.channels_out; a++)
+        B > I && (l[b][a] *= I, l[b][a] /= B);
+    return p;
+  }, this.calc_target_bits = function(R, o, u, d, e, l) {
+    var M = R.internal_flags, p = M.l3_side, H, B, I, v0, b = 0;
+    M.bitrate_index = M.VBR_max_bitrate;
+    var a = new MeanBits(b);
+    for (l[0] = Z.ResvFrameBegin(R, a), b = a.bits, M.bitrate_index = 1, b = w.getframebits(R) - M.sideinfo_len * 8, e[0] = b / (M.mode_gr * M.channels_out), b = R.VBR_mean_bitrate_kbps * R.framesize * 1e3, M.substep_shaping & 1 && (b *= 1.09), b /= R.out_samplerate, b -= M.sideinfo_len * 8, b /= M.mode_gr * M.channels_out, H = 0.93 + 0.07 * (11 - R.compression_ratio) / (11 - 5.5), H < 0.9 && (H = 0.9), H > 1 && (H = 1), B = 0; B < M.mode_gr; B++) {
+      var S = 0;
+      for (I = 0; I < M.channels_out; I++) {
+        if (d[B][I] = int(H * b), o[B][I] > 700) {
+          var L = int((o[B][I] - 700) / 1.4), V = p.tt[B][I];
+          d[B][I] = int(H * b), V.block_type == D0.SHORT_TYPE && L < b / 2 && (L = b / 2), L > b * 3 / 2 ? L = b * 3 / 2 : L < 0 && (L = 0), d[B][I] += L;
+        }
+        d[B][I] > LameInternalFlags.MAX_BITS_PER_CHANNEL && (d[B][I] = LameInternalFlags.MAX_BITS_PER_CHANNEL), S += d[B][I];
+      }
+      if (S > LameInternalFlags.MAX_BITS_PER_GRANULE)
+        for (I = 0; I < M.channels_out; ++I)
+          d[B][I] *= LameInternalFlags.MAX_BITS_PER_GRANULE, d[B][I] /= S;
+    }
+    if (M.mode_ext == D0.MPG_MD_MS_LR)
+      for (B = 0; B < M.mode_gr; B++)
+        X.reduce_side(
+          d[B],
+          u[B],
+          b * M.channels_out,
+          LameInternalFlags.MAX_BITS_PER_GRANULE
+        );
+    for (v0 = 0, B = 0; B < M.mode_gr; B++)
+      for (I = 0; I < M.channels_out; I++)
+        d[B][I] > LameInternalFlags.MAX_BITS_PER_CHANNEL && (d[B][I] = LameInternalFlags.MAX_BITS_PER_CHANNEL), v0 += d[B][I];
+    if (v0 > l[0])
+      for (B = 0; B < M.mode_gr; B++)
+        for (I = 0; I < M.channels_out; I++)
+          d[B][I] *= l[0], d[B][I] /= v0;
+  };
+}
+var P2 = $2;
+var Z2 = Q0;
+var oa = Z2.assert;
+function K2() {
+  var w;
+  this.setModules = function(Z) {
+    w = Z;
+  }, this.ResvFrameBegin = function(Z, X) {
+    var z = Z.internal_flags, u0, W = z.l3_side, Q = w.getframebits(Z);
+    X.bits = (Q - z.sideinfo_len * 8) / z.mode_gr;
+    var D = 8 * 256 * z.mode_gr - 8;
+    Z.brate > 320 ? u0 = 8 * int(Z.brate * 1e3 / (Z.out_samplerate / 1152) / 8 + 0.5) : (u0 = 8 * 1440, Z.strict_ISO && (u0 = 8 * int(32e4 / (Z.out_samplerate / 1152) / 8 + 0.5))), z.ResvMax = u0 - Q, z.ResvMax > D && (z.ResvMax = D), (z.ResvMax < 0 || Z.disable_reservoir) && (z.ResvMax = 0);
+    var g = X.bits * z.mode_gr + Math.min(z.ResvSize, z.ResvMax);
+    return g > u0 && (g = u0), oa(z.ResvMax % 8 == 0), oa(z.ResvMax >= 0), W.resvDrain_pre = 0, z.pinfo != null && (z.pinfo.mean_bits = X.bits / 2, z.pinfo.resvsize = z.ResvSize), g;
+  }, this.ResvMaxBits = function(Z, X, z, u0) {
+    var W = Z.internal_flags, Q, D = W.ResvSize, g = W.ResvMax;
+    u0 != 0 && (D += X), W.substep_shaping & 1 && (g *= 0.9), z.bits = X, D * 10 > g * 9 ? (Q = D - g * 9 / 10, z.bits += Q, W.substep_shaping |= 128) : (Q = 0, W.substep_shaping &= 127, !Z.disable_reservoir && !(W.substep_shaping & 1) && (z.bits -= 0.1 * X));
+    var f0 = D < W.ResvMax * 6 / 10 ? D : W.ResvMax * 6 / 10;
+    return f0 -= Q, f0 < 0 && (f0 = 0), f0;
+  }, this.ResvAdjust = function(Z, X) {
+    Z.ResvSize -= X.part2_3_length + X.part2_length;
+  }, this.ResvFrameEnd = function(Z, X) {
+    var z, u0 = Z.l3_side;
+    Z.ResvSize += X * Z.mode_gr;
+    var W = 0;
+    u0.resvDrain_post = 0, u0.resvDrain_pre = 0, (z = Z.ResvSize % 8) != 0 && (W += z), z = Z.ResvSize - W - Z.ResvMax, z > 0 && (W += z);
+    {
+      var Q = Math.min(u0.main_data_begin * 8, W) / 8;
+      u0.resvDrain_pre += 8 * Q, W -= 8 * Q, Z.ResvSize -= 8 * Q, u0.main_data_begin -= Q;
+    }
+    u0.resvDrain_post += W, Z.ResvSize -= W;
+  };
+}
+var U2 = K2;
+function Q2() {
+  var w = "http://www.mp3dev.org/", Z = 3, X = 98, z = 4, u0 = 0, W = 93;
+  this.getLameVersion = function() {
+    return Z + "." + X + "." + z;
+  }, this.getLameShortVersion = function() {
+    return Z + "." + X + "." + z;
+  }, this.getLameVeryShortVersion = function() {
+    return "LAME" + Z + "." + X + "r";
+  }, this.getPsyVersion = function() {
+    return u0 + "." + W;
+  }, this.getLameUrl = function() {
+    return w;
+  }, this.getLameOsBitness = function() {
+    return "32bits";
+  };
+}
+var W2 = Q2;
+var D1 = Q0;
+var j2 = D1.System;
+var Ie = D1.VbrMode;
+var ha = D1.ShortBlock;
+var z2 = D1.Arrays;
+var te = D1.new_byte;
+var J2 = D1.assert;
+Q1.NUMTOCENTRIES = 100;
+Q1.MAXFRAMESIZE = 2880;
+function Q1() {
+  var w, Z, X;
+  this.setModules = function(b, a, S) {
+    w = b, Z = a, X = S;
+  };
+  var z = 1, u0 = 2, W = 4, Q = 8, D = Q1.NUMTOCENTRIES, g = Q1.MAXFRAMESIZE, f0 = D + 4 + 4 + 4 + 4 + 4, A = f0 + 9 + 1 + 1 + 8 + 1 + 1 + 3 + 1 + 1 + 2 + 4 + 2 + 2, m = 128, O = 64, s0 = 32, K = null, t0 = "Xing", U = "Info", R = [
+    0,
+    49345,
+    49537,
+    320,
+    49921,
+    960,
+    640,
+    49729,
+    50689,
+    1728,
+    1920,
+    51009,
+    1280,
+    50625,
+    50305,
+    1088,
+    52225,
+    3264,
+    3456,
+    52545,
+    3840,
+    53185,
+    52865,
+    3648,
+    2560,
+    51905,
+    52097,
+    2880,
+    51457,
+    2496,
+    2176,
+    51265,
+    55297,
+    6336,
+    6528,
+    55617,
+    6912,
+    56257,
+    55937,
+    6720,
+    7680,
+    57025,
+    57217,
+    8e3,
+    56577,
+    7616,
+    7296,
+    56385,
+    5120,
+    54465,
+    54657,
+    5440,
+    55041,
+    6080,
+    5760,
+    54849,
+    53761,
+    4800,
+    4992,
+    54081,
+    4352,
+    53697,
+    53377,
+    4160,
+    61441,
+    12480,
+    12672,
+    61761,
+    13056,
+    62401,
+    62081,
+    12864,
+    13824,
+    63169,
+    63361,
+    14144,
+    62721,
+    13760,
+    13440,
+    62529,
+    15360,
+    64705,
+    64897,
+    15680,
+    65281,
+    16320,
+    16e3,
+    65089,
+    64001,
+    15040,
+    15232,
+    64321,
+    14592,
+    63937,
+    63617,
+    14400,
+    10240,
+    59585,
+    59777,
+    10560,
+    60161,
+    11200,
+    10880,
+    59969,
+    60929,
+    11968,
+    12160,
+    61249,
+    11520,
+    60865,
+    60545,
+    11328,
+    58369,
+    9408,
+    9600,
+    58689,
+    9984,
+    59329,
+    59009,
+    9792,
+    8704,
+    58049,
+    58241,
+    9024,
+    57601,
+    8640,
+    8320,
+    57409,
+    40961,
+    24768,
+    24960,
+    41281,
+    25344,
+    41921,
+    41601,
+    25152,
+    26112,
+    42689,
+    42881,
+    26432,
+    42241,
+    26048,
+    25728,
+    42049,
+    27648,
+    44225,
+    44417,
+    27968,
+    44801,
+    28608,
+    28288,
+    44609,
+    43521,
+    27328,
+    27520,
+    43841,
+    26880,
+    43457,
+    43137,
+    26688,
+    30720,
+    47297,
+    47489,
+    31040,
+    47873,
+    31680,
+    31360,
+    47681,
+    48641,
+    32448,
+    32640,
+    48961,
+    32e3,
+    48577,
+    48257,
+    31808,
+    46081,
+    29888,
+    30080,
+    46401,
+    30464,
+    47041,
+    46721,
+    30272,
+    29184,
+    45761,
+    45953,
+    29504,
+    45313,
+    29120,
+    28800,
+    45121,
+    20480,
+    37057,
+    37249,
+    20800,
+    37633,
+    21440,
+    21120,
+    37441,
+    38401,
+    22208,
+    22400,
+    38721,
+    21760,
+    38337,
+    38017,
+    21568,
+    39937,
+    23744,
+    23936,
+    40257,
+    24320,
+    40897,
+    40577,
+    24128,
+    23040,
+    39617,
+    39809,
+    23360,
+    39169,
+    22976,
+    22656,
+    38977,
+    34817,
+    18624,
+    18816,
+    35137,
+    19200,
+    35777,
+    35457,
+    19008,
+    19968,
+    36545,
+    36737,
+    20288,
+    36097,
+    19904,
+    19584,
+    35905,
+    17408,
+    33985,
+    34177,
+    17728,
+    34561,
+    18368,
+    18048,
+    34369,
+    33281,
+    17088,
+    17280,
+    33601,
+    16640,
+    33217,
+    32897,
+    16448
+  ];
+  function o(b, a) {
+    if (b.nVbrNumFrames++, b.sum += a, b.seen++, !(b.seen < b.want) && (b.pos < b.size && (b.bag[b.pos] = b.sum, b.pos++, b.seen = 0), b.pos == b.size)) {
+      for (var S = 1; S < b.size; S += 2)
+        b.bag[S / 2] = b.bag[S];
+      b.want *= 2, b.pos /= 2;
+    }
+  }
+  function u(b, a) {
+    if (!(b.pos <= 0))
+      for (var S = 1; S < D; ++S) {
+        var L = S / D, V, N, P = 0 | Math.floor(L * b.pos);
+        P > b.pos - 1 && (P = b.pos - 1), V = b.bag[P], N = b.sum;
+        var E = 0 | 256 * V / N;
+        E > 255 && (E = 255), a[S] = 255 & E;
+      }
+  }
+  this.addVbrFrame = function(b) {
+    var a = b.internal_flags, S = Tables.bitrate_table[b.version][a.bitrate_index];
+    J2(a.VBR_seek_table.bag != null), o(a.VBR_seek_table, S);
+  };
+  function d(b, a) {
+    var S = b[a + 0] & 255;
+    return S <<= 8, S |= b[a + 1] & 255, S <<= 8, S |= b[a + 2] & 255, S <<= 8, S |= b[a + 3] & 255, S;
+  }
+  function e(b, a, S) {
+    b[a + 0] = 255 & (S >> 24 & 255), b[a + 1] = 255 & (S >> 16 & 255), b[a + 2] = 255 & (S >> 8 & 255), b[a + 3] = 255 & (S & 255);
+  }
+  function l(b, a, S) {
+    b[a + 0] = 255 & (S >> 8 & 255), b[a + 1] = 255 & (S & 255);
+  }
+  function M(b, a) {
+    return new String(b, a, t0.length(), K).equals(t0) || new String(b, a, U.length(), K).equals(U);
+  }
+  function p(b, a, S) {
+    return 255 & (b << a | S & ~(-1 << a));
+  }
+  function H(b, a) {
+    var S = b.internal_flags;
+    a[0] = p(a[0], 8, 255), a[1] = p(a[1], 3, 7), a[1] = p(
+      a[1],
+      1,
+      b.out_samplerate < 16e3 ? 0 : 1
+    ), a[1] = p(a[1], 1, b.version), a[1] = p(a[1], 2, 4 - 3), a[1] = p(a[1], 1, b.error_protection ? 0 : 1), a[2] = p(a[2], 4, S.bitrate_index), a[2] = p(a[2], 2, S.samplerate_index), a[2] = p(a[2], 1, 0), a[2] = p(a[2], 1, b.extension), a[3] = p(a[3], 2, b.mode.ordinal()), a[3] = p(a[3], 2, S.mode_ext), a[3] = p(a[3], 1, b.copyright), a[3] = p(a[3], 1, b.original), a[3] = p(a[3], 2, b.emphasis), a[0] = 255;
+    var L = 255 & (a[1] & 241), V;
+    b.version == 1 ? V = m : b.out_samplerate < 16e3 ? V = s0 : V = O, b.VBR == Ie.vbr_off && (V = b.brate);
+    var N;
+    b.free_format ? N = 0 : N = 255 & 16 * w.BitrateIndex(
+      V,
+      b.version,
+      b.out_samplerate
+    ), b.version == 1 ? (a[1] = 255 & (L | 10), L = 255 & (a[2] & 13), a[2] = 255 & (N | L)) : (a[1] = 255 & (L | 2), L = 255 & (a[2] & 13), a[2] = 255 & (N | L));
+  }
+  this.getVbrTag = function(b) {
+    var a = new VBRTagData(), S = 0;
+    a.flags = 0;
+    var L = b[S + 1] >> 3 & 1, V = b[S + 2] >> 2 & 3, N = b[S + 3] >> 6 & 3, P = b[S + 2] >> 4 & 15;
+    if (P = Tables.bitrate_table[L][P], b[S + 1] >> 4 == 14 ? a.samprate = Tables.samplerate_table[2][V] : a.samprate = Tables.samplerate_table[L][V], L != 0 ? N != 3 ? S += 32 + 4 : S += 17 + 4 : N != 3 ? S += 17 + 4 : S += 9 + 4, !M(b, S))
+      return null;
+    S += 4, a.hId = L;
+    var E = a.flags = d(b, S);
+    if (S += 4, E & z && (a.frames = d(b, S), S += 4), E & u0 && (a.bytes = d(b, S), S += 4), E & W) {
+      if (a.toc != null)
+        for (var i = 0; i < D; i++)
+          a.toc[i] = b[S + i];
+      S += D;
+    }
+    a.vbrScale = -1, E & Q && (a.vbrScale = d(b, S), S += 4), a.headersize = (L + 1) * 72e3 * P / a.samprate, S += 21;
+    var s = b[S + 0] << 4;
+    s += b[S + 1] >> 4;
+    var r = (b[S + 1] & 15) << 8;
+    return r += b[S + 2] & 255, (s < 0 || s > 3e3) && (s = -1), (r < 0 || r > 3e3) && (r = -1), a.encDelay = s, a.encPadding = r, a;
+  }, this.InitVbrTag = function(b) {
+    var a = b.internal_flags, S;
+    b.version == 1 ? S = m : b.out_samplerate < 16e3 ? S = s0 : S = O, b.VBR == Ie.vbr_off && (S = b.brate);
+    var L = (b.version + 1) * 72e3 * S / b.out_samplerate, V = a.sideinfo_len + A;
+    if (a.VBR_seek_table.TotalFrameSize = L, L < V || L > g) {
+      b.bWriteVbrTag = false;
+      return;
+    }
+    a.VBR_seek_table.nVbrNumFrames = 0, a.VBR_seek_table.nBytesWritten = 0, a.VBR_seek_table.sum = 0, a.VBR_seek_table.seen = 0, a.VBR_seek_table.want = 1, a.VBR_seek_table.pos = 0, a.VBR_seek_table.bag == null && (a.VBR_seek_table.bag = new int[400](), a.VBR_seek_table.size = 400);
+    var N = te(g);
+    H(b, N);
+    for (var P = a.VBR_seek_table.TotalFrameSize, E = 0; E < P; ++E)
+      Z.add_dummy_byte(b, N[E] & 255, 1);
+  };
+  function B(b, a) {
+    var S = a ^ b;
+    return a = a >> 8 ^ R[S & 255], a;
+  }
+  this.updateMusicCRC = function(b, a, S, L) {
+    for (var V = 0; V < L; ++V)
+      b[0] = B(a[S + V], b[0]);
+  };
+  function I(b, a, S, L, V) {
+    var N = b.internal_flags, P = 0, E = b.encoder_delay, i = b.encoder_padding, s = 100 - 10 * b.VBR_q - b.quality, r = X.getLameVeryShortVersion(), n, f = 0, Y, J = [1, 5, 3, 2, 4, 0, 3], T = 0 | (b.lowpassfreq / 100 + 0.5 > 255 ? 255 : b.lowpassfreq / 100 + 0.5), q = 0, i0 = 0, h0 = 0, d0 = b.internal_flags.noise_shaping, M0 = 0, R0 = 0, A0 = 0, w0 = 0, $0 = 0, f1 = (b.exp_nspsytune & 1) != 0, t = (b.exp_nspsytune & 2) != 0, _ = false, S0 = false, E0 = b.internal_flags.nogap_total, V0 = b.internal_flags.nogap_current, H0 = b.ATHtype, y0 = 0, T0;
+    switch (b.VBR) {
+      case vbr_abr:
+        T0 = b.VBR_mean_bitrate_kbps;
+        break;
+      case vbr_off:
+        T0 = b.brate;
+        break;
+      default:
+        T0 = b.VBR_min_bitrate_kbps;
+    }
+    switch (b.VBR.ordinal() < J.length ? n = J[b.VBR.ordinal()] : n = 0, Y = 16 * f + n, N.findReplayGain && (N.RadioGain > 510 && (N.RadioGain = 510), N.RadioGain < -510 && (N.RadioGain = -510), i0 = 8192, i0 |= 3072, N.RadioGain >= 0 ? i0 |= N.RadioGain : (i0 |= 512, i0 |= -N.RadioGain)), N.findPeakSample && (q = Math.abs(0 | N.PeakSample / 32767 * Math.pow(2, 23) + 0.5)), E0 != -1 && (V0 > 0 && (S0 = true), V0 < E0 - 1 && (_ = true)), y0 = H0 + ((f1 ? 1 : 0) << 4) + ((t ? 1 : 0) << 5) + ((_ ? 1 : 0) << 6) + ((S0 ? 1 : 0) << 7), s < 0 && (s = 0), b.mode) {
+      case MONO:
+        M0 = 0;
+        break;
+      case STEREO:
+        M0 = 1;
+        break;
+      case DUAL_CHANNEL:
+        M0 = 2;
+        break;
+      case JOINT_STEREO:
+        b.force_ms ? M0 = 4 : M0 = 3;
+        break;
+      case NOT_SET:
+      default:
+        M0 = 7;
+        break;
+    }
+    b.in_samplerate <= 32e3 ? A0 = 0 : b.in_samplerate == 48e3 ? A0 = 2 : b.in_samplerate > 48e3 ? A0 = 3 : A0 = 1, (b.short_blocks == ha.short_block_forced || b.short_blocks == ha.short_block_dispensed || b.lowpassfreq == -1 && b.highpassfreq == -1 || /* "-k" */
+    b.scale_left < b.scale_right || b.scale_left > b.scale_right || b.disable_reservoir && b.brate < 320 || b.noATH || b.ATHonly || H0 == 0 || b.in_samplerate <= 32e3) && (R0 = 1), w0 = d0 + (M0 << 2) + (R0 << 5) + (A0 << 6), $0 = N.nMusicCRC, e(S, L + P, s), P += 4;
+    for (var F0 = 0; F0 < 9; F0++)
+      S[L + P + F0] = 255 & r.charAt(F0);
+    P += 9, S[L + P] = 255 & Y, P++, S[L + P] = 255 & T, P++, e(
+      S,
+      L + P,
+      q
+    ), P += 4, l(
+      S,
+      L + P,
+      i0
+    ), P += 2, l(
+      S,
+      L + P,
+      h0
+    ), P += 2, S[L + P] = 255 & y0, P++, T0 >= 255 ? S[L + P] = 255 : S[L + P] = 255 & T0, P++, S[L + P] = 255 & E >> 4, S[L + P + 1] = 255 & (E << 4) + (i >> 8), S[L + P + 2] = 255 & i, P += 3, S[L + P] = 255 & w0, P++, S[L + P++] = 0, l(S, L + P, b.preset), P += 2, e(S, L + P, a), P += 4, l(S, L + P, $0), P += 2;
+    for (var I0 = 0; I0 < P; I0++)
+      V = B(S[L + I0], V);
+    return l(S, L + P, V), P += 2, P;
+  }
+  function v0(b) {
+    b.seek(0);
+    var a = te(10);
+    b.readFully(a);
+    var S;
+    return new String(a, "ISO-8859-1").startsWith("ID3") ? S = 0 : S = ((a[6] & 127) << 21 | (a[7] & 127) << 14 | (a[8] & 127) << 7 | a[9] & 127) + a.length, S;
+  }
+  this.getLameTagFrame = function(b, a) {
+    var S = b.internal_flags;
+    if (!b.bWriteVbrTag || S.Class_ID != Lame.LAME_ID || S.VBR_seek_table.pos <= 0)
+      return 0;
+    if (a.length < S.VBR_seek_table.TotalFrameSize)
+      return S.VBR_seek_table.TotalFrameSize;
+    z2.fill(a, 0, S.VBR_seek_table.TotalFrameSize, 0), H(b, a);
+    var L = te(D);
+    if (b.free_format)
+      for (var V = 1; V < D; ++V)
+        L[V] = 255 & 255 * V / 100;
+    else
+      u(S.VBR_seek_table, L);
+    var N = S.sideinfo_len;
+    b.error_protection && (N -= 2), b.VBR == Ie.vbr_off ? (a[N++] = 255 & U.charAt(0), a[N++] = 255 & U.charAt(1), a[N++] = 255 & U.charAt(2), a[N++] = 255 & U.charAt(3)) : (a[N++] = 255 & t0.charAt(0), a[N++] = 255 & t0.charAt(1), a[N++] = 255 & t0.charAt(2), a[N++] = 255 & t0.charAt(3)), e(a, N, z + u0 + W + Q), N += 4, e(a, N, S.VBR_seek_table.nVbrNumFrames), N += 4;
+    var P = S.VBR_seek_table.nBytesWritten + S.VBR_seek_table.TotalFrameSize;
+    e(a, N, 0 | P), N += 4, j2.arraycopy(L, 0, a, N, L.length), N += L.length, b.error_protection && Z.CRC_writeheader(S, a);
+    for (var E = 0, V = 0; V < N; V++)
+      E = B(a[V], E);
+    return N += I(b, P, a, N, E), S.VBR_seek_table.TotalFrameSize;
+  }, this.putVbrTag = function(b, a) {
+    var S = b.internal_flags;
+    if (S.VBR_seek_table.pos <= 0 || (a.seek(a.length()), a.length() == 0))
+      return -1;
+    var L = v0(a);
+    a.seek(L);
+    var V = te(g), N = getLameTagFrame(b, V);
+    return N > V.length ? -1 : (N < 1 || a.write(V, 0, N), 0);
+  };
+}
+var g2 = Q1;
+var Fa = Q0;
+var ua = Fa.new_byte;
+var er = Fa.assert;
+var ar = Oe();
+var rr = V2;
+var tr = Na;
+var sr = Va();
+var ir = P2;
+var nr = Oa();
+var _r = U2;
+var lr = j1;
+var vr = Ve();
+t1();
+var or = W2;
+var hr = g2;
+function ur() {
+  this.setModules = function(w, Z) {
+  };
+}
+function fr() {
+  this.setModules = function(w, Z, X) {
+  };
+}
+function mr() {
+}
+function br() {
+  this.setModules = function(w, Z) {
+  };
+}
+function cr(w, Z, X) {
+  arguments.length != 3 && (console.error("WARN: Mp3Encoder(channels, samplerate, kbps) not specified"), w = 1, Z = 44100, X = 128);
+  var z = new ar(), u0 = new ur(), W = new tr(), Q = new vr(), D = new rr(), g = new sr(), f0 = new ir(), A = new hr(), m = new or(), O = new br(), s0 = new _r(), K = new nr(), t0 = new fr(), U = new mr();
+  z.setModules(W, Q, D, g, f0, A, m, O, U), Q.setModules(W, U, m, A), O.setModules(Q, m), D.setModules(z), f0.setModules(Q, s0, g, K), g.setModules(K, s0, z.enc.psy), s0.setModules(Q), K.setModules(g), A.setModules(z, Q, m), u0.setModules(t0, U), t0.setModules(m, O, D);
+  var R = z.lame_init();
+  R.num_channels = w, R.in_samplerate = Z, R.brate = X, R.mode = lr.STEREO, R.quality = 3, R.bWriteVbrTag = false, R.disable_reservoir = true, R.write_id3tag_automatic = false, z.lame_init_params(R);
+  var o = 1152, u = 0 | 1.25 * o + 7200, d = ua(u);
+  this.encodeBuffer = function(e, l) {
+    w == 1 && (l = e), er(e.length == l.length), e.length > o && (o = e.length, u = 0 | 1.25 * o + 7200, d = ua(u));
+    var M = z.lame_encode_buffer(R, e, l, e.length, d, 0, u);
+    return new Int8Array(d.subarray(0, M));
+  }, this.flush = function() {
+    var e = z.lame_encode_flush(R, d, 0, u);
+    return new Int8Array(d.subarray(0, e));
+  };
+}
+function A1() {
+  this.dataOffset = 0, this.dataLen = 0, this.channels = 0, this.sampleRate = 0;
+}
+function _e(w) {
+  return w.charCodeAt(0) << 24 | w.charCodeAt(1) << 16 | w.charCodeAt(2) << 8 | w.charCodeAt(3);
+}
+A1.RIFF = _e("RIFF");
+A1.WAVE = _e("WAVE");
+A1.fmt_ = _e("fmt ");
+A1.data = _e("data");
+A1.readHeader = function(w) {
+  var Z = new A1(), X = w.getUint32(0, false);
+  if (A1.RIFF == X && (w.getUint32(4, true), A1.WAVE == w.getUint32(8, false) && A1.fmt_ == w.getUint32(12, false))) {
+    var z = w.getUint32(16, true), u0 = 16 + 4;
+    switch (z) {
+      case 16:
+      case 18:
+        Z.channels = w.getUint16(u0 + 2, true), Z.sampleRate = w.getUint32(u0 + 4, true);
+        break;
+      default:
+        throw "extended fmt chunk not implemented";
+    }
+    u0 += z;
+    for (var W = A1.data, Q = 0; W != X && (X = w.getUint32(u0, false), Q = w.getUint32(u0 + 4, true), W != X); )
+      u0 += Q + 8;
+    return Z.dataLen = Q, Z.dataOffset = u0 + 8, Z;
+  }
+};
+var Sr = fa.Mp3Encoder = cr;
+var dr = fa.WavHeader = A1;
+
+// src/tts-edge.ts
+var TRUSTED_TOKEN = "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
+var VOICE = "en-US-AvaMultilingualNeural";
+var EDGE_VERSION = "1-143.0.3650.75";
+var TIMEOUT_MS = 2e4;
+var SF_MODEL = "FunAudioLLM/CosyVoice2-0.5B";
+var MIN_MP3_BYTES = 256;
+async function secMsGec() {
+  const winEpoch = Math.floor(Date.now() / 1e3) + 11644473600;
+  const ticks = BigInt(Math.floor(winEpoch / 300) * 300) * 10000000n;
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${ticks}${TRUSTED_TOKEN}`));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("").toUpperCase();
+}
+function escapeXml(s) {
+  return s.replace(
+    /[&<>"']/g,
+    (c) => c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&apos;"
+  );
+}
+function sentenceCacheKey(text2, rate) {
+  let h = 5381;
+  for (let i = 0; i < text2.length; i++) h = (h << 5) + h + text2.charCodeAt(i) | 0;
+  return `${(h >>> 0).toString(16)}${text2.length}r${Math.round(rate * 100)}`;
+}
+async function edgeSynthesize(text2, rate) {
+  const WebSocket = require_ws();
+  const gec = await secMsGec();
+  const url = `wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=${TRUSTED_TOKEN}&Sec-MS-GEC=${gec}&Sec-MS-GEC-Version=${EDGE_VERSION}&ConnectionId=${crypto.randomUUID().replaceAll("-", "")}`;
+  const pct = Math.round((rate - 1) * 100);
+  const ssml = `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'><voice name='${VOICE}'><prosody rate='${pct >= 0 ? "+" : ""}${pct}%'>${escapeXml(text2)}</prosody></voice></speak>`;
+  const ws = new WebSocket(url, {
+    headers: {
+      Pragma: "no-cache",
+      "Cache-Control": "no-cache",
+      Origin: "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold",
+      "Accept-Language": "en-US,en;q=0.9",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0"
+    }
+  });
+  const chunks = [];
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      try {
+        ws.close();
+      } catch {
+      }
+      reject(new Error("Edge TTS \u8D85\u65F6"));
+    }, TIMEOUT_MS);
+    ws.on("open", () => {
+      ws.send(
+        `X-Timestamp:${(/* @__PURE__ */ new Date()).toISOString()}\r
+Content-Type:application/json; charset=utf-8\r
+Path:speech.config\r
+\r
+{"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":"false","wordBoundaryEnabled":"false"},"outputFormat":"audio-24khz-48kbitrate-mono-mp3"}}}}`
+      );
+      ws.send(
+        `X-RequestId:${crypto.randomUUID().replaceAll("-", "")}\r
+Content-Type:application/ssml+xml\r
+X-Timestamp:${(/* @__PURE__ */ new Date()).toISOString()}Z\r
+Path:ssml\r
+\r
+${ssml}`
+      );
+    });
+    ws.on("message", (data, isBinary) => {
+      if (!isBinary) {
+        if (data.toString().includes("Path:turn.end")) {
+          window.clearTimeout(timer);
+          const full = Buffer.concat(chunks);
+          resolve(full.buffer.slice(full.byteOffset, full.byteOffset + full.byteLength));
+          ws.close();
+        }
+        return;
+      }
+      chunks.push(data.subarray(2 + data.readUInt16BE(0)));
+    });
+    ws.on("error", (e) => {
+      window.clearTimeout(timer);
+      reject(e);
+    });
+  });
+}
+async function siliconflowSynthesize(text2, rate, c, voice2) {
+  const res = await (0, import_obsidian18.requestUrl)({
+    url: `${c.url.replace(/\/+$/, "")}/audio/speech`,
+    method: "POST",
+    contentType: "application/json",
+    headers: { Authorization: `Bearer ${c.key}` },
+    body: JSON.stringify({ model: SF_MODEL, input: text2, voice: `${SF_MODEL}:${voice2}`, response_format: "mp3", speed: rate })
+  });
+  return res.arrayBuffer;
+}
+function decodeWav16(buf) {
+  const v = new DataView(buf);
+  const tag = (o) => String.fromCharCode(v.getUint8(o), v.getUint8(o + 1), v.getUint8(o + 2), v.getUint8(o + 3));
+  if (tag(0) !== "RIFF" || tag(8) !== "WAVE") throw new Error("\u4E0D\u662F WAV");
+  let off = 12;
+  let ch = 1, bits = 16, rate = 24e3;
+  let dataOff = -1, dataLen = 0;
+  while (off + 8 <= buf.byteLength) {
+    const id = tag(off);
+    const size = v.getUint32(off + 4, true);
+    if (id === "fmt ") {
+      ch = v.getUint16(off + 10, true);
+      rate = v.getUint32(off + 12, true);
+      bits = v.getUint16(off + 22, true);
+    } else if (id === "data") {
+      dataOff = off + 8;
+      dataLen = Math.min(size, buf.byteLength - dataOff);
+    }
+    off += 8 + size + size % 2;
+  }
+  if (dataOff < 0 || bits !== 16) throw new Error("WAV \u683C\u5F0F\u4E0D\u652F\u6301\uFF08\u4EC5 16bit PCM\uFF09");
+  const frames = Math.floor(dataLen / (2 * ch));
+  const pcm = new Int16Array(frames);
+  for (let i = 0; i < frames; i++) {
+    if (ch === 1) pcm[i] = v.getInt16(dataOff + i * 2, true);
+    else {
+      let s = 0;
+      for (let c = 0; c < ch; c++) s += v.getInt16(dataOff + (i * ch + c) * 2, true);
+      pcm[i] = s / ch;
+    }
+  }
+  return { pcm, rate };
+}
+function trimLeadingTone(pcm, rate) {
+  const win = Math.max(1, Math.floor(rate / 100));
+  const limit = Math.min(pcm.length, rate * 3);
+  const total = Math.floor(limit / win);
+  const peakAt = (o) => {
+    let peak = 0;
+    for (let i = o; i < o + win; i++) peak = Math.max(peak, Math.abs(pcm[i] ?? 0));
+    return peak;
+  };
+  const peaks = [];
+  for (let w3 = 0; w3 < total; w3++) peaks.push(peakAt(w3 * win));
+  const freq = /* @__PURE__ */ new Map();
+  let maxPeak = 0;
+  for (const p of peaks) {
+    maxPeak = Math.max(maxPeak, p);
+    if (p > 800) freq.set(p, (freq.get(p) ?? 0) + 1);
+  }
+  let beepLevel = 0, beepCount = 0;
+  for (const [p, n] of freq)
+    if (n > beepCount || n === beepCount && p > beepLevel) {
+      beepLevel = p;
+      beepCount = n;
+    }
+  if (beepCount < 4 || beepLevel >= maxPeak * 0.6) return pcm;
+  const rmsAt = (o) => {
+    let sum = 0;
+    for (let i = o; i < o + win; i++) {
+      const v = pcm[i] ?? 0;
+      sum += v * v;
+    }
+    return Math.sqrt(sum / win);
+  };
+  let last = -1;
+  for (let w3 = total - 1; w3 >= 0; w3--) {
+    const p = peaks[w3];
+    if (Math.abs(p - beepLevel) <= 5 && p > 0 && rmsAt(w3 * win) / p > 0.6) {
+      last = w3;
+      break;
+    }
+  }
+  if (last < 0) return pcm;
+  let w = last + 1;
+  while (w < total) {
+    const p = peaks[w];
+    const r = rmsAt(w * win);
+    if (r < 250) w++;
+    else if (Math.abs(p - beepLevel) <= 5 && (r < 700 || r / p > 0.5)) w++;
+    else break;
+  }
+  const cut = w * win;
+  if (cut <= 0 || cut > rate * 2.5) return pcm;
+  let strong = false;
+  for (let k = w; k < Math.min(total, w + 50); k++)
+    if (peaks[k] > beepLevel * 1.2) {
+      strong = true;
+      break;
+    }
+  return strong ? pcm.subarray(cut) : pcm;
+}
+function encodeMp3(pcm, rate) {
+  const enc = new Sr(1, rate, 48);
+  const out = [];
+  for (let i = 0; i < pcm.length; i += 1152) {
+    const chunk2 = enc.encodeBuffer(pcm.subarray(i, i + 1152));
+    if (chunk2.length) out.push(new Uint8Array(chunk2));
+  }
+  const tail = enc.flush();
+  if (tail.length) out.push(new Uint8Array(tail));
+  const total = out.reduce((n, b) => n + b.length, 0);
+  const buf = new Uint8Array(total);
+  let o = 0;
+  for (const b of out) {
+    buf.set(b, o);
+    o += b.length;
+  }
+  return buf.buffer;
+}
+async function zhipuSynthesize(text2, rate, c) {
+  const res = await (0, import_obsidian18.requestUrl)({
+    url: `${c.url.replace(/\/+$/, "")}/audio/speech`,
+    method: "POST",
+    contentType: "application/json",
+    headers: { Authorization: `Bearer ${c.key}` },
+    body: JSON.stringify({ model: "cogtts", input: text2, voice: "tongtong", response_format: "wav", speed: rate })
+  });
+  const { pcm, rate: wavRate } = decodeWav16(res.arrayBuffer);
+  return encodeMp3(trimLeadingTone(pcm, wavRate), wavRate);
+}
+function withTimeout(p, what) {
+  return Promise.race([
+    p,
+    new Promise((_, rej) => window.setTimeout(() => rej(new Error(`${what} \u8D85\u65F6`)), TIMEOUT_MS))
+  ]);
+}
+var SentenceNeural = class {
+  constructor(app, dataRoot, conf) {
+    this.app = app;
+    this.conf = conf;
+    this.current = null;
+    this.currentUrl = null;
+    /** Edge 可用性（桌面 + ws 可 require），懒判一次 */
+    this.envOk = null;
+    /** 整链连续失败计数 → 熔断：期内现合成直接拒绝（缓存命中照播），到点重试 */
+    this.fails = 0;
+    this.deadUntil = 0;
+    /** 预取串行队列：后台囤缓存不与用户点读抢并发（点读 speak 不走此队列，插队即时） */
+    this.queueTail = Promise.resolve();
+    this.inflight = /* @__PURE__ */ new Map();
+    /** 缓存键清单（index.json）：点开头目录禁 list（iOS 列空），清理入口靠它枚举缓存文件 */
+    this.index = /* @__PURE__ */ new Set();
+    this.indexLoaded = false;
+    this.indexTimer = null;
+    this.dir = dataRoot ? `${dataRoot}/audio/sent` : "audio/sent";
+  }
+  edgeOk() {
+    if (!import_obsidian18.Platform.isDesktopApp) return false;
+    if (this.envOk !== null) return this.envOk;
+    try {
+      require_ws();
+      this.envOk = true;
+    } catch {
+      this.envOk = false;
+    }
+    return this.envOk;
+  }
+  /** 有任一可用合成源即为就绪（Edge=桌面免 key 恒启用；CosyVoice2/智谱须「已配 Key」且用户勾选了启用） */
+  ready() {
+    return this.edgeOk() || this.providers().length > 0;
+  }
+  /** 合成源替补链（顺序即优先级）：Edge 音质最好且免费、桌面优先；CosyVoice2 输出干净排智谱前。
+   *  两个 HTTP 源均为 opt-in（用户设置里勾选才进链，避免意外计费） */
+  providers() {
+    const list = [];
+    if (this.edgeOk()) list.push({ name: "Edge", run: edgeSynthesize });
+    const c = this.conf?.();
+    const on = new Set(c?.sources ?? []);
+    if (c?.sf?.key && on.has("cosyvoice"))
+      list.push({ name: "CosyVoice2", run: (t, r) => siliconflowSynthesize(t, r, c.sf, c.voice || "anna") });
+    if (c?.zhipu?.key && on.has("zhipu")) list.push({ name: "\u667A\u8C31", run: (t, r) => zhipuSynthesize(t, r, c.zhipu) });
+    return list;
+  }
+  /** 逐源试合成，全源失败返回 null（计入熔断）。
+   *  源「返回了但内容不合格」（空/被截断的 mp3）按该源失败处理，换下一源——别把坏字节落盘卡住该句 */
+  async synthesize(text2, rate) {
+    for (const p of this.providers()) {
+      try {
+        const audio = await withTimeout(p.run(text2, rate), `${p.name} \u4F8B\u53E5\u5408\u6210`);
+        if (audio.byteLength >= MIN_MP3_BYTES) return audio;
+        console.error(`${p.name} \u4F8B\u53E5\u5408\u6210\u8FD4\u56DE\u5F02\u5E38\uFF08${audio.byteLength} \u5B57\u8282\uFF09\uFF0C\u6362\u4E0B\u4E00\u6E90`);
+      } catch (e) {
+        console.error(`${p.name} \u4F8B\u53E5\u5408\u6210\u5931\u8D25\uFF0C\u6362\u4E0B\u4E00\u6E90:`, e);
+      }
+    }
+    return null;
+  }
+  /** 掐断在播例句（stopSpeaking 统一入口调）。pause 不触发 onended，不会误触接读链 */
+  stop() {
+    this.current?.pause();
+    if (this.currentUrl) URL.revokeObjectURL(this.currentUrl);
+    this.current = null;
+    this.currentUrl = null;
+  }
+  /** 播例句：缓存命中即播（全端——移动端播桌面预取经 iCloud 同步来的句缓存）；未命中现合成
+   *  （走替补链，熔断期/无源则直接回落）。返回 false = 神经声未接管，调用方回落本地 TTS。
+   *  cancelled：合成等待期间被新朗读顶掉就不起播（代际号检查），音频照常入库供下次播 */
+  async speak(text2, rate, cancelled) {
+    const key = sentenceCacheKey(text2, rate);
+    const f = `${this.dir}/${key}.mp3`;
+    try {
+      if (await this.app.vault.adapter.exists(f)) this.noteKey(key);
+      else {
+        if (!this.ready() || Date.now() < this.deadUntil) return false;
+        const audio = await this.synthesize(text2, rate);
+        if (audio === null) {
+          this.fails++;
+          if (this.fails >= 2) this.deadUntil = Date.now() + 6e4;
+          return false;
+        }
+        await mkdirp(this.app, this.dir);
+        await this.app.vault.adapter.writeBinary(f, audio);
+        this.noteKey(key);
+        this.fails = 0;
+        if (cancelled?.()) return true;
+      }
+      const ok = await this.playFile(f, cancelled);
+      this.fails = 0;
+      return ok;
+    } catch (e) {
+      this.fails++;
+      if (this.fails >= 2) this.deadUntil = Date.now() + 6e4;
+      console.error("\u4F8B\u53E5\u5408\u6210/\u64AD\u653E\u5931\u8D25\uFF0C\u56DE\u843D\u672C\u5730 TTS:", e);
+      return false;
+    }
+  }
+  /** 后台预取（翻卡窗口扫前面卡的例句）：合成落盘不播放。串行慢速囤缓存，同句在途合流；
+   *  全源失败计入熔断（预取与点读同一健康度），但音频侧无负缓存，下次照常重试 */
+  prefetch(text2, rate) {
+    if (!this.ready() || Date.now() < this.deadUntil) return Promise.resolve(false);
+    const key = sentenceCacheKey(text2, rate);
+    const going = this.inflight.get(key);
+    if (going) return going;
+    const f = `${this.dir}/${key}.mp3`;
+    const task = this.queueTail.then(async () => {
+      try {
+        if (await this.app.vault.adapter.exists(f)) {
+          this.noteKey(key);
+          return true;
+        }
+        const audio = await this.synthesize(text2, rate);
+        if (audio === null) {
+          this.fails++;
+          if (this.fails >= 2) this.deadUntil = Date.now() + 6e4;
+          return false;
+        }
+        await mkdirp(this.app, this.dir);
+        await this.app.vault.adapter.writeBinary(f, audio);
+        this.noteKey(key);
+        this.fails = 0;
+        return true;
+      } catch (e) {
+        this.fails++;
+        if (this.fails >= 2) this.deadUntil = Date.now() + 6e4;
+        console.error("\u4F8B\u53E5\u9884\u53D6\u5931\u8D25:", e);
+        return false;
+      }
+    });
+    this.inflight.set(key, task);
+    this.queueTail = task.catch(() => {
+    });
+    return task.finally(() => {
+      if (this.inflight.get(key) === task) this.inflight.delete(key);
+    });
+  }
+  /** 该句是否已有神经声缓存（例句按钮图标判定用：图标只认缓存） */
+  has(text2, rate) {
+    return this.app.vault.adapter.exists(`${this.dir}/${sentenceCacheKey(text2, rate)}.mp3`);
+  }
+  /** 播缓存文件。文件在、只是被 cancelled 顶掉时返回 true（算接管成功，别再走本地） */
+  async playFile(f, cancelled) {
+    let url = "";
+    try {
+      const buf = await this.app.vault.adapter.readBinary(f);
+      if (cancelled?.()) return true;
+      this.stop();
+      url = URL.createObjectURL(new Blob([buf], { type: "audio/mpeg" }));
+      const audio = new Audio(url);
+      this.current = audio;
+      this.currentUrl = url;
+      audio.onended = () => {
+        if (this.current === audio) {
+          this.current = null;
+          this.currentUrl = null;
+        }
+        URL.revokeObjectURL(url);
+      };
+      await audio.play();
+      return true;
+    } catch (e) {
+      if (url) URL.revokeObjectURL(url);
+      if (!cancelled?.()) {
+        try {
+          await this.app.vault.adapter.remove(f);
+        } catch {
+        }
+      }
+      console.error("\u4F8B\u53E5\u64AD\u653E\u5931\u8D25:", e);
+      return false;
+    }
+  }
+  /** 记一笔缓存键（写入与命中回放时调）：清单缺失/损坏视作空，最多漏清不影响播放 */
+  noteKey(key) {
+    void this.ensureIndexLoaded().then(() => {
+      if (this.index.has(key)) return;
+      this.index.add(key);
+      if (this.indexTimer === null) {
+        this.indexTimer = window.setTimeout(() => {
+          this.indexTimer = null;
+          void this.saveIndex();
+        }, 3e3);
+      }
+    });
+  }
+  async ensureIndexLoaded() {
+    if (this.indexLoaded) return;
+    this.indexLoaded = true;
+    try {
+      const f = `${this.dir}/index.json`;
+      if (!await this.app.vault.adapter.exists(f)) return;
+      const list = JSON.parse(await this.app.vault.adapter.read(f));
+      if (Array.isArray(list)) for (const k of list) this.index.add(String(k));
+    } catch {
+    }
+  }
+  async saveIndex() {
+    try {
+      await mkdirp(this.app, this.dir);
+      await this.app.vault.adapter.write(`${this.dir}/index.json`, JSON.stringify([...this.index]));
+    } catch (e) {
+      console.error("\u4F8B\u53E5\u7F13\u5B58\u6E05\u5355\u4FDD\u5B58\u5931\u8D25:", e);
+    }
+  }
+  /** 清理早于 cutoff 的例句缓存（设置页「清理发音缓存」）。extraKeys = 调用方按词库例句与当前
+   *  语速推导的键——清单启用前的旧文件不在清单里，靠推导兜底；文件已不存在的键顺带从清单剔除（自愈）。
+   *  返回删除数与释放字节数 */
+  async clean(cutoffMs, extraKeys = []) {
+    await this.ensureIndexLoaded();
+    let dirty = false;
+    let n = 0;
+    let bytes = 0;
+    await runPool([.../* @__PURE__ */ new Set([...this.index, ...extraKeys])], 20, async (k) => {
+      try {
+        const st = await this.app.vault.adapter.stat(`${this.dir}/${k}.mp3`);
+        if (!st) {
+          if (this.index.delete(k)) dirty = true;
+          return;
+        }
+        if (st.mtime >= cutoffMs) return;
+        await this.app.vault.adapter.remove(`${this.dir}/${k}.mp3`);
+        this.index.delete(k);
+        dirty = true;
+        n++;
+        bytes += st.size;
+      } catch {
+      }
+    });
+    if (dirty) await this.saveIndex();
+    return { n, bytes };
+  }
+};
+
 // src/main.ts
 var DEFAULT_DATA = {
   settings: {
@@ -21403,6 +35272,10 @@ var DEFAULT_DATA = {
     audioChance: 0.4,
     ttsRate: 1,
     ttsSentenceRate: 0.85,
+    sentenceNeural: true,
+    sentenceNeuralAll: false,
+    sentenceNeuralVoice: "anna",
+    sentenceNeuralSources: [],
     autoBackup: true,
     llmProvider: "ollama",
     llmSaved: { ollama: { ...LLM_OLLAMA_PRESET } },
@@ -21420,7 +35293,7 @@ var DEFAULT_DATA = {
   dictExhausted: { ver: STARTER_VER, words: {} },
   enriched: { ver: 3, words: {} }
 };
-var EnglishLearnPlugin = class extends import_obsidian17.Plugin {
+var EnglishLearnPlugin = class extends import_obsidian19.Plugin {
   constructor() {
     super(...arguments);
     this.db = structuredClone(DEFAULT_DATA);
@@ -21446,7 +35319,7 @@ var EnglishLearnPlugin = class extends import_obsidian17.Plugin {
   }
   /** 词笔记顶栏内容（阅读态 post-processor 与编辑态注入共用）：发音/音标/进度/主题（芯片可点改）/删除 */
   renderWordBar(bar, word, fm) {
-    const ttsBtn = bar.createEl("button", { text: "\u{1F50A}", cls: "el-tts" });
+    const ttsBtn = bar.createEl("button", { cls: "el-tts" });
     ttsBtn.onClickEvent(() => {
       this.speakWord(word);
       window.setTimeout(() => void this.audio.badge(ttsBtn, word), 1200);
@@ -21468,7 +35341,7 @@ var EnglishLearnPlugin = class extends import_obsidian17.Plugin {
       chip.onClickEvent(() => {
         const doc = this.words.get(word);
         if (!doc) {
-          new import_obsidian17.Notice("\u8BCD\u5E93\u7D22\u5F15\u91CC\u6CA1\u6709\u8BE5\u8BCD\uFF0C\u91CD\u8F7D\u63D2\u4EF6\u6216\u91CD\u5F00\u7B14\u8BB0\u540E\u518D\u8BD5");
+          new import_obsidian19.Notice("\u8BCD\u5E93\u7D22\u5F15\u91CC\u6CA1\u6709\u8BE5\u8BCD\uFF0C\u91CD\u8F7D\u63D2\u4EF6\u6216\u91CD\u5F00\u7B14\u8BB0\u540E\u518D\u8BD5");
           return;
         }
         new ThemePickModal(this.app, this, doc, () => this.rerenderWordBar(bar, word, fm)).open();
@@ -21477,31 +35350,29 @@ var EnglishLearnPlugin = class extends import_obsidian17.Plugin {
     bar.createEl("button", { text: "\u{1F5D1}", cls: "el-note-del", attr: { title: "\u5220\u9664\u8BCD\u6761" } }).onClickEvent(async () => {
       if (!await confirmDeleteWord(this.app, word)) return;
       await this.deleteWord(word);
-      new import_obsidian17.Notice(`\u5DF2\u5220\u9664\u300C${word}\u300D`);
+      new import_obsidian19.Notice(`\u5DF2\u5220\u9664\u300C${word}\u300D`);
     });
   }
   /** 顶栏原地重画：主题在弹窗里改过后立即反映（阅读态 post-processor 不因 frontmatter 变化自动重跑，
    *  编辑态进度未变的顶栏也不会重建——这里统一就地刷新，bar 元素不变，阅读/编辑两态共用） */
   rerenderWordBar(bar, word, fm) {
-    var _a;
     const fresh = this.words.get(word);
     bar.empty();
-    this.renderWordBar(bar, word, { ...fm, themes: (_a = fresh == null ? void 0 : fresh.themes) != null ? _a : fm.themes });
+    this.renderWordBar(bar, word, { ...fm, themes: fresh?.themes ?? fm.themes });
   }
   /** 编辑态（live preview / source）词笔记顶部注入同一条顶栏；阅读态交还给 post-processor */
   refreshEditNoteBar() {
-    var _a, _b, _c, _d, _e;
     const root = `${this.db.settings.root}/words/`;
     if (this.editBar) {
       const view2 = this.editBar.leaf.view;
-      const file2 = view2 instanceof import_obsidian17.MarkdownView ? view2.file : null;
-      const fmWord = file2 ? (_b = (_a = this.app.metadataCache.getFileCache(file2)) == null ? void 0 : _a.frontmatter) == null ? void 0 : _b.word : void 0;
-      const still = this.editBar.el.isConnected && view2 instanceof import_obsidian17.MarkdownView && (file2 == null ? void 0 : file2.path) === this.editBar.path && view2.getMode() === "source" && fmWord === this.editBar.word;
+      const file2 = view2 instanceof import_obsidian19.MarkdownView ? view2.file : null;
+      const fmWord = file2 ? this.app.metadataCache.getFileCache(file2)?.frontmatter?.word : void 0;
+      const still = this.editBar.el.isConnected && view2 instanceof import_obsidian19.MarkdownView && file2?.path === this.editBar.path && view2.getMode() === "source" && fmWord === this.editBar.word;
       if (!still) {
         this.editBar.el.remove();
         this.editBar = null;
       } else {
-        const pk = JSON.stringify((_c = this.db.progress[this.editBar.word]) != null ? _c : null);
+        const pk = JSON.stringify(this.db.progress[this.editBar.word] ?? null);
         if (pk !== this.editBar.progressKey) {
           this.editBar.el.remove();
           this.editBar = null;
@@ -21509,24 +35380,23 @@ var EnglishLearnPlugin = class extends import_obsidian17.Plugin {
       }
     }
     if (this.editBar) return;
-    const view = this.app.workspace.getActiveViewOfType(import_obsidian17.MarkdownView);
+    const view = this.app.workspace.getActiveViewOfType(import_obsidian19.MarkdownView);
     const file = this.app.workspace.getActiveFile();
     if (!view || !file || !file.path.startsWith(root) || view.getMode() !== "source") return;
-    const fm = (_d = this.app.metadataCache.getFileCache(file)) == null ? void 0 : _d.frontmatter;
-    const word = typeof (fm == null ? void 0 : fm.word) === "string" ? fm.word : "";
+    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+    const word = typeof fm?.word === "string" ? fm.word : "";
     if (!word) return;
     const bar = view.contentEl.createDiv({ cls: "el-note-bar el-note-bar-edit" });
-    this.renderWordBar(bar, word, fm != null ? fm : {});
+    this.renderWordBar(bar, word, fm ?? {});
     this.editBar = {
       el: bar,
       leaf: view.leaf,
       path: file.path,
       word,
-      progressKey: JSON.stringify((_e = this.db.progress[word]) != null ? _e : null)
+      progressKey: JSON.stringify(this.db.progress[word] ?? null)
     };
   }
   async onload() {
-    var _a;
     let settingsRaw = "";
     let loaded = null;
     try {
@@ -21542,14 +35412,25 @@ var EnglishLearnPlugin = class extends import_obsidian17.Plugin {
     const firstInstall = loaded === null;
     this.db = {
       ...structuredClone(DEFAULT_DATA),
-      settings: { ...DEFAULT_DATA.settings, ...loaded == null ? void 0 : loaded.settings }
+      settings: { ...DEFAULT_DATA.settings, ...loaded?.settings }
     };
     this.store = new DataStore(this);
     this.store.markSettingsSynced(settingsRaw);
     this.words = new WordStore(this);
     this.dict = new EcdictDict(this.app, DATA_ROOT);
     this.audio = new AudioCache(this.app, DATA_ROOT);
-    setPreferredVoice((_a = this.db.settings.ttsVoice) != null ? _a : null);
+    this.sentenceTts = new SentenceNeural(this.app, DATA_ROOT, () => ({
+      // 地址仍走设置里的配置 Pool（llmConf 优先池记录、锁定的云端源强制预设地址）——
+      // tts-edge 每次合成用它拼 `<baseUrl>/audio/speech`，别让端点地址在那边再硬编码一份
+      // （源换域名会漏改，或用户指了中转地址 TTS 却不走）
+      // ⚠️ 这里的设置名是「音色服务名」（cosyvoice），配置池的 key 是厂商名（siliconflow）——
+      // 二者不一致，靠下面这行字面量手工映射（新增 TTS 源须同步改这里与 tts-edge.providers）
+      sf: { key: this.db.settings.llmSaved?.siliconflow?.apiKey ?? "", url: llmConf(this.db.settings.llmSaved, "siliconflow").baseUrl },
+      zhipu: { key: this.db.settings.llmSaved?.zhipu?.apiKey ?? "", url: llmConf(this.db.settings.llmSaved, "zhipu").baseUrl },
+      voice: this.db.settings.sentenceNeuralVoice || "anna",
+      sources: this.db.settings.sentenceNeuralSources ?? []
+    }));
+    setPreferredVoice(this.db.settings.ttsVoice ?? null);
     setShowModalTag(this.db.settings.showModalTag !== false);
     this.registerView(THEME_VIEW_TYPE, (leaf) => new ThemeView(leaf, this));
     this.registerView(LEARN_VIEW_TYPE, (leaf) => new LearnView(leaf, this));
@@ -21638,8 +35519,7 @@ var EnglishLearnPlugin = class extends import_obsidian17.Plugin {
     );
     this.addSettingTab(new EnglishLearnSettingTab(this.app, this));
     this.registerMarkdownPostProcessor((el, ctx) => {
-      var _a2;
-      const word = (_a2 = ctx.frontmatter) == null ? void 0 : _a2.word;
+      const word = ctx.frontmatter?.word;
       if (typeof word !== "string" || !word) return;
       if (!ctx.sourcePath.startsWith(`${this.db.settings.root}/words/`)) return;
       const container = el.closest(".markdown-preview-view");
@@ -21663,7 +35543,7 @@ var EnglishLearnPlugin = class extends import_obsidian17.Plugin {
         });
       })
     );
-    if (import_obsidian17.Platform.isDesktop) {
+    if (import_obsidian19.Platform.isDesktop) {
       this.registerInterval(
         window.setInterval(() => {
           if (this.sessionActive) return;
@@ -21726,14 +35606,13 @@ var EnglishLearnPlugin = class extends import_obsidian17.Plugin {
           const pending = await this.refreshStatusBar();
           this.remindOnce(pending);
         } catch (e) {
-          new import_obsidian17.Notice(`English Learn \u521D\u59CB\u5316\u5931\u8D25\uFF1A${e instanceof Error ? e.message : e}`);
+          new import_obsidian19.Notice(`English Learn \u521D\u59CB\u5316\u5931\u8D25\uFF1A${e instanceof Error ? e.message : e}`);
         }
       })();
     });
   }
   onunload() {
-    var _a;
-    (_a = this.vpDebugEl) == null ? void 0 : _a.remove();
+    this.vpDebugEl?.remove();
     this.vpDebugEl = null;
     if (this.vpDebugRaf) cancelAnimationFrame(this.vpDebugRaf);
     for (const h of this.vpCapHandles) h.remove();
@@ -21747,10 +35626,9 @@ var EnglishLearnPlugin = class extends import_obsidian17.Plugin {
    *  Keyboard 事件（宿主 --keyboard-height 的上游信号源，window.Capacitor
    *  非 obsidian.d.ts 官方 API，?. 安全调用 + 桌面端无此对象自然跳过） */
   syncViewportDebug() {
-    var _a, _b, _c, _d;
     const on = this.db.settings.viewportDebug === true;
     if (!on) {
-      (_a = this.vpDebugEl) == null ? void 0 : _a.remove();
+      this.vpDebugEl?.remove();
       this.vpDebugEl = null;
       cancelAnimationFrame(this.vpDebugRaf);
       this.vpDebugRaf = 0;
@@ -21758,37 +35636,36 @@ var EnglishLearnPlugin = class extends import_obsidian17.Plugin {
       this.vpCapHandles = [];
       return;
     }
-    (_b = this.vpDebugEl) != null ? _b : this.vpDebugEl = document.body.createEl("div", {
+    this.vpDebugEl ?? (this.vpDebugEl = document.body.createEl("div", {
       cls: "el-vp-debug",
       attr: { "aria-hidden": "true", role: "button", title: "\u70B9\u6309\u590D\u5236\u5168\u90E8\u8BFB\u6570" }
-    });
+    }));
     this.vpDebugEl.addEventListener("click", async () => {
-      var _a2, _b2;
-      const text2 = ((_b2 = (_a2 = this.vpDebugEl) == null ? void 0 : _a2.textContent) != null ? _b2 : "").trim();
+      const text2 = (this.vpDebugEl?.textContent ?? "").trim();
       if (!text2) return;
       let ok = false;
       try {
         await navigator.clipboard.writeText(text2);
         ok = true;
-      } catch (e) {
-        const ta = document.createElement("textarea");
-        ta.value = text2;
-        ta.style.position = "fixed";
-        ta.style.opacity = "0";
-        document.body.appendChild(ta);
-        ta.select();
+      } catch {
+        const ta2 = document.createElement("textarea");
+        ta2.value = text2;
+        ta2.style.position = "fixed";
+        ta2.style.opacity = "0";
+        document.body.appendChild(ta2);
+        ta2.select();
         ok = document.execCommand("copy");
-        ta.remove();
+        ta2.remove();
       }
-      new import_obsidian17.Notice(ok ? "\u89C6\u53E3\u8BFB\u6570\u5DF2\u590D\u5236" : "\u590D\u5236\u5931\u8D25\uFF0C\u8BF7\u624B\u52A8\u6284\u5F55");
+      new import_obsidian19.Notice(ok ? "\u89C6\u53E3\u8BFB\u6570\u5DF2\u590D\u5236" : "\u590D\u5236\u5931\u8D25\uFF0C\u8BF7\u624B\u52A8\u6284\u5F55");
     });
     if (!this.vpCapHandles.length) {
-      const cap = (_d = (_c = window.Capacitor) == null ? void 0 : _c.Plugins) == null ? void 0 : _d.Keyboard;
-      if (cap == null ? void 0 : cap.addListener) {
+      const cap = window.Capacitor?.Plugins?.Keyboard;
+      if (cap?.addListener) {
         for (const ev of ["keyboardWillShow", "keyboardDidShow", "keyboardWillHide", "keyboardDidHide"]) {
           cap.addListener(
             ev,
-            (info) => pushCapLog({ t: performance.now(), ev: ev.replace("keyboard", ""), h: info == null ? void 0 : info.keyboardHeight })
+            (info) => pushCapLog({ t: performance.now(), ev: ev.replace("keyboard", ""), h: info?.keyboardHeight })
           ).then(
             (h) => this.vpCapHandles.push(h),
             () => void 0
@@ -21808,7 +35685,6 @@ var EnglishLearnPlugin = class extends import_obsidian17.Plugin {
     }
   }
   renderViewportDebug() {
-    var _a, _b, _c, _d;
     if (!this.vpDebugEl) return;
     const vv = window.visualViewport;
     const kb = getComputedStyle(document.body).getPropertyValue("--keyboard-height").trim() || "0";
@@ -21827,16 +35703,10 @@ var EnglishLearnPlugin = class extends import_obsidian17.Plugin {
       }
       chain = parts.join(">");
     }
-    const capLine = recentCapLog().slice(-2).map((e) => {
-      var _a2;
-      return `${e.ev} ${(_a2 = e.h) != null ? _a2 : "-"}`;
-    }).join(" | ");
-    const vpLine = recentVpLog().slice(-3).map((e) => {
-      var _a2;
-      return `vvB ${e.vvBottom} a ${e.avail}\u2192${(_a2 = e.applied) != null ? _a2 : "skip"}`;
-    }).join(" | ");
+    const capLine = recentCapLog().slice(-2).map((e) => `${e.ev} ${e.h ?? "-"}`).join(" | ");
+    const vpLine = recentVpLog().slice(-3).map((e) => `vvB ${e.vvBottom} a ${e.avail}\u2192${e.applied ?? "skip"}`).join(" | ");
     const cs = learn ? getComputedStyle(learn) : null;
-    const vcD = (learn == null ? void 0 : learn.parentElement) ? getComputedStyle(learn.parentElement).display : "-";
+    const vcD = learn?.parentElement ? getComputedStyle(learn.parentElement).display : "-";
     const scanRules = (el) => {
       if (!el) return "\u65E0\u8282\u70B9";
       const hits = [];
@@ -21844,7 +35714,7 @@ var EnglishLearnPlugin = class extends import_obsidian17.Plugin {
         let rules;
         try {
           rules = sheet.cssRules;
-        } catch (e) {
+        } catch {
           continue;
         }
         const src = sheet.ownerNode;
@@ -21867,7 +35737,7 @@ var EnglishLearnPlugin = class extends import_obsidian17.Plugin {
     const kbVar = getComputedStyle(document.documentElement).getPropertyValue("--el-kb-h").trim() || "0";
     this.vpDebugEl.setText(
       `inner ${window.innerHeight} vv ${vv ? Math.round(vv.height) : "-"}\xB7${vv ? Math.round(vv.offsetTop) : "-"} sc ${Math.round(window.scrollY)}  kb ${kb} ${animating}  app ${app ? Math.round(app.getBoundingClientRect().height) : "-"}
-learn ${learn ? Math.round(learn.getBoundingClientRect().height) : "-"} in ${(learn == null ? void 0 : learn.style.height) || "-"} cH ${(_a = cs == null ? void 0 : cs.height) != null ? _a : "-"} mh ${(_b = cs == null ? void 0 : cs.maxHeight) != null ? _b : "-"} fb ${(_c = cs == null ? void 0 : cs.flexBasis) != null ? _c : "-"} fs ${(_d = cs == null ? void 0 : cs.flexShrink) != null ? _d : "-"} n ${document.querySelectorAll(".el-learn").length}
+learn ${learn ? Math.round(learn.getBoundingClientRect().height) : "-"} in ${learn?.style.height || "-"} cH ${cs?.height ?? "-"} mh ${cs?.maxHeight ?? "-"} fb ${cs?.flexBasis ?? "-"} fs ${cs?.flexShrink ?? "-"} n ${document.querySelectorAll(".el-learn").length}
 chain ${chain || "-"} vcD ${vcD}
 kbh ${kbVar} rules ${learn ? scanRules(learn) : "-"}
 cap ${capLine || "\u65E0\u4E8B\u4EF6"}
@@ -21888,14 +35758,14 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
     const old = this.db.settings.root;
     if (newRoot === old) return;
     if (this.sessionActive) {
-      new import_obsidian17.Notice("\u5B66\u4E60\u4F1A\u8BDD\u8FDB\u884C\u4E2D\uFF0C\u8BF7\u5148\u7ED3\u675F\u518D\u8FC1\u79FB\u8BCD\u5E93\u6839\u76EE\u5F55");
+      new import_obsidian19.Notice("\u5B66\u4E60\u4F1A\u8BDD\u8FDB\u884C\u4E2D\uFF0C\u8BF7\u5148\u7ED3\u675F\u518D\u8FC1\u79FB\u8BCD\u5E93\u6839\u76EE\u5F55");
       return;
     }
     const { adapter } = this.app.vault;
     for (const sub of ["words", "backup", "export"]) {
       const from = `${old}/${sub}`;
       if (await adapter.exists(from) && await adapter.exists(`${newRoot}/${sub}`)) {
-        new import_obsidian17.Notice(`\u300C${from}\u300D\u4E0E\u300C${newRoot}/${sub}\u300D\u540C\u65F6\u5B58\u5728\uFF0C\u8FC1\u79FB\u5DF2\u53D6\u6D88\uFF08\u4E0D\u5408\u5E76\u4E0D\u8986\u76D6\uFF09`);
+        new import_obsidian19.Notice(`\u300C${from}\u300D\u4E0E\u300C${newRoot}/${sub}\u300D\u540C\u65F6\u5B58\u5728\uFF0C\u8FC1\u79FB\u5DF2\u53D6\u6D88\uFF08\u4E0D\u5408\u5E76\u4E0D\u8986\u76D6\uFF09`);
         return;
       }
     }
@@ -21924,11 +35794,11 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
       await this.words.scan();
       await this.store.touchNow();
       this.refreshEditNoteBar();
-      new import_obsidian17.Notice(`\u8BCD\u5E93\u6839\u76EE\u5F55\u5DF2\u8FC1\u79FB\u5230\u300C${newRoot}\u300D\uFF0C\u53E6\u4E00\u7AEF\u542F\u52A8\u540E\u81EA\u52A8\u8DDF\u968F`);
+      new import_obsidian19.Notice(`\u8BCD\u5E93\u6839\u76EE\u5F55\u5DF2\u8FC1\u79FB\u5230\u300C${newRoot}\u300D\uFF0C\u53E6\u4E00\u7AEF\u542F\u52A8\u540E\u81EA\u52A8\u8DDF\u968F`);
     } catch (e) {
       await this.words.scan().catch(() => {
       });
-      new import_obsidian17.Notice(`\u8BCD\u5E93\u6839\u76EE\u5F55\u8FC1\u79FB\u5931\u8D25\uFF1A${e}\u3002\u53EF\u76F4\u63A5\u91CD\u8BD5\uFF08\u5DF2\u642C\u8D70\u7684\u5B50\u76EE\u5F55\u81EA\u52A8\u8DF3\u8FC7\uFF09`);
+      new import_obsidian19.Notice(`\u8BCD\u5E93\u6839\u76EE\u5F55\u8FC1\u79FB\u5931\u8D25\uFF1A${e}\u3002\u53EF\u76F4\u63A5\u91CD\u8BD5\uFF08\u5DF2\u642C\u8D70\u7684\u5B50\u76EE\u5F55\u81EA\u52A8\u8DF3\u8FC7\uFF09`);
     }
   }
   /** 首次安装：内置 3 个默认主题（关键词 + 自带释义词包，离线即可直接学） */
@@ -21971,7 +35841,6 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
   }
   /** @returns 是否真正启动（用户取消则 false，调用方可据此保持原界面） */
   async startSession(theme, hard = false) {
-    var _a;
     if (this.sessionActive) {
       if (theme === this.sessionTheme && hard === this.sessionHard) {
         await this.activateView(LEARN_VIEW_TYPE);
@@ -21989,7 +35858,7 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
     const existed = this.app.workspace.getLeavesOfType(LEARN_VIEW_TYPE).length > 0;
     await this.activateView(LEARN_VIEW_TYPE);
     if (existed) {
-      const view = (_a = this.app.workspace.getLeavesOfType(LEARN_VIEW_TYPE)[0]) == null ? void 0 : _a.view;
+      const view = this.app.workspace.getLeavesOfType(LEARN_VIEW_TYPE)[0]?.view;
       if (view instanceof LearnView) view.restart();
     }
     return true;
@@ -21997,11 +35866,11 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
   async downloadDict() {
     const meta = await this.dict.installedMeta();
     if (meta && !starterNeedsUpgrade(meta)) {
-      new import_obsidian17.Notice(`\u57FA\u7840\u8BCD\u5178 v${meta.ver} \u5DF2\u5B89\u88C5\uFF08${meta.count} \u8BCD\u6761\uFF0C${fmtDate(meta.installed)}\uFF09\uFF0C\u65E0\u9700\u91CD\u590D\u4E0B\u8F7D`);
+      new import_obsidian19.Notice(`\u57FA\u7840\u8BCD\u5178 v${meta.ver} \u5DF2\u5B89\u88C5\uFF08${meta.count} \u8BCD\u6761\uFF0C${fmtDate(meta.installed)}\uFF09\uFF0C\u65E0\u9700\u91CD\u590D\u4E0B\u8F7D`);
       return;
     }
-    new import_obsidian17.Notice(meta ? `\u68C0\u6D4B\u5230\u57FA\u7840\u8BCD\u5178 v${meta.ver}\uFF0C\u5347\u7EA7\u5230 v${STARTER_VER}\u2026` : "\u5F00\u59CB\u4E0B\u8F7D\u57FA\u7840\u8BCD\u5178\u2026");
-    await this.dict.ensureStarter().catch(() => new import_obsidian17.Notice("\u4E0B\u8F7D\u5931\u8D25\uFF1A\u7A0D\u540E\u67E5\u8BCD\u65F6\u4F1A\u81EA\u52A8\u91CD\u8BD5"));
+    new import_obsidian19.Notice(meta ? `\u68C0\u6D4B\u5230\u57FA\u7840\u8BCD\u5178 v${meta.ver}\uFF0C\u5347\u7EA7\u5230 v${STARTER_VER}\u2026` : "\u5F00\u59CB\u4E0B\u8F7D\u57FA\u7840\u8BCD\u5178\u2026");
+    await this.dict.ensureStarter().catch(() => new import_obsidian19.Notice("\u4E0B\u8F7D\u5931\u8D25\uFF1A\u7A0D\u540E\u67E5\u8BCD\u65F6\u4F1A\u81EA\u52A8\u91CD\u8BD5"));
   }
   /** 全库口径：排除仅属于停用主题的词（enabled === false；全库会话/状态栏/面板合计共用，防口径漂移） */
   activeWords() {
@@ -22010,7 +35879,6 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
   }
   /** 状态栏：今日待学（到期复习 + 新词配额剩余），返回待学数（供提醒用） */
   async refreshStatusBar() {
-    var _a;
     if (!this.statusEl) return null;
     try {
       await this.store.syncNow();
@@ -22023,13 +35891,13 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
         if (!p) fresh++;
         else if (p.next <= now2) due++;
       }
-      const day = (_a = this.db.stats.days[fmtDate(now2)]) != null ? _a : { new: 0, rev: 0 };
+      const day = this.db.stats.days[fmtDate(now2)] ?? { new: 0, rev: 0 };
       const quota = Math.max(0, this.db.settings.dailyNew - day.new);
       const n = due + Math.min(quota, fresh);
       const fire = this.db.stats.streak > 0 ? ` \xB7 \u{1F525}${this.db.stats.streak}` : "";
       this.statusEl.setText(n > 0 ? `\u{1F4D6} \u5F85\u5B66 ${n}${fire}` : `\u{1F4D6} \u2713${fire}`);
       return n;
-    } catch (e) {
+    } catch {
       return null;
     }
   }
@@ -22042,12 +35910,11 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
     if (day && day.new + day.rev > 0) return;
     this.db.lastRemind = today;
     this.store.touch();
-    new import_obsidian17.Notice(`\u{1F4D6} English Learn\uFF1A\u4ECA\u65E5\u5F85\u5B66 ${pending} \u4E2A\u8BCD\uFF0C\u70B9\u51FB\u72B6\u6001\u680F\u5F00\u59CB`, 8e3);
+    new import_obsidian19.Notice(`\u{1F4D6} English Learn\uFF1A\u4ECA\u65E5\u5F85\u5B66 ${pending} \u4E2A\u8BCD\uFF0C\u70B9\u51FB\u72B6\u6001\u680F\u5F00\u59CB`, 8e3);
   }
   // ———————— 学习会话 ————————
   /** 组装一次学习会话：到期复习（按时限）+ 新词（按每日配额；extraNew 为超配额的加学批，供"再来一批"用）；hard=true 为难词专项 */
   async buildSession(theme, hard = false, extraNew = 0) {
-    var _a;
     await this.ensureFolders();
     await this.store.syncNow();
     await this.words.scan();
@@ -22073,17 +35940,11 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
     if (this.db.settings.freshByFreq !== false && fresh.length > 1) {
       const frq = await this.dict.freqRank(fresh.map((w) => w.word));
       if (frq.size) sortFreshByFreq(fresh, frq);
-      else fresh.sort((a, b) => {
-        var _a2, _b;
-        return ((_a2 = b.added) != null ? _a2 : 0) - ((_b = a.added) != null ? _b : 0);
-      });
+      else fresh.sort((a, b) => (b.added ?? 0) - (a.added ?? 0));
     } else {
-      fresh.sort((a, b) => {
-        var _a2, _b;
-        return ((_a2 = b.added) != null ? _a2 : 0) - ((_b = a.added) != null ? _b : 0);
-      });
+      fresh.sort((a, b) => (b.added ?? 0) - (a.added ?? 0));
     }
-    const day = (_a = this.db.stats.days[fmtDate(now2)]) != null ? _a : { new: 0, rev: 0 };
+    const day = this.db.stats.days[fmtDate(now2)] ?? { new: 0, rev: 0 };
     const quota = Math.max(0, this.db.settings.dailyNew - day.new);
     const qReviews = reviews.slice(0, this.db.settings.dailyReviewMax);
     const qFresh = fresh.slice(0, quota + extraNew);
@@ -22095,16 +35956,16 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
   }
   /** 记录一次评分，返回 {是否新词, 是否本次达成掌握} */
   recordGrade(word, grade) {
-    var _a, _b, _c, _d;
+    var _a2, _b;
     const now2 = Date.now();
     const prev = this.db.progress[word];
     const next = applyGrade(prev, grade, now2, { fuzzyHalve: this.db.settings.fuzzyHalve });
     this.db.progress[word] = next;
-    const day = (_c = (_a = this.db.stats.days)[_b = fmtDate(now2)]) != null ? _c : _a[_b] = { new: 0, rev: 0 };
+    const day = (_a2 = this.db.stats.days)[_b = fmtDate(now2)] ?? (_a2[_b] = { new: 0, rev: 0 });
     if (!prev) day.new++;
     else day.rev++;
     const masteredNow = isMastered(next) && !(prev && isMastered(prev));
-    if (masteredNow) day.m = ((_d = day.m) != null ? _d : 0) + 1;
+    if (masteredNow) day.m = (day.m ?? 0) + 1;
     this.recomputeStreak();
     this.store.touch();
     this.refreshEditNoteBar();
@@ -22142,25 +36003,25 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
     );
     try {
       const existing = this.app.vault.getAbstractFileByPath(path);
-      if (existing instanceof import_obsidian17.TFile) await this.app.vault.modify(existing, body);
+      if (existing instanceof import_obsidian19.TFile) await this.app.vault.modify(existing, body);
       else await this.app.vault.create(path, body);
       const snaps = this.app.vault.getFiles().filter((f) => f.path.startsWith(`${this.db.settings.root}/backup/progress-`)).sort((a, b) => a.name < b.name ? 1 : -1);
       for (const f of snaps.slice(14)) await this.app.vault.trash(f, false);
     } catch (e) {
-      new import_obsidian17.Notice(`\u8FDB\u5EA6\u5907\u4EFD\u5931\u8D25: ${e}`);
+      new import_obsidian19.Notice(`\u8FDB\u5EA6\u5907\u4EFD\u5931\u8D25: ${e}`);
     }
   }
   /** 用户自评「太简单」：直接标记掌握并计入当日新词 */
   markMastered(word) {
-    var _a, _b, _c, _d;
+    var _a2, _b;
     const now2 = Date.now();
     const prev = this.db.progress[word];
     if (prev && isMastered(prev)) return;
     this.db.progress[word] = masteredProgress(prev, now2);
-    const day = (_c = (_a = this.db.stats.days)[_b = fmtDate(now2)]) != null ? _c : _a[_b] = { new: 0, rev: 0 };
+    const day = (_a2 = this.db.stats.days)[_b = fmtDate(now2)] ?? (_a2[_b] = { new: 0, rev: 0 });
     if (!prev) day.new++;
     else day.rev++;
-    day.m = ((_d = day.m) != null ? _d : 0) + 1;
+    day.m = (day.m ?? 0) + 1;
     this.recomputeStreak();
     this.store.touch();
     this.refreshEditNoteBar();
@@ -22185,27 +36046,24 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
   /** 当前 LLM 配置（设置页与各调用点共用，配置增删字段只改这里）。
    *  配置池 llmSaved 各源一份、桌面/移动共用；两端各选启用的源，移动端未选时跟随桌面 */
   get llmCfg() {
-    var _a;
     const s = this.db.settings;
-    const p = (_a = import_obsidian17.Platform.isMobile ? s.llmMobileProvider : void 0) != null ? _a : s.llmProvider;
+    const p = (import_obsidian19.Platform.isMobile ? s.llmMobileProvider : void 0) ?? s.llmProvider;
     return llmConf(s.llmSaved, p);
   }
   /** 主题语境串：主题名 + 关键词（AI 例句围绕该领域写，同主题词在语境中复现）。
    *  仅 groupTopics 使用——请求主题一律走它收口，别绕过 */
   topicOf(theme) {
-    var _a;
     const info = theme ? this.db.themes[theme] : void 0;
-    return [.../* @__PURE__ */ new Set([theme, ...(_a = info == null ? void 0 : info.keywords) != null ? _a : []])].filter(Boolean).join(" / ");
+    return [.../* @__PURE__ */ new Set([theme, ...info?.keywords ?? []])].filter(Boolean).join(" / ");
   }
   /** AI 生成的语境主题（例句/义项按主题定制，见 docs/enrich.md「主题语境生成」）。
    *  多主题词的优先级：显式语境（入队方给的会话主题/扩词目标主题，ctx）> 当前会话主题 > 首主题——
    *  前两级都要求词真属于该主题，否则回退首主题。这里只定「主主题」（谁的领域义排前/带关键词），
    *  词的其余所属主题由 groupTopics 并入同一请求，一次生成全覆盖 */
   genTheme(doc, ctx) {
-    var _a, _b, _c;
-    const hinted = (_b = (_a = ctx == null ? void 0 : ctx.get(doc.word.toLowerCase())) != null ? _a : this.sessionTheme) != null ? _b : "";
+    const hinted = ctx?.get(doc.word.toLowerCase()) ?? this.sessionTheme ?? "";
     if (hinted && doc.themes.includes(hinted)) return hinted;
-    return (_c = doc.themes[0]) != null ? _c : "";
+    return doc.themes[0] ?? "";
   }
   /** 分组请求的主题语境：主主题（名+关键词）打底，组内词的其余所属主题作兼顾主题并入——
    *  多主题词的例句/义项在一次请求里同时覆盖其全部所属主题（都要学，一次搞定），不分两次生成。
@@ -22231,27 +36089,26 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
    *  都未命中才请求 Datamuse 并回写（单侧结果也缓存）。
    *  online：自动路径（翻卡/点词）传「学习时按需补全」开关值，关闭时只离线直读；手动补全命令不传（照常抓） */
   async relWords(doc, opts) {
-    var _a, _b, _c, _d, _e, _f;
     if (doc.synonyms || doc.antonyms) {
-      return { synonyms: (_a = doc.synonyms) != null ? _a : [], antonyms: (_b = doc.antonyms) != null ? _b : [] };
+      return { synonyms: doc.synonyms ?? [], antonyms: doc.antonyms ?? [] };
     }
     const entry = await this.dict.lookup(doc.word);
-    if (((_c = entry == null ? void 0 : entry.synonyms) == null ? void 0 : _c.length) || ((_d = entry == null ? void 0 : entry.antonyms) == null ? void 0 : _d.length)) {
+    if (entry?.synonyms?.length || entry?.antonyms?.length) {
       await this.words.setRelWords(doc, { synonyms: entry.synonyms, antonyms: entry.antonyms });
-      return { synonyms: (_e = entry.synonyms) != null ? _e : [], antonyms: (_f = entry.antonyms) != null ? _f : [] };
+      return { synonyms: entry.synonyms ?? [], antonyms: entry.antonyms ?? [] };
     }
-    if ((opts == null ? void 0 : opts.online) === false) return { synonyms: [], antonyms: [] };
+    if (opts?.online === false) return { synonyms: [], antonyms: [] };
     const [synR, antR] = await Promise.allSettled([fetchSynonyms(doc.word), fetchAntonyms(doc.word)]);
     const syn = synR.status === "fulfilled" ? synR.value : void 0;
     const ant = antR.status === "fulfilled" ? antR.value : void 0;
-    if ((syn == null ? void 0 : syn.length) || (ant == null ? void 0 : ant.length)) {
+    if (syn?.length || ant?.length) {
       await this.words.setRelWords(doc, { synonyms: syn, antonyms: ant });
-      return { synonyms: syn != null ? syn : [], antonyms: ant != null ? ant : [] };
+      return { synonyms: syn ?? [], antonyms: ant ?? [] };
     }
     if (synR.status === "fulfilled" && antR.status === "fulfilled") {
       await this.words.setRelWords(doc, { synonyms: [], antonyms: [] });
     }
-    return { synonyms: syn != null ? syn : [], antonyms: ant != null ? ant : [] };
+    return { synonyms: syn ?? [], antonyms: ant ?? [] };
   }
   /** 批量补同/反义词：为从未抓取过的词预填记忆关联，词卡同反义行开箱即有。
    *  只处理两侧都缺（从未抓取）的词——抓过但为空的词是负缓存语义，不重复请求；短语跳过。
@@ -22263,37 +36120,37 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
       (w) => w.synonyms === void 0 && w.antonyms === void 0 && !isPhrase(w.word) && (!only || only.has(w.word.toLowerCase()))
     );
     if (!missing.length) {
-      if (!quiet) new import_obsidian17.Notice("\u6240\u6709\u8BCD\u90FD\u6293\u53D6\u8FC7\u540C/\u53CD\u4E49\u8BCD\u4E86\uFF08\u65E0\u7ED3\u679C\u7684\u8BCD\u4E0D\u518D\u91CD\u590D\u8BF7\u6C42\uFF09");
+      if (!quiet) new import_obsidian19.Notice("\u6240\u6709\u8BCD\u90FD\u6293\u53D6\u8FC7\u540C/\u53CD\u4E49\u8BCD\u4E86\uFF08\u65E0\u7ED3\u679C\u7684\u8BCD\u4E0D\u518D\u91CD\u590D\u8BF7\u6C42\uFF09");
       return;
     }
     const batch = limit && limit > 0 ? missing.slice(0, limit) : missing;
     let done = 0;
     let processed = 0;
     let netFail = 0;
-    const prog = quiet ? null : new import_obsidian17.Notice(`\u6293\u53D6\u540C/\u53CD\u4E49\u8BCD 0/${batch.length}\u2026`, 0);
+    const prog = quiet ? null : new import_obsidian19.Notice(`\u6293\u53D6\u540C/\u53CD\u4E49\u8BCD 0/${batch.length}\u2026`, 0);
     await runPool(batch, 6, async (doc) => {
       const r = await this.relWords(doc);
       if (r.synonyms.length || r.antonyms.length) done++;
       else if (doc.synonyms === void 0 && doc.antonyms === void 0) netFail++;
       processed++;
-      prog == null ? void 0 : prog.setMessage(`\u6293\u53D6\u540C/\u53CD\u4E49\u8BCD ${processed}/${batch.length}\u2026`);
+      prog?.setMessage(`\u6293\u53D6\u540C/\u53CD\u4E49\u8BCD ${processed}/${batch.length}\u2026`);
     });
-    prog == null ? void 0 : prog.hide();
+    prog?.hide();
     this.store.touch();
     if (!quiet)
-      new import_obsidian17.Notice(
+      new import_obsidian19.Notice(
         `\u540C/\u53CD\u4E49\u8BCD\u8865\u5168\u5B8C\u6210\uFF1A${done}/${batch.length} \u8BCD\u8865\u5230` + (netFail ? `\uFF08${netFail} \u8BCD\u7F51\u7EDC\u5931\u8D25\u672A\u8BB0\u5F55\uFF0C\u53EF\u91CD\u8DD1\u518D\u8BD5\uFF09` : done < batch.length ? `\uFF08\u5176\u4F59\u5728\u8BCD\u5178\u4E0E Datamuse \u5747\u65E0\u6536\u5F55\uFF0C\u5DF2\u8BB0\u5F55\u4E0D\u518D\u91CD\u8BD5\uFF09` : "")
       );
   }
   /** 负缓存读取（只认当前 starter 版本的条目：升版/重装/旧格式数据自动失配作废） */
   exhaustedWords() {
     const c = this.db.dictExhausted;
-    return (c == null ? void 0 : c.ver) === STARTER_VER ? c.words : {};
+    return c?.ver === STARTER_VER ? c.words : {};
   }
   /** 负缓存写入：词典 + 在线兜底走完仍一无所获才标 */
   markDictExhausted(word) {
     const c = this.db.dictExhausted;
-    if ((c == null ? void 0 : c.ver) === STARTER_VER) c.words[word] = true;
+    if (c?.ver === STARTER_VER) c.words[word] = true;
     else this.db.dictExhausted = { ver: STARTER_VER, words: { [word]: true } };
   }
   /** 追加不与现有重复的例句，返回新增条数 */
@@ -22309,8 +36166,7 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
   }
   /** 加词：已存在则合并主题+追加例句，否则查词典（离线+在线补全）建笔记。返回 created | merged | skipped */
   async addWord(raw, theme, opts) {
-    var _a, _b, _c, _d, _e, _f;
-    const o = opts != null ? opts : {};
+    const o = opts ?? {};
     const word = normalizeWord(raw);
     if (!word) return "skipped";
     const existing = this.words.get(word);
@@ -22319,7 +36175,7 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
         await this.words.updateWordDoc(existing, { translation: o.translation });
       }
       await this.words.addTheme(existing, theme);
-      for (const ex of (_a = o.examples) != null ? _a : []) {
+      for (const ex of o.examples ?? []) {
         if (!existing.examples.some((e) => e.text === ex.text)) {
           await this.words.appendExample(existing, ex);
         }
@@ -22327,18 +36183,18 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
       return "merged";
     }
     const entry = await this.dict.lookup(word);
-    const phonetic = (_b = o.phonetic) != null ? _b : entry == null ? void 0 : entry.phonetic;
-    const translation = ((_c = o.translation) == null ? void 0 : _c.trim()) || (entry == null ? void 0 : entry.translation) || "";
-    const dictEx = (entry == null ? void 0 : entry.ex) ? [{ text: entry.ex[0], translation: entry.ex[1], source: "\u8BCD\u5178" }] : void 0;
+    const phonetic = o.phonetic ?? entry?.phonetic;
+    const translation = o.translation?.trim() || entry?.translation || "";
+    const dictEx = entry?.ex ? [{ text: entry.ex[0], translation: entry.ex[1], source: "\u8BCD\u5178" }] : void 0;
     await this.words.create(word, {
       themes: [theme],
       phonetic,
-      level: levelFromTag(entry == null ? void 0 : entry.tag),
+      level: levelFromTag(entry?.tag),
       translation,
-      examples: ((_d = o.examples) == null ? void 0 : _d.length) ? o.examples : dictEx,
+      examples: o.examples?.length ? o.examples : dictEx,
       // 词典自带同/反义词建笔记时一次写入（开箱离线完整，免后续抓取）；空则不写，保留抓取缺口语义
-      synonyms: ((_e = entry == null ? void 0 : entry.synonyms) == null ? void 0 : _e.length) ? entry.synonyms : void 0,
-      antonyms: ((_f = entry == null ? void 0 : entry.antonyms) == null ? void 0 : _f.length) ? entry.antonyms : void 0
+      synonyms: entry?.synonyms?.length ? entry.synonyms : void 0,
+      antonyms: entry?.antonyms?.length ? entry.antonyms : void 0
     });
     return "created";
   }
@@ -22351,14 +36207,8 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
     const exhausted = this.exhaustedWords();
     return {
       ex: all.filter((w) => w.examples.length < wantEx).length,
-      senses: all.filter((w) => {
-        var _a;
-        return !((_a = w.senses) == null ? void 0 : _a.length);
-      }).length,
-      zh: all.reduce((s, w) => s + w.examples.filter((e) => {
-        var _a;
-        return !((_a = e.translation) == null ? void 0 : _a.trim());
-      }).length, 0),
+      senses: all.filter((w) => !w.senses?.length).length,
+      zh: all.reduce((s, w) => s + w.examples.filter((e) => !e.translation?.trim()).length, 0),
       rel: all.filter((w) => w.synonyms === void 0 && w.antonyms === void 0 && !isPhrase(w.word)).length,
       trans: all.filter(
         (w) => (!w.translation || !w.phonetic) && !isPhrase(w.word) && !exhausted[w.word]
@@ -22373,38 +36223,37 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
       (w) => (!w.translation || !w.phonetic) && !isPhrase(w.word) && !this.exhaustedWords()[w.word] && (!only || only.has(w.word.toLowerCase()))
     );
     if (!missing.length) {
-      if (!quiet) new import_obsidian17.Notice("\u6CA1\u6709\u7F3A\u5931\u91CA\u4E49\u7684\u8BCD");
+      if (!quiet) new import_obsidian19.Notice("\u6CA1\u6709\u7F3A\u5931\u91CA\u4E49\u7684\u8BCD");
       return;
     }
     let done = 0;
     let processed = 0;
-    const prog = quiet ? null : new import_obsidian17.Notice(`\u8865\u5168\u4E2D 0/${missing.length}\u2026`, 0);
+    const prog = quiet ? null : new import_obsidian19.Notice(`\u8865\u5168\u4E2D 0/${missing.length}\u2026`, 0);
     await runPool(missing, 6, async (doc) => {
-      var _a, _b;
       const entry = await this.dict.lookup(doc.word);
-      let translation = (_a = entry == null ? void 0 : entry.translation) != null ? _a : "";
-      let phonetic = entry == null ? void 0 : entry.phonetic;
+      let translation = entry?.translation ?? "";
+      let phonetic = entry?.phonetic;
       if (!translation || !phonetic) {
         const on = await lookupOnline(doc.word);
-        if (!translation) translation = (on == null ? void 0 : on.definition) ? `[\u82F1] ${on.definition}` : (_b = on == null ? void 0 : on.zh) != null ? _b : "";
-        phonetic != null ? phonetic : phonetic = on == null ? void 0 : on.phonetic;
+        if (!translation) translation = on?.definition ? `[\u82F1] ${on.definition}` : on?.zh ?? "";
+        phonetic ?? (phonetic = on?.phonetic);
       }
       if (translation || phonetic) {
         await this.words.updateWordDoc(doc, {
           translation: doc.translation ? void 0 : translation,
           phonetic,
-          level: doc.level ? void 0 : levelFromTag(entry == null ? void 0 : entry.tag)
+          level: doc.level ? void 0 : levelFromTag(entry?.tag)
         });
         if (translation && !doc.translation || phonetic) done++;
       }
       if (!translation || !phonetic) this.markDictExhausted(doc.word);
       processed++;
-      prog == null ? void 0 : prog.setMessage(`\u8865\u5168\u4E2D ${processed}/${missing.length}\u2026`);
+      prog?.setMessage(`\u8865\u5168\u4E2D ${processed}/${missing.length}\u2026`);
     });
-    prog == null ? void 0 : prog.hide();
+    prog?.hide();
     this.store.touch();
     if (!quiet)
-      new import_obsidian17.Notice(
+      new import_obsidian19.Notice(
         `\u8865\u5168\u5B8C\u6210\uFF1A${done}/${missing.length} \u8BCD\u8865\u5230` + (done < missing.length ? `\uFF08\u5176\u4F59\u8BCD\u8BCD\u5178\u4E0E\u5728\u7EBF\u5747\u65E0\u6536\u5F55\u6216\u7F51\u7EDC\u5931\u8D25\uFF0C\u53EF\u91CD\u8DD1\u518D\u8BD5\uFF09` : "")
       );
     void this.refreshStatusBar();
@@ -22416,23 +36265,23 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
   async backfillExamples(wantOpt, limit, onProgress, shouldStop, only, quiet, ctx) {
     const cfg = this.llmCfg;
     if (!llmReady(cfg)) {
-      if (!quiet) new import_obsidian17.Notice("\u8BF7\u5148\u5728 \u8BBE\u7F6E \u2192 English Learn \u914D\u7F6E LLM API\uFF08\u672C\u5730 Ollama \u6216\u4E91\u7AEF\u5747\u53EF\uFF09");
+      if (!quiet) new import_obsidian19.Notice("\u8BF7\u5148\u5728 \u8BBE\u7F6E \u2192 English Learn \u914D\u7F6E LLM API\uFF08\u672C\u5730 Ollama \u6216\u4E91\u7AEF\u5747\u53EF\uFF09");
       return;
     }
-    const want = Math.max(1, wantOpt != null ? wantOpt : this.db.settings.exampleCount || 3);
+    const want = Math.max(1, wantOpt ?? (this.db.settings.exampleCount || 3));
     await this.words.scan();
     let missing = this.activeWords().filter((w) => w.examples.length < want);
     if (only) missing = missing.filter((w) => only.has(w.word.toLowerCase()));
     if (!missing.length) {
-      if (!quiet) new import_obsidian17.Notice(`\u6240\u6709\u8BCD\u90FD\u5DF2\u6709\u81F3\u5C11 ${want} \u6761\u4F8B\u53E5\u4E86`);
+      if (!quiet) new import_obsidian19.Notice(`\u6240\u6709\u8BCD\u90FD\u5DF2\u6709\u81F3\u5C11 ${want} \u6761\u4F8B\u53E5\u4E86`);
       return;
     }
     missing.sort((a, b) => a.examples.length - b.examples.length);
     if (limit && limit > 0 && limit < missing.length) missing = missing.slice(0, limit);
-    if (!quiet) new import_obsidian17.Notice(`\u6B63\u5728\u4E3A ${missing.length} \u4E2A\u8BCD\u8865\u4F8B\u53E5\uFF08\u6BCF\u8BCD\u8865\u5230 ${want} \u6761\uFF09\u2026\uFF08\u8017\u65F6\u53D6\u51B3\u4E8E\u6240\u914D\u6A21\u578B\u901F\u5EA6\uFF09`);
+    if (!quiet) new import_obsidian19.Notice(`\u6B63\u5728\u4E3A ${missing.length} \u4E2A\u8BCD\u8865\u4F8B\u53E5\uFF08\u6BCF\u8BCD\u8865\u5230 ${want} \u6761\uFF09\u2026\uFF08\u8017\u65F6\u53D6\u51B3\u4E8E\u6240\u914D\u6A21\u578B\u901F\u5EA6\uFF09`);
     let done = 0;
     const generated = /* @__PURE__ */ new Set();
-    const report = (extra) => onProgress == null ? void 0 : onProgress(generated.size, missing.length, extra);
+    const report = (extra) => onProgress?.(generated.size, missing.length, extra);
     report();
     const byTheme = this.groupByTheme(missing, ctx);
     for (const [t, docs] of byTheme) {
@@ -22452,15 +36301,15 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
       );
       for (const doc of docs) {
         const exs = m.get(doc.word.toLowerCase());
-        if (!(exs == null ? void 0 : exs.length)) continue;
+        if (!exs?.length) continue;
         const added = await this.appendNewExamples(doc, exs);
         if (added > 0) done++;
       }
     }
     this.store.touch();
     if (!quiet)
-      new import_obsidian17.Notice(
-        (shouldStop == null ? void 0 : shouldStop()) ? `\u5DF2\u505C\u6B62\uFF1A${done}/${missing.length}\uFF08\u5DF2\u751F\u6210\u7684\u7ED3\u679C\u5DF2\u4FDD\u7559\uFF09` : done === missing.length ? `\u4F8B\u53E5\u751F\u6210\u5B8C\u6210\uFF1A${done}/${missing.length}` : `\u4F8B\u53E5\u751F\u6210\u5B8C\u6210\uFF1A${done}/${missing.length}\uFF08\u5176\u4F59\u751F\u6210\u5931\u8D25\u6216\u4E3A\u7A7A\uFF0C\u7A0D\u540E\u53EF\u518D\u8DD1\u4E00\u6B21\uFF09`
+      new import_obsidian19.Notice(
+        shouldStop?.() ? `\u5DF2\u505C\u6B62\uFF1A${done}/${missing.length}\uFF08\u5DF2\u751F\u6210\u7684\u7ED3\u679C\u5DF2\u4FDD\u7559\uFF09` : done === missing.length ? `\u4F8B\u53E5\u751F\u6210\u5B8C\u6210\uFF1A${done}/${missing.length}` : `\u4F8B\u53E5\u751F\u6210\u5B8C\u6210\uFF1A${done}/${missing.length}\uFF08\u5176\u4F59\u751F\u6210\u5931\u8D25\u6216\u4E3A\u7A7A\uFF0C\u7A0D\u540E\u53EF\u518D\u8DD1\u4E00\u6B21\uFF09`
       );
   }
   /** AI 批量补义项：为没有 AI 义项的词批量拆多义（带词性），写回 frontmatter，词卡 SenseList 优先渲染。
@@ -22470,22 +36319,19 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
   async backfillSenses(limit, only, quiet, ctx) {
     const cfg = this.llmCfg;
     if (!llmReady(cfg)) {
-      if (!quiet) new import_obsidian17.Notice("\u8BF7\u5148\u5728 \u8BBE\u7F6E \u2192 English Learn \u914D\u7F6E LLM API\uFF08\u672C\u5730 Ollama \u6216\u4E91\u7AEF\u5747\u53EF\uFF09");
+      if (!quiet) new import_obsidian19.Notice("\u8BF7\u5148\u5728 \u8BBE\u7F6E \u2192 English Learn \u914D\u7F6E LLM API\uFF08\u672C\u5730 Ollama \u6216\u4E91\u7AEF\u5747\u53EF\uFF09");
       return;
     }
     await this.words.scan();
-    let missing = this.activeWords().filter((w) => {
-      var _a;
-      return !((_a = w.senses) == null ? void 0 : _a.length);
-    });
+    let missing = this.activeWords().filter((w) => !w.senses?.length);
     if (only) missing = missing.filter((w) => only.has(w.word.toLowerCase()));
     if (!missing.length) {
-      if (!quiet) new import_obsidian17.Notice("\u6240\u6709\u8BCD\u90FD\u5DF2\u6709 AI \u4E49\u9879\u4E86");
+      if (!quiet) new import_obsidian19.Notice("\u6240\u6709\u8BCD\u90FD\u5DF2\u6709 AI \u4E49\u9879\u4E86");
       return;
     }
     const batch = limit && limit > 0 ? missing.slice(0, limit) : missing;
     let done = 0;
-    const prog = quiet ? null : new import_obsidian17.Notice(`\u6B63\u5728\u4E3A ${batch.length} \u4E2A\u8BCD\u751F\u6210\u4E49\u9879\u2026\uFF08\u8017\u65F6\u53D6\u51B3\u4E8E\u6240\u914D\u6A21\u578B\u901F\u5EA6\uFF09`, 0);
+    const prog = quiet ? null : new import_obsidian19.Notice(`\u6B63\u5728\u4E3A ${batch.length} \u4E2A\u8BCD\u751F\u6210\u4E49\u9879\u2026\uFF08\u8017\u65F6\u53D6\u51B3\u4E8E\u6240\u914D\u6A21\u578B\u901F\u5EA6\uFF09`, 0);
     try {
       const byTheme = this.groupByTheme(batch, ctx);
       let written = 0;
@@ -22496,40 +36342,36 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
           this.groupTopics(t, docs),
           (ws) => {
             done += ws.length;
-            prog == null ? void 0 : prog.setMessage(`\u751F\u6210\u4E49\u9879\u4E2D ${done}/${batch.length}\u2026`);
+            prog?.setMessage(`\u751F\u6210\u4E49\u9879\u4E2D ${done}/${batch.length}\u2026`);
           }
         );
         for (const doc of docs) {
           const senses = m.get(doc.word.toLowerCase());
-          if (!(senses == null ? void 0 : senses.length)) continue;
+          if (!senses?.length) continue;
           await this.words.setSenses(doc, senses);
           written++;
         }
       }
       this.store.touch();
       if (!quiet)
-        new import_obsidian17.Notice(
+        new import_obsidian19.Notice(
           written === batch.length ? `\u4E49\u9879\u751F\u6210\u5B8C\u6210\uFF1A${written}/${batch.length}` : `\u4E49\u9879\u751F\u6210\u5B8C\u6210\uFF1A${written}/${batch.length}\uFF08\u5176\u4F59\u751F\u6210\u5931\u8D25\u6216\u4E3A\u7A7A\uFF0C\u7A0D\u540E\u53EF\u518D\u8DD1\u4E00\u6B21\uFF09`
         );
       void this.refreshStatusBar();
     } catch (e) {
-      if (!quiet) new import_obsidian17.Notice(`\u6279\u91CF\u8865\u4E49\u9879\u5931\u8D25\uFF1A${e instanceof Error ? e.message : e}`);
+      if (!quiet) new import_obsidian19.Notice(`\u6279\u91CF\u8865\u4E49\u9879\u5931\u8D25\uFF1A${e instanceof Error ? e.message : e}`);
     } finally {
-      prog == null ? void 0 : prog.hide();
+      prog?.hide();
     }
   }
-  /** 小批量合并补全：一次请求同时补义项+例句（收词等 ≤3 词小批省一次往返，见 enrichWordsNow）。
+  /** 小批量合并补全：一次请求同时补义项+例句（收词等小批省一次往返，见 enrichWordsNow 的分档阈值）。
    *  整体无产出时上抛，由调用方回落分步 backfill；两者都按缺口过滤，回落不会重复写 */
   async backfillSensesExamples(only, quiet, ctx) {
-    var _a;
     const cfg = this.llmCfg;
     await this.words.scan();
     const want = Math.max(1, this.db.settings.exampleCount || 3);
     const docs = this.activeWords().filter(
-      (d) => {
-        var _a2;
-        return only.has(d.word.toLowerCase()) && (!((_a2 = d.senses) == null ? void 0 : _a2.length) || d.examples.length < want);
-      }
+      (d) => only.has(d.word.toLowerCase()) && (!d.senses?.length || d.examples.length < want)
     );
     if (!docs.length) return;
     const byTheme = this.groupByTheme(docs, ctx);
@@ -22539,7 +36381,7 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
       for (const doc of group) {
         const r = m.get(doc.word.toLowerCase());
         if (!r) continue;
-        if (!((_a = doc.senses) == null ? void 0 : _a.length) && r.senses.length) await this.words.setSenses(doc, r.senses);
+        if (!doc.senses?.length && r.senses.length) await this.words.setSenses(doc, r.senses);
         const added = doc.examples.length < want ? await this.appendNewExamples(doc, r.examples) : 0;
         if (r.senses.length || added) produced++;
       }
@@ -22548,56 +36390,49 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
     else throw new Error("\u5408\u5E76\u8865\u5168\u65E0\u4EA7\u51FA");
   }
   /** AI 批量补例句翻译：为没有中文翻译的例句回填（手工添加/导入时未带翻译的例句）。
-   *  按词分批请求（一词条句一次），Notice 常驻进度；只补缺不动已有翻译。
+   *  跨词扁平化合批：全部缺翻译句子一次交 llmTranslateSentences 内部按批发（本地 15/云端 30 句一批），
+   *  比按词一请求省数倍请求次数；进度按句子数推进。只补缺不动已有翻译。
    *  only：限定词集（新词入库后台补全用），不传 = 全库缺口；quiet：后台静默跑，不弹进度/完成提示 */
   async backfillExampleTranslations(limit, only, quiet) {
     const cfg = this.llmCfg;
     if (!llmReady(cfg)) {
-      if (!quiet) new import_obsidian17.Notice("\u8BF7\u5148\u5728 \u8BBE\u7F6E \u2192 English Learn \u914D\u7F6E LLM API\uFF08\u672C\u5730 Ollama \u6216\u4E91\u7AEF\u5747\u53EF\uFF09");
+      if (!quiet) new import_obsidian19.Notice("\u8BF7\u5148\u5728 \u8BBE\u7F6E \u2192 English Learn \u914D\u7F6E LLM API\uFF08\u672C\u5730 Ollama \u6216\u4E91\u7AEF\u5747\u53EF\uFF09");
       return;
     }
     await this.words.scan();
     let targets = this.activeWords().map((d) => ({
       doc: d,
-      missing: d.examples.map((e, i) => {
-        var _a;
-        return ((_a = e.translation) == null ? void 0 : _a.trim()) ? -1 : i;
-      }).filter((i) => i >= 0)
+      missing: d.examples.map((e, i) => e.translation?.trim() ? -1 : i).filter((i) => i >= 0)
     })).filter((x) => x.missing.length);
     if (only) targets = targets.filter((x) => only.has(x.doc.word.toLowerCase()));
-    const total = targets.reduce((s, x) => s + x.missing.length, 0);
-    if (!total) {
-      if (!quiet) new import_obsidian17.Notice("\u6240\u6709\u4F8B\u53E5\u90FD\u5DF2\u6709\u4E2D\u6587\u7FFB\u8BD1");
+    const batch = limit && limit > 0 ? targets.slice(0, limit) : targets;
+    const pairs = batch.flatMap(({ doc, missing }) => missing.map((idx) => ({ doc, idx })));
+    if (!pairs.length) {
+      if (!quiet) new import_obsidian19.Notice("\u6240\u6709\u4F8B\u53E5\u90FD\u5DF2\u6709\u4E2D\u6587\u7FFB\u8BD1");
       return;
     }
-    const batch = limit && limit > 0 ? targets.slice(0, limit) : targets;
-    const batchTotal = batch.reduce((s, x) => s + x.missing.length, 0);
     let done = 0;
-    let processed = 0;
-    const prog = quiet ? null : new import_obsidian17.Notice(`\u6B63\u5728\u4E3A ${batchTotal} \u6761\u4F8B\u53E5\u8865\u7FFB\u8BD1\u2026\uFF08\u8017\u65F6\u53D6\u51B3\u4E8E\u6240\u914D\u6A21\u578B\u901F\u5EA6\uFF09`, 0);
+    const prog = quiet ? null : new import_obsidian19.Notice(`\u6B63\u5728\u4E3A ${pairs.length} \u6761\u4F8B\u53E5\u8865\u7FFB\u8BD1\u2026\uFF08\u8017\u65F6\u53D6\u51B3\u4E8E\u6240\u914D\u6A21\u578B\u901F\u5EA6\uFF09`, 0);
     try {
-      await runPool(batch, 2, async ({ doc, missing }) => {
-        const zh = await llmTranslateSentences(
-          cfg,
-          missing.map((i) => doc.examples[i].text)
-        ).catch(() => []);
-        for (let j = 0; j < missing.length; j++) {
-          if (!zh[j]) continue;
-          await this.words.updateExampleTranslation(doc, missing[j], zh[j]);
-          done++;
-        }
-        processed++;
-        prog == null ? void 0 : prog.setMessage(`\u8865\u4F8B\u53E5\u7FFB\u8BD1\u4E2D ${processed}/${batch.length} \u8BCD\u2026`);
-      });
+      const zh = await llmTranslateSentences(
+        cfg,
+        pairs.map((p) => p.doc.examples[p.idx].text),
+        (d, t) => prog?.setMessage(`\u8865\u4F8B\u53E5\u7FFB\u8BD1\u4E2D ${d}/${t}\u2026`)
+      );
+      for (let j = 0; j < pairs.length; j++) {
+        if (!zh[j]) continue;
+        await this.words.updateExampleTranslation(pairs[j].doc, pairs[j].idx, zh[j]);
+        done++;
+      }
       this.store.touch();
       if (!quiet)
-        new import_obsidian17.Notice(
-          done === batchTotal ? `\u4F8B\u53E5\u7FFB\u8BD1\u8865\u5168\uFF1A${done}/${batchTotal}` : `\u4F8B\u53E5\u7FFB\u8BD1\u8865\u5168\uFF1A${done}/${batchTotal}\uFF08\u5176\u4F59\u751F\u6210\u5931\u8D25\u6216\u4E3A\u7A7A\uFF0C\u7A0D\u540E\u53EF\u518D\u8DD1\u4E00\u6B21\uFF09`
+        new import_obsidian19.Notice(
+          done === pairs.length ? `\u4F8B\u53E5\u7FFB\u8BD1\u8865\u5168\uFF1A${done}/${pairs.length}` : `\u4F8B\u53E5\u7FFB\u8BD1\u8865\u5168\uFF1A${done}/${pairs.length}\uFF08\u5176\u4F59\u751F\u6210\u5931\u8D25\u6216\u4E3A\u7A7A\uFF0C\u7A0D\u540E\u53EF\u518D\u8DD1\u4E00\u6B21\uFF09`
         );
     } catch (e) {
-      if (!quiet) new import_obsidian17.Notice(`\u8865\u4F8B\u53E5\u7FFB\u8BD1\u5931\u8D25\uFF1A${e instanceof Error ? e.message : e}`);
+      if (!quiet) new import_obsidian19.Notice(`\u8865\u4F8B\u53E5\u7FFB\u8BD1\u5931\u8D25\uFF1A${e instanceof Error ? e.message : e}`);
     } finally {
-      prog == null ? void 0 : prog.hide();
+      prog?.hide();
     }
   }
   /** 打开本插件设置页（AI 未配置等场景一键跳转） */
@@ -22630,16 +36465,16 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
       for (const w of words) {
         const k = w.toLowerCase();
         this.enrichPending.words.add(k);
-        if (opts == null ? void 0 : opts.theme) this.enrichPending.ctx.set(k, opts.theme);
+        if (opts?.theme) this.enrichPending.ctx.set(k, opts.theme);
       }
-      if ((opts == null ? void 0 : opts.quiet) !== true) this.enrichPending.quiet = false;
+      if (opts?.quiet !== true) this.enrichPending.quiet = false;
       if (!this.enrichTurnScheduled) {
         this.enrichTurnScheduled = true;
         this.enrichQueue = this.enrichQueue.then(() => {
           this.enrichTurnScheduled = false;
           const batch = this.enrichPending;
           this.enrichPending = void 0;
-          if (!(batch == null ? void 0 : batch.words.size)) return;
+          if (!batch?.words.size) return;
           return this.enrichWordsNow([...batch.words], { notice: !batch.quiet, quiet: batch.quiet, ctx: batch.ctx });
         }).catch(() => {
         });
@@ -22653,7 +36488,6 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
     this.enrichPending = void 0;
   }
   async enrichWordsNow(words, opts) {
-    var _a;
     await this.words.scan();
     const only = new Set(words.map((w) => w.toLowerCase()));
     const docs = words.map((w) => this.words.get(w)).filter((d) => !!d);
@@ -22663,17 +36497,11 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
       trans: docs.some((d) => (!d.translation || !d.phonetic) && !isPhrase(d.word) && !this.exhaustedWords()[d.word]),
       rel: docs.some((d) => d.synonyms === void 0 && d.antonyms === void 0 && !isPhrase(d.word)),
       ex: docs.some((d) => d.examples.length < wantEx),
-      senses: docs.some((d) => {
-        var _a2;
-        return !((_a2 = d.senses) == null ? void 0 : _a2.length);
-      }),
-      zh: docs.some((d) => d.examples.some((e) => {
-        var _a2;
-        return !((_a2 = e.translation) == null ? void 0 : _a2.trim());
-      }))
+      senses: docs.some((d) => !d.senses?.length),
+      zh: docs.some((d) => d.examples.some((e) => !e.translation?.trim()))
     };
     const llm = llmReady(this.llmCfg);
-    if (((_a = opts == null ? void 0 : opts.notice) != null ? _a : true) && !llm && (gaps.ex || gaps.senses || gaps.zh)) {
+    if ((opts?.notice ?? true) && !llm && (gaps.ex || gaps.senses || gaps.zh)) {
       const frag = document.createDocumentFragment();
       frag.append("\u5DF2\u5F00\u59CB\u540E\u53F0\u8865\u5168\u97F3\u6807/\u91CA\u4E49/\u540C\u53CD\u4E49\u8BCD\u3002");
       const link = document.createElement("span");
@@ -22682,14 +36510,14 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
       link.addEventListener("click", () => this.openSettings());
       frag.append(link);
       frag.append("\u540E\u4F8B\u53E5\u4E0E\u4E49\u9879\u5C06\u81EA\u52A8\u8865\u9F50");
-      new import_obsidian17.Notice(frag, 1e4);
+      new import_obsidian19.Notice(frag, 1e4);
     }
-    const quiet = (opts == null ? void 0 : opts.quiet) === true;
+    const quiet = opts?.quiet === true;
     const step = async (run2) => {
       try {
         await run2();
       } catch (e) {
-        if (!quiet) new import_obsidian17.Notice(`\u540E\u53F0\u8865\u5168\u51FA\u9519\uFF1A${e instanceof Error ? e.message : e}`);
+        if (!quiet) new import_obsidian19.Notice(`\u540E\u53F0\u8865\u5168\u51FA\u9519\uFF1A${e instanceof Error ? e.message : e}`);
       }
     };
     await Promise.all([
@@ -22697,19 +36525,20 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
       gaps.rel ? step(() => this.backfillRelWords(void 0, only, quiet)) : void 0
     ]);
     let merged = false;
-    if (llm && gaps.senses && gaps.ex && docs.length <= 3) {
+    if (llm && gaps.senses && gaps.ex && docs.length <= 10) {
       try {
-        await this.backfillSensesExamples(only, quiet, opts == null ? void 0 : opts.ctx);
+        await this.backfillSensesExamples(only, quiet, opts?.ctx);
         merged = true;
       } catch (e) {
-        if (!quiet) new import_obsidian17.Notice(`\u5408\u5E76\u8865\u5168\u56DE\u843D\u5206\u6B65\uFF1A${e instanceof Error ? e.message : e}`);
+        if (!quiet) new import_obsidian19.Notice(`\u5408\u5E76\u8865\u5168\u56DE\u843D\u5206\u6B65\uFF1A${e instanceof Error ? e.message : e}`);
       }
     }
-    if (!merged) {
-      if (llm && gaps.senses) await step(() => this.backfillSenses(void 0, only, quiet, opts == null ? void 0 : opts.ctx));
-      if (llm && gaps.ex) await step(() => this.backfillExamples(void 0, void 0, void 0, void 0, only, quiet, opts == null ? void 0 : opts.ctx));
-    }
-    if (llm && gaps.zh) await step(() => this.backfillExampleTranslations(void 0, only, quiet));
+    const aiSteps = [];
+    if (!merged && llm && gaps.senses) aiSteps.push(() => this.backfillSenses(void 0, only, quiet, opts?.ctx));
+    if (!merged && llm && gaps.ex) aiSteps.push(() => this.backfillExamples(void 0, void 0, void 0, void 0, only, quiet, opts?.ctx));
+    if (llm && gaps.zh) aiSteps.push(() => this.backfillExampleTranslations(void 0, only, quiet));
+    if (isCloudLlm(this.llmCfg)) await Promise.all(aiSteps.map(step));
+    else for (const run2 of aiSteps) await step(run2);
     const mark = this.db.enriched;
     if (mark) {
       mark.ver = wantEx;
@@ -22725,65 +36554,59 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
   }
   /** 词数据是否已完整（与 enrichWordsNow 的缺口谓词同口径）：完整的词不再重复补全检查 */
   wordEnrichComplete(d, wantEx) {
-    var _a;
-    return !!d.translation && (!!d.phonetic || isPhrase(d.word) || !!this.exhaustedWords()[d.word]) && (d.synonyms !== void 0 || d.antonyms !== void 0 || isPhrase(d.word)) && d.examples.length >= wantEx && !!((_a = d.senses) == null ? void 0 : _a.length) && d.examples.every((e) => {
-      var _a2;
-      return !!((_a2 = e.translation) == null ? void 0 : _a2.trim());
-    });
+    return !!d.translation && (!!d.phonetic || isPhrase(d.word) || !!this.exhaustedWords()[d.word]) && (d.synonyms !== void 0 || d.antonyms !== void 0 || isPhrase(d.word)) && d.examples.length >= wantEx && !!d.senses?.length && d.examples.every((e) => !!e.translation?.trim());
   }
   /** 词卡上手动为单个词补例句（每次 3 条，带主题语境），成功返回新增条数 */
   async aiExamplesFor(doc, count = 3) {
-    var _a;
     const cfg = this.llmCfg;
     if (!llmReady(cfg)) {
-      new import_obsidian17.Notice("\u8BF7\u5148\u5728 \u8BBE\u7F6E \u2192 English Learn \u914D\u7F6E LLM API\uFF08\u672C\u5730 Ollama \u6216\u4E91\u7AEF\u5747\u53EF\uFF09");
+      new import_obsidian19.Notice("\u8BF7\u5148\u5728 \u8BBE\u7F6E \u2192 English Learn \u914D\u7F6E LLM API\uFF08\u672C\u5730 Ollama \u6216\u4E91\u7AEF\u5747\u53EF\uFF09");
       return 0;
     }
     try {
       const m = await llmExamples(cfg, [doc.word], this.groupTopics(this.genTheme(doc), [doc]), count);
-      const added = await this.appendNewExamples(doc, (_a = m.get(doc.word.toLowerCase())) != null ? _a : []);
+      const added = await this.appendNewExamples(doc, m.get(doc.word.toLowerCase()) ?? []);
       this.store.touch();
-      new import_obsidian17.Notice(
+      new import_obsidian19.Notice(
         added ? `\u5DF2\u4E3A ${doc.word} \u8865 ${added} \u6761\u4F8B\u53E5` : "\u6CA1\u6709\u65B0\u589E\u4F8B\u53E5\uFF08\u53EF\u80FD\u4E0E\u73B0\u6709\u4F8B\u53E5\u91CD\u590D\uFF09\uFF0C\u53EF\u518D\u8BD5\u4E00\u6B21"
       );
       return added;
     } catch (e) {
-      new import_obsidian17.Notice(`AI \u8865\u4F8B\u53E5\u5931\u8D25\uFF1A${e instanceof Error ? e.message : e}\uFF08\u8BF7\u68C0\u67E5 LLM \u670D\u52A1\u662F\u5426\u53EF\u7528\uFF09`);
+      new import_obsidian19.Notice(`AI \u8865\u4F8B\u53E5\u5931\u8D25\uFF1A${e instanceof Error ? e.message : e}\uFF08\u8BF7\u68C0\u67E5 LLM \u670D\u52A1\u662F\u5426\u53EF\u7528\uFF09`);
       return 0;
     }
   }
   /** 词卡上手动重新生成单个词的义项：AI 拆多义（带词性），覆盖写回 frontmatter senses，词卡渲染优先。
    *  与批量「AI 补义项」（backfillSenses，只补缺不覆盖）语义不同——这里是更新，按钮文案也按此区分 */
   async aiSensesFor(doc) {
-    var _a;
     const cfg = this.llmCfg;
     if (!llmReady(cfg)) {
-      new import_obsidian17.Notice("\u8BF7\u5148\u5728 \u8BBE\u7F6E \u2192 English Learn \u914D\u7F6E LLM API\uFF08\u672C\u5730 Ollama \u6216\u4E91\u7AEF\u5747\u53EF\uFF09");
+      new import_obsidian19.Notice("\u8BF7\u5148\u5728 \u8BBE\u7F6E \u2192 English Learn \u914D\u7F6E LLM API\uFF08\u672C\u5730 Ollama \u6216\u4E91\u7AEF\u5747\u53EF\uFF09");
       return 0;
     }
     try {
       const m = await llmSenses(cfg, [doc.word], this.groupTopics(this.genTheme(doc), [doc]));
-      const senses = (_a = m.get(doc.word.toLowerCase())) != null ? _a : [];
+      const senses = m.get(doc.word.toLowerCase()) ?? [];
       if (!senses.length) {
-        new import_obsidian17.Notice("\u6CA1\u6709\u751F\u6210\u51FA\u4E49\u9879\uFF08\u6A21\u578B\u8FD4\u56DE\u4E3A\u7A7A\u6216\u65E0\u6CD5\u89E3\u6790\uFF09\uFF0C\u53EF\u518D\u8BD5\u4E00\u6B21");
+        new import_obsidian19.Notice("\u6CA1\u6709\u751F\u6210\u51FA\u4E49\u9879\uFF08\u6A21\u578B\u8FD4\u56DE\u4E3A\u7A7A\u6216\u65E0\u6CD5\u89E3\u6790\uFF09\uFF0C\u53EF\u518D\u8BD5\u4E00\u6B21");
         return 0;
       }
       const before = sensesOf(doc).join("\uFF1B");
       await this.words.setSenses(doc, senses);
       this.store.touch();
-      new import_obsidian17.Notice(
+      new import_obsidian19.Notice(
         senses.join("\uFF1B") === before ? `${doc.word} \u7684\u4E49\u9879\u4E0E\u73B0\u6709\u5C55\u793A\u4E00\u81F4\uFF0C\u8BCD\u5361\u65E0\u53D8\u5316` : `\u5DF2\u4E3A ${doc.word} \u62C6\u51FA ${senses.length} \u4E2A\u4E49\u9879`
       );
       return senses.length;
     } catch (e) {
-      new import_obsidian17.Notice(`AI \u8865\u4E49\u9879\u5931\u8D25\uFF1A${e instanceof Error ? e.message : e}\uFF08\u8BF7\u68C0\u67E5 LLM \u670D\u52A1\u662F\u5426\u53EF\u7528\uFF09`);
+      new import_obsidian19.Notice(`AI \u8865\u4E49\u9879\u5931\u8D25\uFF1A${e instanceof Error ? e.message : e}\uFF08\u8BF7\u68C0\u67E5 LLM \u670D\u52A1\u662F\u5426\u53EF\u7528\uFF09`);
       return 0;
     }
   }
   /** 切换全局静音（命令/快捷键入口）：与主页 🔇 按钮同一开关；广播事件让已挂载组件同步按钮态 */
   toggleMute() {
     this.muted = !this.muted;
-    new import_obsidian17.Notice(this.muted ? "\u5DF2\u5168\u5C40\u9759\u97F3" : "\u53D1\u97F3\u5DF2\u5F00\u542F");
+    new import_obsidian19.Notice(this.muted ? "\u5DF2\u5168\u5C40\u9759\u97F3" : "\u53D1\u97F3\u5DF2\u5F00\u542F");
     window.dispatchEvent(new CustomEvent("el-mute-changed"));
   }
   /** 词级发音统一入口：全局静音直接短路；标准发音缓存优先，未命中先等预下载落地（通常
@@ -22806,7 +36629,7 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
       if (stale()) return;
       if (ready && await playStd()) return;
       if (stale()) return;
-      speak(w, rate != null ? rate : this.db.settings.ttsRate, () => this.speakThen(gen, then));
+      speak(w, rate ?? this.db.settings.ttsRate, () => this.speakThen(gen, then));
     })();
   }
   /** 词音播完接读例句：代际不符（已被新发音/停止作废）不再接 */
@@ -22818,6 +36641,7 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
   stopSpeaking() {
     this.speakChain++;
     this.audio.stop();
+    this.sentenceTts.stop();
     stopSpeak();
   }
   /** 全局静音下点发音：首次提示点不响的原因（静音是每次启动的默认态，新用户第一次点发音
@@ -22826,18 +36650,38 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
     if (this.db.settings.muteHintShown) return;
     this.db.settings.muteHintShown = true;
     this.store.touch();
-    new import_obsidian17.Notice("\u5F53\u524D\u5904\u4E8E\u5168\u5C40\u9759\u97F3\uFF0C\u70B9\u4E3B\u9875 \u{1F507} \u6309\u94AE\u6216\u547D\u4EE4\u300C\u5207\u6362\u5168\u5C40\u9759\u97F3\u300D\u53EF\u5F00\u542F\u53D1\u97F3", 8e3);
+    new import_obsidian19.Notice("\u5F53\u524D\u5904\u4E8E\u5168\u5C40\u9759\u97F3\uFF0C\u70B9\u4E3B\u9875 \u{1F507} \u6309\u94AE\u6216\u547D\u4EE4\u300C\u5207\u6362\u5168\u5C40\u9759\u97F3\u300D\u53EF\u5F00\u542F\u53D1\u97F3", 8e3);
   }
   /** 例句朗读统一入口：与 speakWord 同一静音策略（静音短路 + 首次提示），默认走例句语速。
-   *  手动点读即接管播放：作废在途接读链，别让刚读完的词又抢读首条例句 */
-  speakSentence(text2, rate) {
-    var _a;
-    if (this.muted) {
+   *  手动点读即接管播放：作废在途接读链，别让刚读完的词又抢读首条例句。
+   *  神经声（Edge）优先：桌面未缓存现合成；移动端播桌面预取经 iCloud 同步来的句缓存，
+   *  未缓存即回落本地 speechSynthesis（能合/有缓存的判定收口在 SentenceNeural.speak）。
+   *  neural=false 强制走本地声（「TTS 声音」试听用——试听的就是所选系统声，别被神经声截胡） */
+  /** ignoreMute：设置页试听用——试听是明确用户意图，全局静音不该把它按哑（静音本为学习场景防吵设计） */
+  speakSentence(text2, rate, ignoreMute = false, neural = true) {
+    if (this.muted && !ignoreMute) {
       this.hintMutedOnce();
       return;
     }
-    this.speakChain++;
-    speak(text2, (_a = rate != null ? rate : this.db.settings.ttsSentenceRate) != null ? _a : this.db.settings.ttsRate);
+    const gen = ++this.speakChain;
+    const r = rate ?? this.db.settings.ttsSentenceRate ?? this.db.settings.ttsRate;
+    if (neural && this.db.settings.sentenceNeural !== false) {
+      void this.sentenceTts.speak(text2, r, () => gen !== this.speakChain).then((ok) => {
+        if (!ok && gen === this.speakChain) speak(text2, r);
+      });
+      return;
+    }
+    speak(text2, r);
+  }
+  /** 词的例句预取（翻卡窗口/弹卡/收词后）：神经声开启时后台串行合成落盘，不播放——
+   *  点读时缓存已就绪即秒播。默认只预取首选例句（最短那条 = 词卡展示第一行 = 读词接读那条）
+   *  省非官方接口的后台合成量，其余例句点读时照样按需合成；sentenceNeuralAll 开全量预取（每词封顶 3 条） */
+  prefetchWordSentences(doc) {
+    if (this.db.settings.sentenceNeural === false || !this.sentenceTts.ready()) return;
+    const r = this.db.settings.ttsSentenceRate ?? this.db.settings.ttsRate;
+    const first = firstExample(doc);
+    const texts = this.db.settings.sentenceNeuralAll === true ? (doc.examples ?? []).slice(0, 3) : first ? [first] : [];
+    for (const text2 of texts) void this.sentenceTts.prefetch(text2, r);
   }
   /** 词卡弹窗统一入口：例句点已收录词时弹出对应词卡（弹窗类独立文件，避免与词卡组件循环 import） */
   openWordCard(doc) {
@@ -22864,28 +36708,28 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
   }
   /** 从最新备份快照恢复进度：只补当前缺失的词（现有进度一律不动，安全无破坏） */
   async restoreProgress() {
-    var _a, _b, _c, _d, _e, _f, _g, _h;
+    var _a2;
     const dir = `${this.db.settings.root}/backup`;
     const snaps = this.app.vault.getFiles().filter((f) => f.path.startsWith(`${dir}/progress-`)).sort((a, b) => a.name < b.name ? 1 : -1);
     for (const f of snaps) {
       try {
         const data = JSON.parse(await this.app.vault.read(f));
         let restored = 0;
-        for (const [word, p] of Object.entries((_a = data.progress) != null ? _a : {})) {
+        for (const [word, p] of Object.entries(data.progress ?? {})) {
           if (!this.db.progress[word]) {
             this.db.progress[word] = p;
             restored++;
           }
         }
         let restoredThemes = 0;
-        for (const [name, info] of Object.entries((_b = data.themes) != null ? _b : {})) {
+        for (const [name, info] of Object.entries(data.themes ?? {})) {
           if (!this.db.themes[name]) {
             this.db.themes[name] = info;
             restoredThemes++;
           }
         }
         let restoredDays = 0;
-        for (const [date, d] of Object.entries((_d = (_c = data.stats) == null ? void 0 : _c.days) != null ? _d : {})) {
+        for (const [date, d] of Object.entries(data.stats?.days ?? {})) {
           if (!this.db.stats.days[date]) {
             this.db.stats.days[date] = d;
             restoredDays++;
@@ -22893,9 +36737,9 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
         }
         if (restoredDays) this.recomputeStreak();
         let restoredIgnored = 0;
-        for (const [word, v] of Object.entries((_e = data.ignored) != null ? _e : {})) {
-          if (!((_f = this.db.ignored) == null ? void 0 : _f[word])) {
-            ((_h = (_g = this.db).ignored) != null ? _h : _g.ignored = {})[word] = v;
+        for (const [word, v] of Object.entries(data.ignored ?? {})) {
+          if (!this.db.ignored?.[word]) {
+            ((_a2 = this.db).ignored ?? (_a2.ignored = {}))[word] = v;
             restoredIgnored++;
           }
         }
@@ -22907,22 +36751,21 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
           restoredDays ? `${restoredDays} \u5929\u5B66\u4E60\u8BB0\u5F55` : "",
           restoredIgnored ? `${restoredIgnored} \u4E2A\u5FFD\u7565\u8BCD` : ""
         ].filter(Boolean);
-        new import_obsidian17.Notice(
+        new import_obsidian19.Notice(
           parts.length ? `\u5DF2\u6062\u590D ${parts.join("\u3001")}\uFF08\u73B0\u6709\u6570\u636E\u672A\u6539\u52A8\uFF09` : "\u6CA1\u6709\u53EF\u6062\u590D\u7684\u5185\u5BB9\uFF1A\u5F53\u524D\u6570\u636E\u5DF2\u662F\u5FEB\u7167\u7684\u8D85\u96C6"
         );
         return;
-      } catch (e) {
+      } catch {
         continue;
       }
     }
-    new import_obsidian17.Notice("\u6CA1\u6709\u53EF\u7528\u7684\u5907\u4EFD\u5FEB\u7167\uFF08\u9700\u5148\u5F00\u542F\u81EA\u52A8\u5907\u4EFD\u5E76\u5B8C\u6210\u8FC7\u5B66\u4E60\uFF09");
+    new import_obsidian19.Notice("\u6CA1\u6709\u53EF\u7528\u7684\u5907\u4EFD\u5FEB\u7167\uFF08\u9700\u5148\u5F00\u542F\u81EA\u52A8\u5907\u4EFD\u5E76\u5B8C\u6210\u8FC7\u5B66\u4E60\uFF09");
   }
   /** 删除主题：词文件保留，仅解除 frontmatter 关联（含被忽略的词） */
   async deleteTheme(name) {
-    var _a;
     this.store.forget("theme", name);
     delete this.db.themes[name];
-    if (((_a = this.expandCache) == null ? void 0 : _a.theme) === name) this.expandCache = void 0;
+    if (this.expandCache?.theme === name) this.expandCache = void 0;
     for (const doc of this.words.byThemeRaw(name)) {
       await this.words.removeTheme(doc, name);
     }
@@ -22960,7 +36803,7 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
     return null;
   }
 };
-var EnglishLearnSettingTab = class extends import_obsidian17.PluginSettingTab {
+var EnglishLearnSettingTab = class extends import_obsidian19.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
@@ -22970,7 +36813,7 @@ var EnglishLearnSettingTab = class extends import_obsidian17.PluginSettingTab {
     containerEl.empty();
     const s = this.plugin.db.settings;
     containerEl.createEl("div", { text: `English Learn v${this.plugin.manifest.version}`, cls: "el-muted" });
-    new import_obsidian17.Setting(containerEl).setName("\u8BCD\u5E93\u6839\u76EE\u5F55").setDesc("\u8BCD\u7B14\u8BB0\u5B58\u653E\u7684 vault \u76EE\u5F55\uFF1B\u4FEE\u6539\u540E\u6574\u5E93\u642C\u8FC1\uFF08words/backup/export\uFF09\uFF0C\u53E6\u4E00\u7AEF\u542F\u52A8\u540E\u81EA\u52A8\u8DDF\u968F").addText((t) => {
+    new import_obsidian19.Setting(containerEl).setName("\u8BCD\u5E93\u6839\u76EE\u5F55").setDesc("\u8BCD\u7B14\u8BB0\u5B58\u653E\u7684 vault \u76EE\u5F55\uFF1B\u4FEE\u6539\u540E\u6574\u5E93\u642C\u8FC1\uFF08words/backup/export\uFF09\uFF0C\u53E6\u4E00\u7AEF\u542F\u52A8\u540E\u81EA\u52A8\u8DDF\u968F").addText((t) => {
       t.setValue(s.root);
       const apply = () => {
         const v = t.inputEl.value.trim() || "EnglishLearn";
@@ -22983,7 +36826,7 @@ var EnglishLearnSettingTab = class extends import_obsidian17.PluginSettingTab {
       });
     });
     addHelpTip(
-      new import_obsidian17.Setting(containerEl).setName("\u6BCF\u65E5\u65B0\u8BCD\u6570").addText((t) => {
+      new import_obsidian19.Setting(containerEl).setName("\u6BCF\u65E5\u65B0\u8BCD\u6570").addText((t) => {
         t.inputEl.type = "number";
         t.setValue(String(s.dailyNew)).onChange((v) => {
           s.dailyNew = Math.max(0, parseInt(v) || 0);
@@ -22993,7 +36836,7 @@ var EnglishLearnSettingTab = class extends import_obsidian17.PluginSettingTab {
       "\u6BCF\u5929\u9996\u6B21\u5B66\u4E60\u65F6\u6536\u5F55\u961F\u5217\u9876\u90E8\u7684\u65B0\u8BCD\u4E0A\u9650\uFF08\u5B8C\u6210\u9875\u300C\u518D\u6765\u4E00\u6279\u300D\u53EF\u8D85\u914D\u989D\u52A0\u5B66\uFF09"
     );
     addHelpTip(
-      new import_obsidian17.Setting(containerEl).setName("\u6BCF\u65E5\u590D\u4E60\u4E0A\u9650").addText((t) => {
+      new import_obsidian19.Setting(containerEl).setName("\u6BCF\u65E5\u590D\u4E60\u4E0A\u9650").addText((t) => {
         t.inputEl.type = "number";
         t.setValue(String(s.dailyReviewMax)).onChange((v) => {
           s.dailyReviewMax = Math.max(0, parseInt(v) || 0);
@@ -23003,7 +36846,7 @@ var EnglishLearnSettingTab = class extends import_obsidian17.PluginSettingTab {
       "\u6BCF\u5929\u5230\u671F\u7684\u590D\u4E60\u8BCD\u6700\u591A\u6536\u8FDB\u4F1A\u8BDD\u591A\u5C11\u4E2A\uFF1B\u79EF\u538B\u591A\u65F6\u9632\u6B62\u4E00\u6B21\u5B66\u4E0D\u5B8C"
     );
     addHelpTip(
-      new import_obsidian17.Setting(containerEl).setName("\u53CC\u5411\u590D\u4E60").addToggle(
+      new import_obsidian19.Setting(containerEl).setName("\u53CC\u5411\u590D\u4E60").addToggle(
         (t) => t.setValue(s.reviewReverse !== false).onChange((v) => {
           s.reviewReverse = v;
           this.plugin.store.touch();
@@ -23012,7 +36855,7 @@ var EnglishLearnSettingTab = class extends import_obsidian17.PluginSettingTab {
       "\u590D\u4E60\u5361\u4E00\u534A\u6982\u7387\u770B\u91CA\u4E49\u56DE\u5FC6\u5355\u8BCD\uFF08\u4EA7\u51FA\u5F0F\u56DE\u5FC6\uFF0C\u8BB0\u5F97\u66F4\u7262\uFF09\uFF1B\u5173\u95ED\u540E\u53EA\u770B\u8BCD\u56DE\u5FC6\u91CA\u4E49"
     );
     addHelpTip(
-      new import_obsidian17.Setting(containerEl).setName("\u8BA4\u8BC6\u9A8C\u8BC1").addToggle(
+      new import_obsidian19.Setting(containerEl).setName("\u8BA4\u8BC6\u9A8C\u8BC1").addToggle(
         (t) => t.setValue(s.knowCheck !== false).onChange((v) => {
           s.knowCheck = v;
           this.plugin.store.touch();
@@ -23021,7 +36864,7 @@ var EnglishLearnSettingTab = class extends import_obsidian17.PluginSettingTab {
       "\u65B0\u8BCD\u76F4\u63A5\u51FA\u770B\u8BCD\u9009\u4E49\u5FEB\u6D4B\u5F53\u81EA\u6D4B\uFF08\u68C0\u7D22\u56DE\u5FC6\u6BD4\u81EA\u62A5\u300C\u8BA4\u8BC6\u300D\u66F4\u5BA2\u89C2\uFF09\uFF0C\u590D\u4E60\u5361\u4E00\u534A\u6982\u7387\u5148\u56DB\u9009\u4E00\u9A8C\u8BC1\uFF1B\u5173\u95ED\u540E\u65B0\u8BCD\u76F4\u63A5\u8FDB\u5B66\u4E60\u5361\u3001\u590D\u4E60\u76F4\u63A5\u63ED\u6653\u81EA\u8BC4"
     );
     addHelpTip(
-      new import_obsidian17.Setting(containerEl).setName("\u300C\u6A21\u7CCA\u300D\u95F4\u9694\u51CF\u534A").addToggle(
+      new import_obsidian19.Setting(containerEl).setName("\u300C\u6A21\u7CCA\u300D\u95F4\u9694\u51CF\u534A").addToggle(
         (t) => t.setValue(s.fuzzyHalve !== false).onChange((v) => {
           s.fuzzyHalve = v;
           this.plugin.store.touch();
@@ -23030,53 +36873,43 @@ var EnglishLearnSettingTab = class extends import_obsidian17.PluginSettingTab {
       "\u8BC4\u300C\u6A21\u7CCA\u300D\u65F6\u672C\u7EA7\u91CD\u590D\u5E76\u5728\u534A\u7A0B\u91CD\u89C1\uFF1B\u5173\u95ED\u540E\u6309\u5B8C\u6574\u95F4\u9694\u91CD\u89C1"
     );
     addHelpTip(
-      new import_obsidian17.Setting(containerEl).setName("\u62FC\u8BCD\u9898\u6982\u7387").addSlider(
-        (sl) => {
-          var _a;
-          return sl.setLimits(0, 1, 0.05).setValue((_a = s.spellChance) != null ? _a : 0.3).setDynamicTooltip().onChange((v) => {
-            s.spellChance = v;
-            this.plugin.store.touch();
-          });
-        }
+      new import_obsidian19.Setting(containerEl).setName("\u62FC\u8BCD\u9898\u6982\u7387").addSlider(
+        (sl) => sl.setLimits(0, 1, 0.05).setValue(s.spellChance ?? 0.3).setDynamicTooltip().onChange((v) => {
+          s.spellChance = v;
+          this.plugin.store.touch();
+        })
       ),
       "\u5DE9\u56FA\u6D4B\u8BD5\u91CC\u51FA\u300C\u770B\u91CA\u4E49\u62FC\u5355\u8BCD\u300D\u9898\u7684\u6982\u7387\uFF0C\u5176\u4F59\u4E3A\u9009\u8BCD\u586B\u7A7A\uFF1B\u62FC\u8BCD\u662F\u4EA7\u51FA\u5F0F\u56DE\u5FC6\uFF0C\u8BB0\u5F97\u6700\u7262\u30020 = \u5173\u95ED\u62FC\u8BCD\u9898"
     );
     addHelpTip(
-      new import_obsidian17.Setting(containerEl).setName("\u542C\u97F3\u62FC\u8BCD\u5360\u6BD4").addSlider(
-        (sl) => {
-          var _a;
-          return sl.setLimits(0, 1, 0.05).setValue((_a = s.audioChance) != null ? _a : 0.4).setDynamicTooltip().onChange((v) => {
-            s.audioChance = v;
-            this.plugin.store.touch();
-          });
-        }
+      new import_obsidian19.Setting(containerEl).setName("\u542C\u97F3\u62FC\u8BCD\u5360\u6BD4").addSlider(
+        (sl) => sl.setLimits(0, 1, 0.05).setValue(s.audioChance ?? 0.4).setDynamicTooltip().onChange((v) => {
+          s.audioChance = v;
+          this.plugin.store.touch();
+        })
       ),
       "\u62FC\u8BCD\u9898\u4E2D\u6309\u6B64\u6BD4\u4F8B\u53EA\u64AD\u53D1\u97F3\u3001\u4E0D\u663E\u793A\u91CA\u4E49\uFF08\u542C\u5199\uFF0C\u542C\u529B+\u62FC\u5199\u53CC\u7EC3\uFF09\uFF0C\u5176\u4F59\u770B\u91CA\u4E49\u62FC\u8BCD\u30020 = \u5168\u90E8\u770B\u4E49\u62FC\u5199"
     );
-    new import_obsidian17.Setting(containerEl).setName("TTS \u8BED\u901F").addSlider(
+    new import_obsidian19.Setting(containerEl).setName("TTS \u8BED\u901F").addSlider(
       (sl) => sl.setLimits(0.5, 1.5, 0.05).setValue(s.ttsRate).setDynamicTooltip().onChange((v) => {
         s.ttsRate = v;
         this.plugin.store.touch();
       })
     );
     addHelpTip(
-      new import_obsidian17.Setting(containerEl).setName("\u4F8B\u53E5\u8BED\u901F").addSlider(
-        (sl) => {
-          var _a;
-          return sl.setLimits(0.5, 1.5, 0.05).setValue((_a = s.ttsSentenceRate) != null ? _a : s.ttsRate).setDynamicTooltip().onChange((v) => {
-            s.ttsSentenceRate = v;
-            this.plugin.store.touch();
-          });
-        }
+      new import_obsidian19.Setting(containerEl).setName("\u4F8B\u53E5\u8BED\u901F").addSlider(
+        (sl) => sl.setLimits(0.5, 1.5, 0.05).setValue(s.ttsSentenceRate ?? s.ttsRate).setDynamicTooltip().onChange((v) => {
+          s.ttsSentenceRate = v;
+          this.plugin.store.touch();
+        })
       ),
       "\u8BFB\u4F8B\u53E5\u65F6\u7528\u5355\u72EC\u7684\u8BED\u901F\uFF0C\u6BD4\u5355\u8BCD\u6162\u4E00\u70B9\u66F4\u6613\u542C\u6E05"
     );
     const ttsVoices = "speechSynthesis" in window ? window.speechSynthesis.getVoices().filter((v) => /^en/i.test(v.lang)) : [];
-    const ttsVoiceSetting = new import_obsidian17.Setting(containerEl).setName("TTS \u58F0\u97F3").addDropdown((d) => {
-      var _a;
+    const ttsVoiceSetting = new import_obsidian19.Setting(containerEl).setName("TTS \u58F0\u97F3").addDropdown((d) => {
       d.addOption("", "\u81EA\u52A8\uFF08\u63A8\u8350\uFF09");
       for (const v of ttsVoices) d.addOption(v.name, `${v.name}\uFF08${v.lang}\uFF09`);
-      d.setValue((_a = s.ttsVoice) != null ? _a : "");
+      d.setValue(s.ttsVoice ?? "");
       d.onChange((v) => {
         s.ttsVoice = v;
         this.plugin.store.touch();
@@ -23086,7 +36919,7 @@ var EnglishLearnSettingTab = class extends import_obsidian17.PluginSettingTab {
       (b) => b.setButtonText("\u8BD5\u542C").setTooltip("\u6717\u8BFB\u4F8B\u53E5\u8BD5\u542C\u5F53\u524D\u58F0\u97F3").onClick(() => {
         setPreferredVoice(s.ttsVoice || null);
         this.plugin.stopSpeaking();
-        this.plugin.speakSentence("Hello, this is a voice test.", s.ttsRate);
+        this.plugin.speakSentence("Hello, this is a voice test.", s.ttsRate, true, false);
       })
     );
     if (ttsVoices.length)
@@ -23095,9 +36928,100 @@ var EnglishLearnSettingTab = class extends import_obsidian17.PluginSettingTab {
         "\u6307\u5B9A\u82F1\u6587\u58F0\uFF08\u5982\u82F1\u97F3\uFF09\uFF1B\u300C\u81EA\u52A8\u300D\u6309\u8D28\u91CF\u6311\u9009\uFF08Enhanced/Natural \u4F18\u5148\uFF09\u3002\u5217\u8868\u53EF\u80FD\u542B\u7CFB\u7EDF\u672A\u4E0B\u8F7D\u7684\u58F0\u97F3\uFF08\u53D1\u97F3\u4F1A\u5F02\u5E38\u56DE\u843D\uFF09\uFF0C\u5EFA\u8BAE\u9009\u540E\u8BD5\u542C\u786E\u8BA4"
       );
     else ttsVoiceSetting.setDesc("\u58F0\u97F3\u5217\u8868\u5C1A\u672A\u52A0\u8F7D\u5B8C\u6210\uFF0C\u91CD\u65B0\u6253\u5F00\u8BBE\u7F6E\u9875\u5373\u53EF\u9009\u62E9");
+    addHelpTip(
+      new import_obsidian19.Setting(containerEl).setName("\u4F8B\u53E5\u795E\u7ECF\u58F0").addToggle(
+        (t) => t.setValue(s.sentenceNeural !== false).onChange((v) => {
+          s.sentenceNeural = v;
+          this.plugin.store.touch();
+        })
+      ).addDropdown((d) => {
+        for (const [name, label] of [
+          ["anna", "Anna\uFF08\u5973\u58F0\uFF09"],
+          ["alex", "Alex\uFF08\u7537\u58F0\uFF09"],
+          ["bella", "Bella\uFF08\u5973\u58F0\uFF09"],
+          ["benjamin", "Benjamin\uFF08\u7537\u58F0\uFF09"],
+          ["claire", "Claire\uFF08\u5973\u58F0\uFF09"],
+          ["charles", "Charles\uFF08\u7537\u58F0\uFF09"],
+          ["diana", "Diana\uFF08\u5973\u58F0\uFF09"],
+          ["david", "David\uFF08\u7537\u58F0\uFF09"]
+        ])
+          d.addOption(name, label);
+        d.setValue(s.sentenceNeuralVoice || "anna");
+        d.onChange((v) => {
+          s.sentenceNeuralVoice = v;
+          this.plugin.store.touch();
+        });
+      }).addButton(
+        (b) => b.setButtonText("\u8BD5\u542C").setTooltip("\u6309\u4F8B\u53E5\u8BED\u901F\u6717\u8BFB\u4E00\u53E5\u82F1\u6587\u8BD5\u542C\u795E\u7ECF\u58F0\u6548\u679C").onClick(() => {
+          this.plugin.stopSpeaking();
+          this.plugin.speakSentence("Hello, this is a neural voice test.", s.ttsSentenceRate ?? s.ttsRate, true);
+        })
+      ),
+      "\u4F8B\u53E5\u7528\u795E\u7ECF\u58F0\u6717\u8BFB\uFF0C\u6BD4\u7CFB\u7EDF\u58F0\u81EA\u7136\u5F97\u591A\u3002\u684C\u9762\u514D\u8D39\u7528\u5FAE\u8F6F Edge\uFF1B\u4E0B\u9762\u7684 LLM \u6E90\u4E3A\u9700\u914D Key \u7684\u53EF\u9009\u66FF\u8865\uFF08\u53EF\u80FD\u8BA1\u8D39\uFF0C\u52FE\u9009\u624D\u542F\u7528\uFF09\uFF1A\u684C\u9762\u5728 Edge \u5931\u8D25\u65F6\u4F9D\u6B21\u5C1D\u8BD5\uFF0C\u79FB\u52A8\u7AEF\u6CA1\u6709 Edge \u5C31\u76F4\u63A5\u7528\u52FE\u9009\u7684\u6E90\u3002\u5408\u6210\u7ED3\u679C\u6309\u53E5\u672C\u5730\u7F13\u5B58\uFF0C\u5168\u6E90\u5931\u8D25\u81EA\u52A8\u56DE\u843D\u4E0A\u9762\u7684\u7CFB\u7EDF TTS\u3002\u5173\u95ED\u540E\u8BD5\u542C\u8D70\u7CFB\u7EDF\u58F0\uFF0C\u53EF\u7528\u6765\u5BF9\u6BD4\u6548\u679C"
+    );
+    const setNeuralSource = (id, on) => {
+      const list = new Set(s.sentenceNeuralSources ?? []);
+      if (on) list.add(id);
+      else list.delete(id);
+      s.sentenceNeuralSources = [...list];
+      this.plugin.store.touch();
+    };
+    addHelpTip(
+      new import_obsidian19.Setting(containerEl).setName("\u4F8B\u53E5\u53D1\u97F3\u6E90\xB7CosyVoice2").addToggle(
+        (t) => t.setValue((s.sentenceNeuralSources ?? []).includes("cosyvoice")).onChange((v) => setNeuralSource("cosyvoice", v))
+      ),
+      "\u7528 SiliconFlow \u7684 CosyVoice2 \u6717\u8BFB\u4F8B\u53E5\uFF08\u97F3\u8272\u5373\u4E0A\u65B9\u4E0B\u62C9\uFF09\u3002\u9700\u5148\u5728\u4E0B\u65B9 AI \u8BBE\u7F6E\u91CC\u914D\u597D SiliconFlow Key\uFF1B\u8BE5\u6E90\u6309\u91CF\u8BA1\u8D39\uFF0C\u6545\u9ED8\u8BA4\u4E0D\u542F\u7528\u2014\u2014\u79FB\u52A8\u7AEF\u60F3\u542C\u795E\u7ECF\u58F0\u901A\u5E38\u52FE\u9009\u5B83"
+    );
+    addHelpTip(
+      new import_obsidian19.Setting(containerEl).setName("\u4F8B\u53E5\u53D1\u97F3\u6E90\xB7\u667A\u8C31 CogTTS").addToggle(
+        (t) => t.setValue((s.sentenceNeuralSources ?? []).includes("zhipu")).onChange((v) => setNeuralSource("zhipu", v))
+      ),
+      "\u7528\u667A\u8C31 CogTTS \u6717\u8BFB\u4F8B\u53E5\uFF08\u97F3\u8272\u56FA\u5B9A tongtong\uFF09\u3002\u9700\u5148\u914D\u597D\u667A\u8C31 Key\uFF1B\u662F\u5426\u8BA1\u8D39\u4EE5\u667A\u8C31\u5B98\u65B9\u4E3A\u51C6\uFF0C\u6545\u9ED8\u8BA4\u4E0D\u542F\u7528\u3002\u667A\u8C31\u8F93\u51FA\u5F00\u5934\u5E26\u63D0\u793A\u97F3\uFF0C\u63D2\u4EF6\u4F1A\u81EA\u52A8\u6390\u6389\u540E\u518D\u5165\u5E93"
+    );
+    addHelpTip(
+      new import_obsidian19.Setting(containerEl).setName("\u6E05\u7406\u53D1\u97F3\u7F13\u5B58").setDesc("\u5220\u9664\u6240\u9009\u65F6\u95F4\u4E4B\u524D\u7F13\u5B58\u7684\u771F\u4EBA\u8BCD\u97F3\u4E0E\u4F8B\u53E5\u795E\u7ECF\u58F0\u6587\u4EF6\uFF0C\u4E4B\u540E\u7528\u5230\u4F1A\u81EA\u52A8\u91CD\u65B0\u83B7\u53D6").addDropdown(
+        (d) => d.addOptions({ 30: "30 \u5929\u524D", 90: "90 \u5929\u524D", 180: "180 \u5929\u524D", 0: "\u5168\u90E8" }).setValue(String(s.cacheCleanDays ?? 90)).onChange((v) => {
+          s.cacheCleanDays = parseInt(v);
+          this.plugin.store.touch();
+        })
+      ).addButton(
+        (b) => b.setButtonText("\u6E05\u7406").onClick(async () => {
+          b.setDisabled(true).setButtonText("\u6E05\u7406\u4E2D\u2026");
+          try {
+            const days = s.cacheCleanDays ?? 90;
+            const cutoff = days > 0 ? Date.now() - days * 864e5 : Number.MAX_SAFE_INTEGER;
+            const docs = this.plugin.words.allRaw();
+            const rate = s.ttsSentenceRate ?? s.ttsRate;
+            const keys = /* @__PURE__ */ new Set();
+            for (const doc of docs)
+              for (const ex of doc.examples) {
+                keys.add(sentenceCacheKey(ex.text, rate));
+                if (s.ttsRate !== rate) keys.add(sentenceCacheKey(ex.text, s.ttsRate));
+              }
+            const w = await this.plugin.audio.clean(docs.map((doc2) => doc2.word), cutoff);
+            const sn = await this.plugin.sentenceTts.clean(cutoff, [...keys]);
+            new import_obsidian19.Notice(
+              w.n + sn.n ? `\u5DF2\u6E05\u7406 ${w.n} \u4E2A\u8BCD\u97F3\u3001${sn.n} \u6761\u4F8B\u53E5\u7F13\u5B58\uFF08\u91CA\u653E ${fmtBytes(w.bytes + sn.bytes)}\uFF09` : "\u7F13\u5B58\u90FD\u5F88\u65B0\uFF0C\u6CA1\u6709\u9700\u8981\u6E05\u7406\u7684\u6587\u4EF6"
+            );
+          } finally {
+            b.setDisabled(false).setButtonText("\u6E05\u7406");
+          }
+        })
+      ),
+      "\u8BCD\u97F3\uFF08\u6709\u9053\u771F\u4EBA\u53D1\u97F3\uFF09\u4E0E\u4F8B\u53E5\u795E\u7ECF\u58F0\u90FD\u7F13\u5B58\u5728 \u5E93\u6839/.english-learn/audio/\uFF0C\u957F\u671F\u4F7F\u7528\u4F1A\u79EF\u7D2F\u3002\u6309\u6587\u4EF6\u7684\u7F13\u5B58\u65F6\u95F4\uFF08\u4E0B\u8F7D/\u5408\u6210\u65F6\u95F4\uFF09\u5224\u65AD\u65B0\u65E7\uFF1B\u300C\u5168\u90E8\u300D\u4F1A\u8FDE\u4ECD\u5728\u7528\u7684\u4E00\u8D77\u5220\uFF0C\u4E0B\u6B21\u64AD\u653E\u81EA\u52A8\u91CD\u65B0\u4E0B\u8F7D\u6216\u5408\u6210"
+    );
+    addHelpTip(
+      new import_obsidian19.Setting(containerEl).setName("\u9884\u53D6\u5168\u90E8\u4F8B\u53E5\u795E\u7ECF\u58F0").addToggle(
+        (t) => t.setValue(s.sentenceNeuralAll === true).onChange((v) => {
+          s.sentenceNeuralAll = v;
+          this.plugin.store.touch();
+        })
+      ),
+      "\u9ED8\u8BA4\u53EA\u540E\u53F0\u9884\u53D6\u6BCF\u8BCD\u9996\u9009\u4F8B\u53E5\uFF08\u8BCD\u5361\u5C55\u793A\u7684\u7B2C\u4E00\u6761\uFF0C\u4E5F\u662F\u8BFB\u5B8C\u8BCD\u81EA\u52A8\u63A5\u8BFB\u7684\u90A3\u6761\uFF09\u7684\u795E\u7ECF\u58F0\uFF0C\u5176\u4F59\u4F8B\u53E5\u70B9\u8BFB\u65F6\u6309\u9700\u5408\u6210\uFF08\u9996\u6B21\u7EA6 1s\uFF0C\u4E4B\u540E\u7F13\u5B58\u79D2\u64AD\uFF09\u2014\u2014\u7701\u975E\u5B98\u65B9\u63A5\u53E3\u7684\u540E\u53F0\u5408\u6210\u91CF\uFF1B\u5F00\u542F\u540E\u9884\u53D6\u5168\u90E8\u4F8B\u53E5\uFF08\u6BCF\u8BCD\u81F3\u591A 3 \u6761\uFF09"
+    );
     let upgradeBtn;
     addHelpTip(
-      new import_obsidian17.Setting(containerEl).setName("\u57FA\u7840\u8BCD\u5178").addButton((b) => {
+      new import_obsidian19.Setting(containerEl).setName("\u57FA\u7840\u8BCD\u5178").addButton((b) => {
         b.setButtonText("\u7ACB\u5373\u4E0B\u8F7D\u8BCD\u5178\u5206\u7247").onClick(async () => {
           await this.plugin.downloadDict();
           if (dictStatusEl.isConnected) void this.renderDictStatus(dictStatusEl, b);
@@ -23110,7 +37034,7 @@ var EnglishLearnSettingTab = class extends import_obsidian17.PluginSettingTab {
     const dictStatusEl = containerEl.createDiv({ cls: "el-muted el-dict-status" });
     void this.renderDictStatus(dictStatusEl, upgradeBtn);
     addHelpTip(
-      new import_obsidian17.Setting(containerEl).setName("\u81EA\u52A8\u5907\u4EFD\u5B66\u4E60\u6570\u636E").addToggle(
+      new import_obsidian19.Setting(containerEl).setName("\u81EA\u52A8\u5907\u4EFD\u5B66\u4E60\u6570\u636E").addToggle(
         (t) => t.setValue(s.autoBackup).onChange((v) => {
           s.autoBackup = v;
           this.plugin.store.touch();
@@ -23119,7 +37043,7 @@ var EnglishLearnSettingTab = class extends import_obsidian17.PluginSettingTab {
       "\u6BCF\u6B21\u5B66\u4E60\u7ED3\u675F\u628A\u8FDB\u5EA6/\u4E3B\u9898/\u6253\u5361\u8BB0\u5F55\u5FEB\u7167\u5199\u5165 \u8BCD\u5E93\u6839\u76EE\u5F55/backup/\uFF08\u6700\u8FD1 14 \u4EFD\uFF1B\u6570\u636E\u4E22\u5931\u53EF\u7528\u547D\u4EE4\u6062\u590D\uFF09"
     );
     addHelpTip(
-      new import_obsidian17.Setting(containerEl).setName("\u5B66\u4E60\u65F6\u6309\u9700\u8865\u5168").addToggle(
+      new import_obsidian19.Setting(containerEl).setName("\u5B66\u4E60\u65F6\u6309\u9700\u8865\u5168").addToggle(
         (t) => t.setValue(s.enrichOnLearn !== false).onChange((v) => {
           s.enrichOnLearn = v;
           this.plugin.store.touch();
@@ -23128,7 +37052,7 @@ var EnglishLearnSettingTab = class extends import_obsidian17.PluginSettingTab {
       "\u5B66\u5F53\u524D\u8BCD\u65F6\u540E\u53F0\u5408\u6279\u8865\u5168\u5B83\u548C\u540E\u9762\u51E0\u4E2A\u8BCD\uFF08\u514D\u8D39\u6E90\u8865\u5728\u7EBF\u97F3\u6807/\u540C\u53CD\u4E49\u8BCD\uFF0C\u914D\u7F6E AI \u540E\u4F8B\u53E5/\u4E49\u9879\u4E5F\u4E00\u5E76\u8865\uFF0C\u7FFB\u8FC7\u53BB\u65F6\u6570\u636E\u5DF2\u5C31\u7EEA\uFF09\uFF0C\u5E76\u9884\u4E0B\u8F7D\u540E\u7EED\u8BCD\u7684\u771F\u4EBA\u8BFB\u97F3\uFF1B\u5173\u95ED\u540E\u8BCD\u5178\u79BB\u7EBF\u6570\u636E\u7167\u5E38\u663E\u793A\uFF0C\u5728\u7EBF\u4E0E AI \u5747\u4E0D\u81EA\u52A8\u8BF7\u6C42\uFF0C\u300C\u8865\u5168\u300D\u547D\u4EE4\u4E0D\u53D7\u5F71\u54CD"
     );
     addHelpTip(
-      new import_obsidian17.Setting(containerEl).setName("\u65B0\u8BCD\u6309\u8BCD\u9891\u4F18\u5148").addToggle(
+      new import_obsidian19.Setting(containerEl).setName("\u65B0\u8BCD\u6309\u8BCD\u9891\u4F18\u5148").addToggle(
         (t) => t.setValue(s.freshByFreq !== false).onChange((v) => {
           s.freshByFreq = v;
           this.plugin.store.touch();
@@ -23136,9 +37060,9 @@ var EnglishLearnSettingTab = class extends import_obsidian17.PluginSettingTab {
       ),
       "\u65B0\u8BCD\u6309 BNC \u8BED\u6599\u8BCD\u9891\u5347\u5E8F\u5B66\u4E60\uFF08\u9AD8\u9891\u5E38\u7528\u8BCD\u5148\u5B66\uFF0C\u5355\u4F4D\u5B66\u4E60\u91CF\u7684\u5B9E\u9645\u6536\u76CA\u6700\u5927\uFF09\uFF1B\u5173\u95ED = \u6309\u6536\u5F55\u65F6\u95F4\u964D\u5E8F\uFF08\u6700\u8FD1\u6536\u7684\u5148\u5B66\uFF09\u3002\u8BCD\u9891\u6765\u81EA\u57FA\u7840\u8BCD\u5178\uFF0C\u672A\u5B89\u88C5/\u8BCD\u5178\u65E0\u6570\u636E\u7684\u8BCD\u6392\u5728\u5176\u540E"
     );
-    new import_obsidian17.Setting(containerEl).setName("AI \u6269\u8BCD\uFF08LLM\uFF09").setHeading();
+    new import_obsidian19.Setting(containerEl).setName("AI \u6269\u8BCD\uFF08LLM\uFF09").setHeading();
     addHelpTip(
-      new import_obsidian17.Setting(containerEl).setName("\u6BCF\u8BCD\u4F8B\u53E5\u6570").addSlider(
+      new import_obsidian19.Setting(containerEl).setName("\u6BCF\u8BCD\u4F8B\u53E5\u6570").addSlider(
         (sl) => sl.setLimits(1, 5, 1).setValue(s.exampleCount).setDynamicTooltip().onChange((v) => {
           s.exampleCount = v;
           this.plugin.store.touch();
@@ -23146,17 +37070,16 @@ var EnglishLearnSettingTab = class extends import_obsidian17.PluginSettingTab {
       ),
       "AI \u751F\u6210\u4F8B\u53E5\u65F6\u6BCF\u4E2A\u5355\u8BCD\u5199\u7684\u53E5\u5B50\u6570\uFF08\u8BED\u5883\u5404\u5F02\uFF1B\u8BCD\u5361\u9ED8\u8BA4\u5C55\u793A 3 \u6761\u3001\u53EF\u5C55\u5F00\u5168\u90E8\uFF0C\u590D\u4E60\u6316\u7A7A\u9898\u968F\u673A\u9009\u7528\uFF09"
     );
-    const mobile = import_obsidian17.Platform.isMobile;
+    const mobile = import_obsidian19.Platform.isMobile;
     const activeProvider = () => {
-      var _a;
-      const s2 = this.plugin.db.settings;
-      return (_a = mobile ? s2.llmMobileProvider : void 0) != null ? _a : s2.llmProvider;
+      const s22 = this.plugin.db.settings;
+      return (mobile ? s22.llmMobileProvider : void 0) ?? s22.llmProvider;
     };
     const conf = () => llmConf(this.plugin.db.settings.llmSaved, activeProvider());
     const writeConf = (patch) => {
-      const s2 = this.plugin.db.settings;
+      const s22 = this.plugin.db.settings;
       const p = activeProvider();
-      s2.llmSaved = { ...s2.llmSaved, [p]: { ...conf(), ...patch } };
+      s22.llmSaved = { ...s22.llmSaved, [p]: { ...conf(), ...patch } };
       this.plugin.store.touch();
     };
     let urlText = null;
@@ -23171,18 +37094,18 @@ var EnglishLearnSettingTab = class extends import_obsidian17.PluginSettingTab {
       if (urlText) urlText.inputEl.disabled = llmUrlLocked(activeProvider());
     };
     const switchSource = (next) => {
-      const s2 = this.plugin.db.settings;
-      if (mobile) s2.llmMobileProvider = next;
-      else s2.llmProvider = next;
+      const s22 = this.plugin.db.settings;
+      if (mobile) s22.llmMobileProvider = next;
+      else s22.llmProvider = next;
       writeConf({});
       syncUrlLock();
-      urlText == null ? void 0 : urlText.setValue(conf().baseUrl);
-      keyText == null ? void 0 : keyText.setValue(conf().apiKey);
-      modelText == null ? void 0 : modelText.setValue(conf().model);
+      urlText?.setValue(conf().baseUrl);
+      keyText?.setValue(conf().apiKey);
+      modelText?.setValue(conf().model);
       syncKeyGuide();
     };
     addHelpTip(
-      new import_obsidian17.Setting(containerEl).setName("AI \u6E90").addDropdown(
+      new import_obsidian19.Setting(containerEl).setName("AI \u6E90").addDropdown(
         (d) => d.addOptions({
           ollama: "Ollama\uFF08\u672C\u5730\uFF09",
           deepseek: "DeepSeek",
@@ -23195,7 +37118,7 @@ var EnglishLearnSettingTab = class extends import_obsidian17.PluginSettingTab {
       ),
       mobile ? "\u624B\u673A\u542F\u7528\u54EA\u4E2A AI \u6E90\uFF08\u672A\u6539\u8FC7\u5219\u8DDF\u968F\u684C\u9762\u7AEF\uFF1B\u914D\u7F6E\u6C60\u4E24\u7AEF\u5171\u7528\uFF0C\u540C\u4E00\u6E90\u6539\u4E00\u5904\u4E24\u7AEF\u751F\u6548\uFF09\u3002\u672C\u5730 Ollama \u624B\u673A\u8FDE\u4E0D\u4E0A\uFF0C\u5EFA\u8BAE\u9009\u7845\u57FA\u6D41\u52A8\u7B49\u4E91\u7AEF API\uFF08\u514D\u8D39\u989D\u5EA6\uFF0C\u65C1\u6709 \u{1F511} \u5F15\u5BFC\u6CE8\u518C\uFF09" : "\u684C\u9762\u7AEF\u542F\u7528\u54EA\u4E2A AI \u6E90\uFF08\u624B\u673A\u9ED8\u8BA4\u8DDF\u968F\u6B64\u5904\uFF0C\u53EF\u5728\u624B\u673A\u4E0A\u53E6\u9009\uFF1B\u914D\u7F6E\u6C60\u4E24\u7AEF\u5171\u7528\uFF0C\u540C\u4E00\u6E90\u6539\u4E00\u5904\u4E24\u7AEF\u751F\u6548\uFF09\u3002Ollama \u4E3A\u672C\u5730\u6A21\u578B\uFF08\u9700\u5148 ollama pull qwen2.5:3b\uFF09\uFF1B\u7845\u57FA\u6D41\u52A8/DeepSeek \u9009\u540E\u70B9 Key \u680F \u{1F511} \u53EF\u5F15\u5BFC\u514D\u8D39\u6CE8\u518C"
     );
-    new import_obsidian17.Setting(containerEl).setName("API \u5730\u5740").addText((t) => {
+    new import_obsidian19.Setting(containerEl).setName("API \u5730\u5740").addText((t) => {
       urlText = t;
       t.setValue(conf().baseUrl).onChange((v) => {
         writeConf({ baseUrl: v.trim() });
@@ -23203,7 +37126,7 @@ var EnglishLearnSettingTab = class extends import_obsidian17.PluginSettingTab {
       t.inputEl.setAttribute("title", "\u9884\u8BBE\u6E90\u5B98\u65B9\u5730\u5740\u56FA\u5B9A\uFF0C\u65E0\u9700\u4FEE\u6539");
       syncUrlLock();
     });
-    new import_obsidian17.Setting(containerEl).setName("API Key\uFF08\u672C\u5730\u6A21\u578B\u7559\u7A7A\u5373\u53EF\uFF09").addText((t) => {
+    new import_obsidian19.Setting(containerEl).setName("API Key\uFF08\u672C\u5730\u6A21\u578B\u7559\u7A7A\u5373\u53EF\uFF09").addText((t) => {
       keyText = t;
       t.inputEl.type = "password";
       t.setValue(conf().apiKey).onChange((v) => {
@@ -23217,8 +37140,8 @@ var EnglishLearnSettingTab = class extends import_obsidian17.PluginSettingTab {
           if (p === "ollama" || p === "custom") return;
           new KeyGuideModal(this.app, p, (key) => {
             writeConf({ apiKey: key });
-            keyText == null ? void 0 : keyText.setValue(key);
-            new import_obsidian17.Notice("API Key \u5DF2\u4FDD\u5B58\uFF0C\u53EF\u70B9\u4E0B\u65B9\u300C\u6D4B\u8BD5\u8FDE\u63A5\u300D\u9A8C\u8BC1");
+            keyText?.setValue(key);
+            new import_obsidian19.Notice("API Key \u5DF2\u4FDD\u5B58\uFF0C\u53EF\u70B9\u4E0B\u65B9\u300C\u6D4B\u8BD5\u8FDE\u63A5\u300D\u9A8C\u8BC1");
           }).open();
         });
       } catch (e) {
@@ -23226,39 +37149,39 @@ var EnglishLearnSettingTab = class extends import_obsidian17.PluginSettingTab {
       }
       syncKeyGuide();
     });
-    new import_obsidian17.Setting(containerEl).setName("\u6A21\u578B").addText((t) => {
+    new import_obsidian19.Setting(containerEl).setName("\u6A21\u578B").addText((t) => {
       modelText = t;
       t.setValue(conf().model).onChange((v) => {
         writeConf({ model: v.trim() });
       });
     });
-    new import_obsidian17.Setting(containerEl).setName("\u6D4B\u8BD5\u8FDE\u63A5").setDesc("\u5411\u5F53\u524D\u914D\u7F6E\u53D1\u9001\u4E00\u6761\u6D4B\u8BD5\u6D88\u606F").addButton(
+    new import_obsidian19.Setting(containerEl).setName("\u6D4B\u8BD5\u8FDE\u63A5").setDesc("\u5411\u5F53\u524D\u914D\u7F6E\u53D1\u9001\u4E00\u6761\u6D4B\u8BD5\u6D88\u606F").addButton(
       (b) => b.setButtonText("\u6D4B\u8BD5").setCta().onClick(async () => {
         if (!llmReady(this.plugin.llmCfg)) {
-          new import_obsidian17.Notice("\u8BF7\u5148\u586B\u5199 API \u5730\u5740\u548C\u6A21\u578B\uFF08\u4E91\u7AEF API \u53E6\u9700 Key\uFF0C\u672C\u5730 Ollama \u4E0D\u7528\uFF09");
+          new import_obsidian19.Notice("\u8BF7\u5148\u586B\u5199 API \u5730\u5740\u548C\u6A21\u578B\uFF08\u4E91\u7AEF API \u53E6\u9700 Key\uFF0C\u672C\u5730 Ollama \u4E0D\u7528\uFF09");
           return;
         }
         b.setDisabled(true).setButtonText("\u6D4B\u8BD5\u4E2D\u2026");
         try {
           await llmTest(this.plugin.llmCfg);
-          new import_obsidian17.Notice("\u8FDE\u63A5\u6210\u529F \u2713");
+          new import_obsidian19.Notice("\u8FDE\u63A5\u6210\u529F \u2713");
           this.plugin.db.settings.aiGuideDone = true;
           this.plugin.store.touch();
         } catch (e) {
-          new import_obsidian17.Notice(`\u8FDE\u63A5\u5931\u8D25\uFF1A${e instanceof Error ? e.message : String(e)}`);
+          new import_obsidian19.Notice(`\u8FDE\u63A5\u5931\u8D25\uFF1A${e instanceof Error ? e.message : String(e)}`);
         } finally {
           b.setDisabled(false).setButtonText("\u6D4B\u8BD5");
         }
       })
     );
-    new import_obsidian17.Setting(containerEl).setName("\u89C6\u53E3\u8C03\u8BD5").setDesc("\u5C4F\u5E55\u89D2\u843D\u5B9E\u65F6\u663E\u793A\u5E03\u5C40\u89C6\u53E3/\u53EF\u89C6\u89C6\u53E3/\u952E\u76D8\u8BA9\u4F4D\u6570\u503C\uFF0C\u6392\u67E5\u79FB\u52A8\u7AEF\u952E\u76D8\u6536\u7F29\u95EE\u9898\u7528").addToggle(
+    new import_obsidian19.Setting(containerEl).setName("\u89C6\u53E3\u8C03\u8BD5").setDesc("\u5C4F\u5E55\u89D2\u843D\u5B9E\u65F6\u663E\u793A\u5E03\u5C40\u89C6\u53E3/\u53EF\u89C6\u89C6\u53E3/\u952E\u76D8\u8BA9\u4F4D\u6570\u503C\uFF0C\u6392\u67E5\u79FB\u52A8\u7AEF\u952E\u76D8\u6536\u7F29\u95EE\u9898\u7528").addToggle(
       (t) => t.setValue(s.viewportDebug === true).onChange((v) => {
         s.viewportDebug = v;
         this.plugin.store.touch();
         this.plugin.syncViewportDebug();
       })
     );
-    new import_obsidian17.Setting(containerEl).setName("\u5F39\u7A97\u8C03\u8BD5\u7F16\u53F7").setDesc("\u5F39\u7A97\u5DE6\u4E0A\u89D2\u663E\u793A\u7F16\u53F7\u5C0F\u5B57\uFF08\u7C7B\u540D#\u5E8F\u53F7\uFF09\uFF0C\u6392\u67E5\u300C\u5F53\u524D\u662F\u54EA\u4E2A\u5F39\u7A97\u300D\u7528\uFF1B\u5BF9\u65B0\u6253\u5F00\u7684\u5F39\u7A97\u751F\u6548").addToggle(
+    new import_obsidian19.Setting(containerEl).setName("\u5F39\u7A97\u8C03\u8BD5\u7F16\u53F7").setDesc("\u5F39\u7A97\u5DE6\u4E0A\u89D2\u663E\u793A\u7F16\u53F7\u5C0F\u5B57\uFF08\u7C7B\u540D#\u5E8F\u53F7\uFF09\uFF0C\u6392\u67E5\u300C\u5F53\u524D\u662F\u54EA\u4E2A\u5F39\u7A97\u300D\u7528\uFF1B\u5BF9\u65B0\u6253\u5F00\u7684\u5F39\u7A97\u751F\u6548").addToggle(
       (t) => t.setValue(s.showModalTag !== false).onChange((v) => {
         s.showModalTag = v;
         this.plugin.store.touch();
@@ -23274,7 +37197,7 @@ var EnglishLearnSettingTab = class extends import_obsidian17.PluginSettingTab {
       return;
     }
     const upgrade = starterNeedsUpgrade(meta);
-    upgradeBtn == null ? void 0 : upgradeBtn.setButtonText(upgrade ? `\u5347\u7EA7\u8BCD\u5178\u5230 v${STARTER_VER}` : "\u7ACB\u5373\u4E0B\u8F7D\u8BCD\u5178\u5206\u7247");
+    upgradeBtn?.setButtonText(upgrade ? `\u5347\u7EA7\u8BCD\u5178\u5230 v${STARTER_VER}` : "\u7ACB\u5373\u4E0B\u8F7D\u8BCD\u5178\u5206\u7247");
     el.setText(
       upgrade ? `\u57FA\u7840\u8BCD\u5178 v${meta.ver} \u5DF2\u5B89\u88C5\uFF1A${meta.count} \u8BCD\u6761\uFF08\u7F3A\u65B0\u7248\u5B57\u6BB5\uFF09\u2014\u2014\u4E0B\u6B21\u67E5\u8BCD\u81EA\u52A8\u5347\u7EA7\uFF0C\u6216\u70B9\u4E0B\u65B9\u6309\u94AE\u7ACB\u5373\u5347\u7EA7` : `\u57FA\u7840\u8BCD\u5178 v${meta.ver} \u5DF2\u5B89\u88C5\uFF1A${meta.count} \u8BCD\u6761\uFF08${fmtDate(meta.installed)} \u4E0B\u8F7D\uFF1B\u542B\u97F3\u6807/\u8003\u7EA7\u6807\u7B7E/\u540C\u53CD\u4E49\u8BCD/\u540C\u6839\u8BCD/\u8BCD\u5F62\u53D8\u5316/\u4F8B\u53E5\uFF09`
     );
