@@ -3870,7 +3870,7 @@ function lemmaCandidates(w) {
   }
   return [...out];
 }
-var showModalTag = true;
+var showModalTag = false;
 function setShowModalTag(v) {
   showModalTag = v;
 }
@@ -5566,13 +5566,19 @@ function showTipBubble(anchor, tip) {
   const again = openBubble?.anchor === anchor;
   closeTipBubble();
   if (again) return;
-  const el = createDiv({ cls: "el-tipbubble", text: tip });
-  document.body.appendChild(el);
+  const doc = anchor.ownerDocument;
+  const win = doc.defaultView ?? window;
+  const el = doc.createElement("div");
+  el.className = "el-tipbubble";
+  el.textContent = tip;
+  el.style.position = "fixed";
+  el.style.zIndex = "2147483000";
+  doc.body.appendChild(el);
   const close = () => {
     el.remove();
-    document.body.removeEventListener("pointerdown", onOutside, true);
-    window.removeEventListener("resize", onResize);
-    window.clearTimeout(timer);
+    doc.removeEventListener("pointerdown", onOutside, true);
+    win.removeEventListener("resize", onResize);
+    win.clearTimeout(timer);
     if (openBubble?.el === el) openBubble = null;
   };
   const onOutside = (e) => {
@@ -5580,19 +5586,19 @@ function showTipBubble(anchor, tip) {
     if (!el.contains(t) && !anchor.contains(t)) close();
   };
   const onResize = () => close();
-  const timer = window.setTimeout(close, 8e3);
+  const timer = win.setTimeout(close, 8e3);
   openBubble = { anchor, el, close };
   const r = anchor.getBoundingClientRect();
-  const bw = Math.min(el.offsetWidth, window.innerWidth - 16);
+  const bw = Math.min(el.offsetWidth, win.innerWidth - 16);
   const bh = el.offsetHeight;
   let left = r.left + r.width / 2 - bw / 2;
-  left = Math.max(8, Math.min(left, window.innerWidth - bw - 8));
+  left = Math.max(8, Math.min(left, win.innerWidth - bw - 8));
   let top = r.bottom + 6;
-  if (top + bh > window.innerHeight - 8) top = Math.max(8, r.top - bh - 6);
+  if (top + bh > win.innerHeight - 8) top = Math.max(8, r.top - bh - 6);
   el.style.left = `${left}px`;
   el.style.top = `${top}px`;
-  document.body.addEventListener("pointerdown", onOutside, true);
-  window.addEventListener("resize", onResize);
+  doc.addEventListener("pointerdown", onOutside, true);
+  win.addEventListener("resize", onResize);
 }
 
 // src/store/word-store.ts
@@ -21558,6 +21564,7 @@ var TIMEOUT_MS = 2e4;
 var SF_MODEL = "FunAudioLLM/CosyVoice2-0.5B";
 var SF_VOICE = "anna";
 var MIN_MP3_BYTES = 256;
+var BAIDU_MAX_CHARS = 200;
 async function secMsGec() {
   const winEpoch = Math.floor(Date.now() / 1e3) + 11644473600;
   const ticks = BigInt(Math.floor(winEpoch / 300) * 300) * 10000000n;
@@ -21762,8 +21769,55 @@ async function zhipuSynthesize(text2, rate, c) {
     headers: { Authorization: `Bearer ${c.key}` },
     body: JSON.stringify({ model: "cogtts", input: text2, voice: "tongtong", response_format: "wav", speed: rate })
   });
-  const { pcm, rate: wavRate } = decodeWav16(res.arrayBuffer);
+  const { pcm, rate: wavRate } = decodeAudioResponse(res.arrayBuffer, "\u667A\u8C31");
   return encodeMp3(trimLeadingTone(pcm, wavRate), wavRate);
+}
+function rawText(b) {
+  try {
+    return new TextDecoder().decode(new Uint8Array(b)).trim();
+  } catch {
+    return `${b.byteLength} \u5B57\u8282\u4E8C\u8FDB\u5236`;
+  }
+}
+function decodeMp3Response(b, label) {
+  const head = new Uint8Array(b, 0, Math.min(4, b.byteLength));
+  const isId3 = head.length >= 3 && head[0] === 73 && head[1] === 68 && head[2] === 51;
+  const isFrameSync = head.length >= 2 && head[0] === 255 && (head[1] & 224) === 224;
+  if (b.byteLength < MIN_MP3_BYTES || !(isId3 || isFrameSync))
+    throw new Error(`${label} \u672A\u8FD4\u56DE\u97F3\u9891\uFF1A${responseHint(b)}`);
+  return b;
+}
+function responseHint(b) {
+  if (!b.byteLength) return "\u7A7A\u54CD\u5E94\uFF080 \u5B57\u8282\uFF09";
+  const text2 = rawText(b);
+  const printable = /[\x20-\x7e\u4e00-\u9fa5]{4,}/.exec(text2);
+  return printable ? printable[0].slice(0, 120) : `\u975E\u97F3\u9891\u5185\u5BB9\uFF08${b.byteLength} \u5B57\u8282\uFF09`;
+}
+function baiduSpd(rate) {
+  return Math.min(7, Math.max(1, Math.round(rate * 5)));
+}
+async function baiduSynthesize(text2, rate) {
+  if (text2.length > BAIDU_MAX_CHARS) throw new Error(`\u6587\u672C\u8D85\u957F\uFF08${text2.length} \u5B57\u7B26 > ${BAIDU_MAX_CHARS}\uFF09\uFF0C\u8DF3\u8FC7\u767E\u5EA6\u6E90`);
+  const res = await (0, import_obsidian13.requestUrl)({
+    url: `https://fanyi.baidu.com/gettts?lan=en&source=web&spd=${baiduSpd(rate)}&text=${encodeURIComponent(text2)}`
+  });
+  return decodeMp3Response(res.arrayBuffer, "\u767E\u5EA6");
+}
+function decodeAudioResponse(b, label) {
+  const text2 = rawText(b);
+  const head = text2.slice(0, 200).replace(/\s+/g, " ");
+  if (b.byteLength < 44 || !text2.startsWith("RIFF"))
+    throw new Error(`${label} \u672A\u8FD4\u56DE\u97F3\u9891\uFF08${b.byteLength} \u5B57\u8282\uFF09${head ? `\uFF1A${head}` : ""}`);
+  return decodeWav16(b);
+}
+function looksLikeAuthFailure(e) {
+  const s = e instanceof Error ? e.message : String(e);
+  return /\b(401|403)\b|invalid_api_key|invalid api key|unauthorized|authentication|forbidden|无权限|权限不足/i.test(s);
+}
+function ttsFailureReason(name, e) {
+  const s = e instanceof Error ? e.message : String(e);
+  const auth = looksLikeAuthFailure(e) ? "\uFF08\u8BE5\u8D26\u53F7\u53EF\u80FD\u6CA1\u6709\u6B64\u9879\u8BED\u97F3\u6743\u9650\uFF09" : "";
+  return `${name} \u5408\u6210\u5931\u8D25${auth}\uFF1A${s.slice(0, 200)}`;
 }
 function withTimeout(p, what) {
   return Promise.race([
@@ -21802,30 +21856,41 @@ var SentenceNeural = class {
     }
     return this.envOk;
   }
-  /** 有任一可用合成源即为就绪（Edge=桌面免 key 恒启用；CosyVoice2/智谱须「已配 Key」且用户勾选了启用） */
+  /** 有任一可用合成源即为就绪（两个免费源各有开关且缺省开；LLM 源须「已配 Key」且用户勾选） */
   ready() {
     return this.edgeOk() || this.providers().length > 0;
   }
   /** 声源链（顺序即优先级）与各源状态：运行链 `providers()` 与设置页状态行 `sources()` 共用这一处
-   *  判定，避免「显示的链」与「实际试的链」走岔。Edge 免 Key、桌面可用（移动端无 ws 故不列）；
-   *  两个 HTTP 源须「已配 Key 且用户勾选」才在链中——勾了没配 Key 记为 nokey（providers() 同样跳过） */
+   *  判定，避免「显示的链」与「实际试的链」走岔。两个免费源各有开关且**缺省开**（Edge 仅桌面可用、
+   *  百度全端可用）；两个 LLM 源须「已配 Key 且用户勾选」才在链中——勾了没配 Key 记为 nokey
+   *  （providers() 同样跳过） */
   chain() {
     const list = [];
     if (import_obsidian13.Platform.isDesktopApp) {
       const ok = this.edgeOk();
+      const on2 = this.conf?.()?.edge !== false;
       list.push({
         id: "edge",
         name: "Edge",
-        state: ok ? "on" : "unavailable",
+        state: !on2 ? "off" : ok ? "on" : "unavailable",
         hasKey: true,
         // Edge 免 Key
-        run: ok ? edgeSynthesize : void 0
+        run: on2 && ok ? edgeSynthesize : void 0
       });
     }
     const c = this.conf?.();
     const on = new Set(c?.sources ?? []);
+    const baiduOn = c?.baidu !== false;
     const sfKey = !!c?.sf?.key;
     const zhipuKey = !!c?.zhipu?.key;
+    list.push({
+      id: "baidu",
+      name: "\u767E\u5EA6",
+      state: baiduOn ? "on" : "off",
+      hasKey: true,
+      // 免 Key，故设置页开关恒可操作
+      run: baiduOn ? baiduSynthesize : void 0
+    });
     list.push({
       id: "cosyvoice",
       name: "CosyVoice2",
@@ -21842,8 +21907,9 @@ var SentenceNeural = class {
     });
     return list;
   }
-  /** 合成源替补链（顺序即优先级）：Edge 音质最好且免费、桌面优先；CosyVoice2 输出干净排智谱前。
-   *  两个 HTTP 源均为 opt-in（用户设置里勾选才进链，避免意外计费） */
+  /** 合成源替补链（顺序即优先级）：Edge 音质最好、桌面优先（可用开关关掉）；百度免 Key 免账号排其后
+   *  （移动端的免费神经声就靠它）；CosyVoice2 输出干净排智谱前。两个 LLM 源均 opt-in（勾选才进链，
+   *  避免意外计费） */
   providers() {
     const out = [];
     for (const s of this.chain()) if (s.state === "on" && s.run) out.push({ name: s.name, run: s.run });
@@ -21854,19 +21920,25 @@ var SentenceNeural = class {
   sources() {
     return this.chain().map(({ id, name, state, hasKey }) => ({ id, name, state, hasKey }));
   }
-  /** 逐源试合成，全源失败返回 null（计入熔断）。
-   *  源「返回了但内容不合格」（空/被截断的 mp3）按该源失败处理，换下一源——别把坏字节落盘卡住该句 */
+  /** 逐源试合成：首个出合格音频的源胜出；全源失败 `audio` 为 null（调用方据此计入熔断）。
+   *  源「返回了但内容不合格」（空/被截断的 mp3）按该源失败处理，换下一源——别把坏字节落盘卡住该句。
+   *  逐源失败原因一并返回（`reasons`）：试听要当场说清「回落了、为什么回落」——账号没 TTS
+   *  权限这类失败在听感上只是「音质差一点」，不说清就是静默降级（见 docs/network.md ①） */
   async synthesize(text2, rate) {
+    const reasons = [];
     for (const p of this.providers()) {
       try {
         const audio = await withTimeout(p.run(text2, rate), `${p.name} \u4F8B\u53E5\u5408\u6210`);
-        if (audio.byteLength >= MIN_MP3_BYTES) return audio;
-        console.error(`${p.name} \u4F8B\u53E5\u5408\u6210\u8FD4\u56DE\u5F02\u5E38\uFF08${audio.byteLength} \u5B57\u8282\uFF09\uFF0C\u6362\u4E0B\u4E00\u6E90`);
+        if (audio.byteLength >= MIN_MP3_BYTES) return { audio, source: p.name, reasons };
+        const why = `${p.name} \u8FD4\u56DE\u5F02\u5E38\uFF08${audio.byteLength} \u5B57\u8282\uFF0C\u975E\u97F3\u9891\uFF09`;
+        console.error(`${why}\uFF0C\u6362\u4E0B\u4E00\u6E90`);
+        reasons.push(why);
       } catch (e) {
         console.error(`${p.name} \u4F8B\u53E5\u5408\u6210\u5931\u8D25\uFF0C\u6362\u4E0B\u4E00\u6E90:`, e);
+        reasons.push(ttsFailureReason(p.name, e));
       }
     }
-    return null;
+    return { audio: null, reasons };
   }
   /** 掐断在播例句（stopSpeaking 统一入口调）。pause 不触发 onended，不会误触接读链 */
   stop() {
@@ -21886,16 +21958,13 @@ var SentenceNeural = class {
       if (!bypassCache && await this.app.vault.adapter.exists(f)) this.noteKey(key);
       else {
         if (!this.ready() || Date.now() < this.deadUntil) return false;
-        const audio = await this.synthesize(text2, rate);
+        const { audio } = await this.synthesize(text2, rate);
         if (audio === null) {
           this.fails++;
           if (this.fails >= 2) this.deadUntil = Date.now() + 6e4;
           return false;
         }
-        await mkdirp(this.app, this.dir);
-        await this.app.vault.adapter.writeBinary(f, audio);
-        this.noteKey(key);
-        this.fails = 0;
+        if (!await this.storeAudio(f, audio, key)) return false;
         if (cancelled?.()) return true;
       }
       const ok = await this.playFile(f, cancelled);
@@ -21907,6 +21976,36 @@ var SentenceNeural = class {
       console.error("\u4F8B\u53E5\u5408\u6210/\u64AD\u653E\u5931\u8D25\uFF0C\u56DE\u843D\u672C\u5730 TTS:", e);
       return false;
     }
+  }
+  /** 落盘某句音频并登记缓存键（合成路径与试听预合成共用，保证两条路都进清理清单） */
+  async storeAudio(f, audio, key) {
+    try {
+      await mkdirp(this.app, this.dir);
+      await this.app.vault.adapter.writeBinary(f, audio);
+      this.noteKey(key);
+      this.fails = 0;
+      return true;
+    } catch (e) {
+      console.error("\u4F8B\u53E5\u7F13\u5B58\u5199\u5165\u5931\u8D25:", e);
+      return false;
+    }
+  }
+  /** 播已预合成的音频（设置页试听用）：试听前先 `probe()` 拿到音频与逐源失败原因，
+   *  这里只落盘+起播，不重复走一次合成（试听是用户等着的交互，两次 20s 超时会让人以为卡死）。
+   *  音频仍照常按句缓存。返回 false = 未接管（写盘/解码/起播失败），调用方回落本地 TTS */
+  async speakPreloaded(text2, rate, audio, cancelled) {
+    const key = sentenceCacheKey(text2, rate);
+    const f = `${this.dir}/${key}.mp3`;
+    if (!await this.storeAudio(f, audio, key)) return false;
+    if (cancelled?.()) return true;
+    return this.playFile(f, cancelled);
+  }
+  /** 试听用的一次性探测：按当前替补链现合成一句，返回是否拿到音频、哪一源供的、
+   *  以及每个失败源的具体原因（全链无源 = 空数组，调用方据此说「没配可用源」）。
+   *  全程只走内存不落盘、**不计熔断**——设置页试听要能反复点、且不该把健康度算坏
+   *  （探到的音频由 `speakPreloaded` 落盘起播，不重复合成） */
+  async probe(text2, rate) {
+    return this.synthesize(text2, rate);
   }
   /** 后台预取（翻卡窗口扫前面卡的例句）：合成落盘不播放。串行慢速囤缓存，同句在途合流；
    *  全源失败计入熔断（预取与点读同一健康度），但音频侧无负缓存，下次照常重试 */
@@ -21922,17 +22021,13 @@ var SentenceNeural = class {
           this.noteKey(key);
           return true;
         }
-        const audio = await this.synthesize(text2, rate);
+        const { audio } = await this.synthesize(text2, rate);
         if (audio === null) {
           this.fails++;
           if (this.fails >= 2) this.deadUntil = Date.now() + 6e4;
           return false;
         }
-        await mkdirp(this.app, this.dir);
-        await this.app.vault.adapter.writeBinary(f, audio);
-        this.noteKey(key);
-        this.fails = 0;
-        return true;
+        return this.storeAudio(f, audio, key);
       } catch (e) {
         this.fails++;
         if (this.fails >= 2) this.deadUntil = Date.now() + 6e4;
@@ -22043,6 +22138,29 @@ var SentenceNeural = class {
     return { n, bytes };
   }
 };
+
+// src/tts-preview.ts
+function sentenceNeuralPreviewText(source) {
+  const who = source.trim().replace(/\s+/g, "");
+  return `Hello, this is a voice test from ${who}.`;
+}
+function systemVoiceSource(preferred, platform) {
+  if (preferred) return preferred;
+  return platform.isDesktopApp ? "thesystemvoice" : "Siri";
+}
+function neuralVoiceSource(source) {
+  return { \u767E\u5EA6: "Baidu", \u667A\u8C31: "Zhipu", CosyVoice2: "CosyVoice", Edge: "Edge" }[source] ?? source;
+}
+function sentenceNeuralPreviewNotice(probe) {
+  const falls = probe.reasons.length ? `\uFF1B${probe.reasons.join("\uFF1B")}` : "";
+  if (!probe.audio)
+    return {
+      message: `\u8BD5\u542C\uFF1A\u4F8B\u53E5\u795E\u7ECF\u58F0\u672A\u5408\u6210${falls || "\uFF08\u6CA1\u6709\u53EF\u7528\u7684\u5408\u6210\u6E90\uFF1A\u6E90\u672A\u52FE\u9009 / \u7F3A Key / \u672C\u673A\u4E0D\u53EF\u7528\uFF09"}\u2014\u2014\u5DF2\u56DE\u843D\u7CFB\u7EDF TTS\u3002\u82E5\u521A\u914D\u597D Key\uFF0C\u8BF7\u5148\u52FE\u9009\u5BF9\u5E94\u300C\u4F8B\u53E5\u53D1\u97F3\u6E90\u300D\u5F00\u5173\uFF1B\u63D0\u793A\u91CC\u5E26\u9274\u6743\u5B57\u6837\u5219\u591A\u4E3A\u8BE5\u8D26\u53F7\u6CA1\u6709\u6B64\u9879\u8BED\u97F3\u6743\u9650`,
+      timeout: 15e3
+    };
+  if (probe.reasons.length) return { message: `\u8BD5\u542C\uFF1ALLM \u53D1\u97F3\u6E90\u672A\u5168\u90E8\u6210\u529F\uFF0C\u5DF2\u7531 ${probe.source} \u66FF\u8865${falls}`, timeout: 12e3 };
+  return null;
+}
 
 // src/ui/learn-view.ts
 var import_obsidian15 = require("obsidian");
@@ -35324,7 +35442,7 @@ var DEFAULT_DATA = {
     enrichOnLearn: true,
     freshByFreq: true,
     viewportDebug: false,
-    showModalTag: true
+    showModalTag: false
   },
   themes: {},
   progress: {},
@@ -35467,10 +35585,13 @@ var EnglishLearnPlugin = class extends import_obsidian19.Plugin {
       // 二者不一致，靠下面这行字面量手工映射（新增 TTS 源须同步改这里与 tts-edge.providers）
       sf: { key: this.db.settings.llmSaved?.siliconflow?.apiKey ?? "", url: llmConf(this.db.settings.llmSaved, "siliconflow").baseUrl },
       zhipu: { key: this.db.settings.llmSaved?.zhipu?.apiKey ?? "", url: llmConf(this.db.settings.llmSaved, "zhipu").baseUrl },
+      // 两个免费源不进配置池（无 Key/无地址可配），各有一枚开关；缺省开（`!== false` 判定收口在 chain()）
+      baidu: this.db.settings.sentenceNeuralBaidu !== false,
+      edge: this.db.settings.sentenceNeuralEdge !== false,
       sources: this.db.settings.sentenceNeuralSources ?? []
     }));
     setPreferredVoice(this.db.settings.ttsVoice ?? null);
-    setShowModalTag(this.db.settings.showModalTag !== false);
+    setShowModalTag(this.db.settings.showModalTag === true);
     this.registerView(THEME_VIEW_TYPE, (leaf) => new ThemeView(leaf, this));
     this.registerView(LEARN_VIEW_TYPE, (leaf) => new LearnView(leaf, this));
     this.registerEditorExtension([
@@ -36721,6 +36842,34 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
     for (const text2 of sentencesToPrefetch(doc, this.db.settings.sentenceNeuralAll === true))
       void this.sentenceTts.prefetch(text2, r);
   }
+  /** 例句神经声试听统一入口（设置页「例句神经声·试听」）：先按当前替补链**现合成**一句（`probe`，
+   *  不落盘/不计熔断），拿到音频再播——试听是用户等着的交互，不探直接走 speak 会合成两次（两轮 20s）。
+   *  关键是**检测 + 说清**：拿不到神经声时替补链会静默回落系统 TTS，而「LLM 语音权限按账号而异」
+   *  （同配置两个账号一个正常一个回落），光听「音质差一点」根本分不清是没权限、没勾选还是网络问题。
+   *  故合成一失败就 Notice 出「哪个源失败 + 服务端原文 + 回落系统 TTS」，鉴权类失败补一句权限推断。
+   *  试听句用句尾 `from <源>` 区分来源（`sentenceNeuralPreviewText`）：探测时还不知道会落到哪个源，
+   *  用占位句探（命中缓存即秒播），探到后再按**实际出声的源**合成播放句；回落系统声时就用系统声那句。
+   *  onSynthDone：设置页试听的「合成中…」按钮态复位钩子（探测可能跑满 20s 超时，不表态就像点了没反应） */
+  async previewSentenceNeural(onSynthDone) {
+    const r = this.db.settings.ttsSentenceRate ?? this.db.settings.ttsRate;
+    this.stopSpeaking();
+    try {
+      const probe = await this.sentenceTts.probe(sentenceNeuralPreviewText("neural"), r);
+      const n = sentenceNeuralPreviewNotice(probe);
+      if (n) new import_obsidian19.Notice(n.message, n.timeout);
+      const gen = ++this.speakChain;
+      if (!probe.audio) {
+        speak(sentenceNeuralPreviewText(systemVoiceSource(this.db.settings.ttsVoice || null, import_obsidian19.Platform)), r);
+        return;
+      }
+      const text2 = sentenceNeuralPreviewText(neuralVoiceSource(probe.source ?? "\u795E\u7ECF\u58F0"));
+      const audio = (await this.sentenceTts.probe(text2, r)).audio ?? probe.audio;
+      const ok = await this.sentenceTts.speakPreloaded(text2, r, audio, () => gen !== this.speakChain);
+      if (!ok && gen === this.speakChain) speak(text2, r);
+    } finally {
+      onSynthDone?.();
+    }
+  }
   /** 词卡弹窗统一入口：例句点已收录词时弹出对应词卡（弹窗类独立文件，避免与词卡组件循环 import） */
   openWordCard(doc) {
     new WordCardModal(this.app, this, doc).open();
@@ -36957,10 +37106,10 @@ var EnglishLearnSettingTab = class extends import_obsidian19.PluginSettingTab {
         setPreferredVoice(v || null);
       });
     }).addButton(
-      (b) => b.setButtonText("\u8BD5\u542C").setTooltip("\u6717\u8BFB\u4F8B\u53E5\u8BD5\u542C\u5F53\u524D\u58F0\u97F3").onClick(() => {
+      (b) => b.setButtonText("\u8BD5\u542C").setTooltip("\u6717\u8BFB\u4F8B\u53E5\u8BD5\u542C\u5F53\u524D\u58F0\u97F3\uFF08\u5F00\u5934\u4F1A\u5FF5\u51FA\u58F0\u97F3\u6765\u6E90\uFF09").onClick(() => {
         setPreferredVoice(s.ttsVoice || null);
         this.plugin.stopSpeaking();
-        this.plugin.speakSentence("Hello, this is a voice test.", s.ttsRate, true, false);
+        this.plugin.speakSentence(sentenceNeuralPreviewText(systemVoiceSource(s.ttsVoice || null, import_obsidian19.Platform)), s.ttsRate, true, false);
       })
     );
     if (ttsVoices.length)
@@ -36977,23 +37126,24 @@ var EnglishLearnSettingTab = class extends import_obsidian19.PluginSettingTab {
           syncNeuralSources();
         })
       ).addButton(
-        (b) => b.setButtonText("\u8BD5\u542C").setTooltip("\u6309\u4F8B\u53E5\u8BED\u901F\u6717\u8BFB\u4E00\u53E5\u82F1\u6587\u8BD5\u542C\u795E\u7ECF\u58F0\u6548\u679C").onClick(() => {
-          this.plugin.stopSpeaking();
-          if (!this.plugin.sentenceTts.ready()) {
-            const why = import_obsidian19.Platform.isMobile ? "\u79FB\u52A8\u7AEF\u65E0 Edge \u6E90" : "\u672C\u673A Edge \u6E90\u4E0D\u53EF\u7528";
-            new import_obsidian19.Notice(`${why}\uFF1B\u8BD5\u542C\u4F1A\u5F3A\u5236\u73B0\u5408\u6210\u3001\u4E0D\u64AD\u53E5\u7F13\u5B58\uFF0C\u987B\u81F3\u5C11\u52FE\u9009\u4E00\u4E2A\u5DF2\u914D Key \u7684 LLM \u53D1\u97F3\u6E90\uFF08\u5F53\u524D\u56DE\u843D\u7CFB\u7EDF TTS\uFF09`, 8e3);
+        (b) => b.setButtonText("\u8BD5\u542C").setTooltip("\u73B0\u5408\u6210\u4E00\u53E5\u8BD5\u542C\u5F53\u524D\u795E\u7ECF\u58F0\uFF08\u5F00\u5934\u5FF5\u51FA\u6765\u6E90\uFF1B\u5408\u6210\u5931\u8D25\u4F1A\u63D0\u793A\u539F\u56E0\u5E76\u56DE\u843D\u7CFB\u7EDF TTS\uFF09").onClick(async () => {
+          const label = b.buttonEl.textContent;
+          b.setButtonText("\u5408\u6210\u4E2D\u2026").setDisabled(true);
+          try {
+            await this.plugin.previewSentenceNeural();
+          } finally {
+            b.setButtonText(label || "\u8BD5\u542C").setDisabled(false);
           }
-          this.plugin.speakSentence("Hello, this is a neural voice test.", s.ttsSentenceRate ?? s.ttsRate, true, true, true);
         })
       ),
-      "\u4F8B\u53E5\u7528\u795E\u7ECF\u58F0\u6717\u8BFB\uFF0C\u6BD4\u7CFB\u7EDF\u58F0\u81EA\u7136\u5F97\u591A\u3002\u684C\u9762\u514D\u8D39\u7528\u5FAE\u8F6F Edge\uFF1B\u4E0B\u9762\u7684 LLM \u6E90\u4E3A\u9700\u914D Key \u7684\u53EF\u9009\u66FF\u8865\uFF08\u53EF\u80FD\u8BA1\u8D39\uFF0C\u52FE\u9009\u624D\u542F\u7528\uFF09\uFF1A\u684C\u9762\u5728 Edge \u5931\u8D25\u65F6\u4F9D\u6B21\u5C1D\u8BD5\uFF0C\u79FB\u52A8\u7AEF\u6CA1\u6709 Edge \u5C31\u76F4\u63A5\u7528\u52FE\u9009\u7684\u6E90\u3002\u5408\u6210\u7ED3\u679C\u6309\u53E5\u672C\u5730\u7F13\u5B58\uFF0C\u5168\u6E90\u5931\u8D25\u81EA\u52A8\u56DE\u843D\u4E0A\u9762\u7684\u7CFB\u7EDF TTS\u3002\u5173\u95ED\u540E\u8BD5\u542C\u8D70\u7CFB\u7EDF\u58F0\uFF0C\u53EF\u7528\u6765\u5BF9\u6BD4\u6548\u679C\u3002\u4E0B\u65B9\u72B6\u6001\u884C\u5B9E\u65F6\u663E\u793A\u672C\u673A\u7684\u58F0\u6E90\u4F18\u5148\u7EA7"
+      "\u4F8B\u53E5\u7528\u795E\u7ECF\u58F0\u6717\u8BFB\uFF0C\u6BD4\u7CFB\u7EDF\u58F0\u81EA\u7136\u5F97\u591A\u3002\u684C\u9762\u514D\u8D39\u7528\u5FAE\u8F6F Edge\uFF08\u97F3\u8D28\u6700\u597D\uFF0C\u6392\u7B2C\u4E00\uFF09\uFF1B\u767E\u5EA6\u7FFB\u8BD1\u9875\u7684\u514D\u8D39\u6E90\uFF08\u514D Key \u514D\u8D26\u53F7\u3001\u9ED8\u8BA4\u5F00\uFF0C\u97F3\u8D28\u4E00\u822C\uFF09\u6392\u5176\u540E\uFF0C\u79FB\u52A8\u7AEF\u5C31\u9760\u5B83\uFF1B\u4E0B\u9762\u7684 LLM \u6E90\u4E3A\u9700\u914D Key \u7684\u53EF\u9009\u66FF\u8865\uFF08\u53EF\u80FD\u8BA1\u8D39\uFF0C\u52FE\u9009\u624D\u542F\u7528\uFF09\uFF1A\u524D\u9762\u7684\u6E90\u5931\u8D25\u65F6\u4F9D\u6B21\u5C1D\u8BD5\u3002\u5408\u6210\u7ED3\u679C\u6309\u53E5\u672C\u5730\u7F13\u5B58\uFF0C\u5168\u6E90\u5931\u8D25\u81EA\u52A8\u56DE\u843D\u4E0A\u9762\u7684\u7CFB\u7EDF TTS\u3002\u5173\u95ED\u540E\u8BD5\u542C\u8D70\u7CFB\u7EDF\u58F0\uFF0C\u53EF\u7528\u6765\u5BF9\u6BD4\u6548\u679C\u3002\u53F3\u4FA7\u300C\u8BD5\u542C\u300D\u73B0\u5408\u6210\u4E00\u53E5\u5E76\u5F53\u573A\u62A5\u544A\u7ED3\u679C\u2014\u2014\u5408\u6210\u5931\u8D25\u4F1A\u5217\u51FA\u6BCF\u4E2A\u6E90\u7684\u539F\u56E0\uFF08\u542B\u670D\u52A1\u7AEF\u539F\u6587\uFF09\u5E76\u8BF4\u660E\u5DF2\u56DE\u843D\u7CFB\u7EDF TTS\uFF1B\u8C01\u6709 LLM \u8BED\u97F3\u6743\u9650\u6309\u8D26\u53F7\u800C\u5F02\uFF0C\u540C\u914D\u7F6E\u6362\u4E2A\u8D26\u53F7\u53EF\u80FD\u5C31\u4E0D\u51FA\u58F0\u3002\u4E0B\u65B9\u72B6\u6001\u884C\u5B9E\u65F6\u663E\u793A\u672C\u673A\u7684\u58F0\u6E90\u4F18\u5148\u7EA7"
     );
     const srcStateEl = containerEl.createDiv({ cls: "el-muted" });
     const srcToggles = {};
     const srcInfo = (id) => this.plugin.sentenceTts.sources().find((x) => x.id === id);
     const SRC_STATE_LABEL = {
       on: "\u53EF\u7528",
-      off: "\u672A\u52FE\u9009",
+      off: "\u5DF2\u5173\u95ED",
       nokey: "\u7F3A Key\uFF08\u52FE\u4E86\u4E5F\u4E0D\u8FDB\u94FE\uFF09",
       unavailable: "\u4E0D\u53EF\u7528"
     };
@@ -37001,16 +37151,17 @@ var EnglishLearnSettingTab = class extends import_obsidian19.PluginSettingTab {
       const chain = this.plugin.sentenceTts.sources();
       const on = new Set(s.sentenceNeuralSources ?? []);
       for (const x of chain) {
-        if (x.id === "edge") continue;
         srcToggles[x.id]?.setDisabled(!x.hasKey && !on.has(x.id));
       }
+      srcToggles.edge?.setValue(s.sentenceNeuralEdge !== false);
+      srcToggles.baidu?.setValue(s.sentenceNeuralBaidu !== false);
       if (s.sentenceNeural === false) {
         srcStateEl.setText("\u4F8B\u53E5\u795E\u7ECF\u58F0\u5DF2\u5173\u95ED\uFF1A\u4F8B\u53E5\u5168\u90E8\u8D70\u7CFB\u7EDF TTS\uFF08\u4E0A\u65B9\u300CTTS \u58F0\u97F3\u300D\uFF09");
         return;
       }
       const parts = chain.map((x, i) => `${i + 1}. ${x.name}\uFF08${SRC_STATE_LABEL[x.state]}\uFF09`);
-      const head = import_obsidian19.Platform.isMobile ? "\u4F8B\u53E5\u58F0\u6E90\u4F18\u5148\u7EA7\uFF08\u79FB\u52A8\u7AEF\u65E0 Edge\uFF0C\u4ECE CosyVoice2 \u8D77\uFF09" : "\u4F8B\u53E5\u58F0\u6E90\u4F18\u5148\u7EA7\uFF08\u684C\u9762\u7AEF\uFF09";
-      const tail = import_obsidian19.Platform.isMobile && !this.plugin.sentenceTts.ready() ? "\uFF08\u65E0\u53EF\u7528 LLM \u6E90\uFF1A\u53EA\u6709\u684C\u9762\u9884\u53D6\u8FC7\u5E76\u540C\u6B65\u6765\u7684\u53E5\u5B50\u64AD\u795E\u7ECF\u58F0\uFF0C\u5176\u4F59\u56DE\u843D\u7CFB\u7EDF TTS\uFF09" : "";
+      const head = import_obsidian19.Platform.isMobile ? "\u4F8B\u53E5\u58F0\u6E90\u4F18\u5148\u7EA7\uFF08\u79FB\u52A8\u7AEF\u65E0 Edge\uFF0C\u4ECE\u767E\u5EA6\u8D77\uFF09" : "\u4F8B\u53E5\u58F0\u6E90\u4F18\u5148\u7EA7\uFF08\u684C\u9762\u7AEF\uFF09";
+      const tail = !this.plugin.sentenceTts.ready() ? import_obsidian19.Platform.isMobile ? "\uFF08\u65E0\u53EF\u7528\u6E90\uFF1A\u53EF\u52FE\u9009\u767E\u5EA6\u6216\u5DF2\u914D Key \u7684 LLM \u6E90\uFF1B\u5F53\u524D\u53EA\u6709\u684C\u9762\u9884\u53D6\u8FC7\u5E76\u540C\u6B65\u6765\u7684\u53E5\u5B50\u64AD\u795E\u7ECF\u58F0\uFF0C\u5176\u4F59\u56DE\u843D\u7CFB\u7EDF TTS\uFF09" : "\uFF08\u5F53\u524D\u65E0\u53EF\u7528\u5408\u6210\u6E90\uFF1A\u672C\u673A Edge \u4E0D\u53EF\u7528/\u5DF2\u5173\u95ED\uFF0C\u4E14\u672A\u5F00\u767E\u5EA6\u6216\u5DF2\u914D Key \u7684 LLM \u6E90\u2014\u2014\u4F8B\u53E5\u5C06\u5168\u90E8\u56DE\u843D\u7CFB\u7EDF TTS\uFF09" : "";
       srcStateEl.setText(`${head}\uFF1A${parts.join(" \u2192 ")} \u2192 \u7CFB\u7EDF TTS \u515C\u5E95${tail}`);
     };
     const setNeuralSource = (id, on) => {
@@ -37027,11 +37178,33 @@ var EnglishLearnSettingTab = class extends import_obsidian19.PluginSettingTab {
       syncNeuralSources();
     };
     addHelpTip(
+      new import_obsidian19.Setting(containerEl).setName("\u4F8B\u53E5\u53D1\u97F3\u6E90\xB7Edge").addToggle((t) => {
+        srcToggles.edge = t;
+        return t.setValue(s.sentenceNeuralEdge !== false).onChange((v) => {
+          s.sentenceNeuralEdge = v;
+          this.plugin.store.touch();
+          syncNeuralSources();
+        });
+      }),
+      "\u5FAE\u8F6F Edge \u7684\u6717\u8BFB\u63A5\u53E3\uFF08\u514D Key\u3001\u97F3\u8D28\u6700\u597D\uFF0C\u684C\u9762\u9ED8\u8BA4\u5F00\u542F\uFF1B\u79FB\u52A8\u7AEF\u672C\u5C31\u6CA1\u6709\u8FD9\u4E00\u6E90\uFF0C\u5F00\u5173\u4E0D\u5F71\u54CD\u624B\u673A\uFF09\u3002\u5B83\u662F\u975E\u5B98\u65B9\u63A5\u53E3\uFF0C\u82E5\u54EA\u5929\u5931\u6548\u6216\u4F60\u4E0D\u60F3\u7528\uFF0C\u53EF\u5173\u6389\u6539\u7528\u4E0B\u9762\u7684\u767E\u5EA6/LLM \u6E90"
+    );
+    addHelpTip(
+      new import_obsidian19.Setting(containerEl).setName("\u4F8B\u53E5\u53D1\u97F3\u6E90\xB7\u767E\u5EA6").addToggle((t) => {
+        srcToggles.baidu = t;
+        return t.setValue(s.sentenceNeuralBaidu !== false).onChange((v) => {
+          s.sentenceNeuralBaidu = v;
+          this.plugin.store.touch();
+          syncNeuralSources();
+        });
+      }),
+      "\u767E\u5EA6\u7FFB\u8BD1\u9875\u7684\u514D\u8D39\u53D1\u97F3\uFF08fanyi.baidu.com/gettts\uFF0C\u514D Key \u514D\u8D26\u53F7\uFF09\u2014\u2014\u79FB\u52A8\u7AEF\u7684\u514D\u8D39\u795E\u7ECF\u58F0\u5C31\u9760\u5B83\uFF0C\u6545\u9ED8\u8BA4\u5F00\u542F\u3002\u97F3\u8D28\u4E0D\u5982 Edge\uFF0824kbps/16kHz \u7684\u8001\u5F0F\u5408\u6210\u58F0\uFF09\uFF0C\u8D85\u957F\u53E5\uFF08\u7EA6 200 \u5B57\u7B26\u4EE5\u4E0A\uFF09\u8BE5\u6E90\u76F4\u63A5\u8DF3\u8FC7\u6362\u4E0B\u4E00\u6E90\uFF1B\u975E\u5B98\u65B9\u7AEF\u70B9\uFF0C\u5931\u6548\u65F6\u8BD5\u542C\u4F1A\u62A5\u51FA\u670D\u52A1\u7AEF\u8FD4\u56DE"
+    );
+    addHelpTip(
       new import_obsidian19.Setting(containerEl).setName("\u4F8B\u53E5\u53D1\u97F3\u6E90\xB7CosyVoice2").addToggle((t) => {
         srcToggles.cosyvoice = t;
         return t.setValue((s.sentenceNeuralSources ?? []).includes("cosyvoice")).onChange((v) => setNeuralSource("cosyvoice", v));
       }),
-      "\u7528 SiliconFlow \u7684 CosyVoice2 \u6717\u8BFB\u4F8B\u53E5\uFF08\u97F3\u8272\u56FA\u5B9A anna\uFF09\u3002\u9700\u5148\u5728\u4E0B\u65B9 AI \u8BBE\u7F6E\u91CC\u914D\u597D SiliconFlow Key\uFF08\u914D\u597D\u524D\u5F00\u5173\u7F6E\u7070\uFF09\uFF1B\u8BE5\u6E90\u6309\u91CF\u8BA1\u8D39\uFF0C\u6545\u9ED8\u8BA4\u4E0D\u542F\u7528\u2014\u2014\u79FB\u52A8\u7AEF\u60F3\u542C\u795E\u7ECF\u58F0\u901A\u5E38\u52FE\u9009\u5B83"
+      "\u7528 SiliconFlow \u7684 CosyVoice2 \u6717\u8BFB\u4F8B\u53E5\uFF08\u97F3\u8272\u56FA\u5B9A anna\uFF09\u3002\u9700\u5148\u5728\u4E0B\u65B9 AI \u8BBE\u7F6E\u91CC\u914D\u597D SiliconFlow Key\uFF08\u914D\u597D\u524D\u5F00\u5173\u7F6E\u7070\uFF09\uFF1B\u8BE5\u6E90\u6309\u91CF\u8BA1\u8D39\uFF0C\u6545\u9ED8\u8BA4\u4E0D\u542F\u7528\u2014\u2014\u79FB\u52A8\u7AEF\u60F3\u542C\u66F4\u597D\u7684\u795E\u7ECF\u58F0\u53EF\u52FE\u9009\u5B83"
     );
     addHelpTip(
       new import_obsidian19.Setting(containerEl).setName("\u4F8B\u53E5\u53D1\u97F3\u6E90\xB7\u667A\u8C31 CogTTS").addToggle((t) => {
@@ -37248,7 +37421,7 @@ var EnglishLearnSettingTab = class extends import_obsidian19.PluginSettingTab {
       })
     );
     new import_obsidian19.Setting(containerEl).setName("\u5F39\u7A97\u8C03\u8BD5\u7F16\u53F7").setDesc("\u5F39\u7A97\u5DE6\u4E0A\u89D2\u663E\u793A\u7F16\u53F7\u5C0F\u5B57\uFF08\u7C7B\u540D#\u5E8F\u53F7\uFF09\uFF0C\u6392\u67E5\u300C\u5F53\u524D\u662F\u54EA\u4E2A\u5F39\u7A97\u300D\u7528\uFF1B\u5BF9\u65B0\u6253\u5F00\u7684\u5F39\u7A97\u751F\u6548").addToggle(
-      (t) => t.setValue(s.showModalTag !== false).onChange((v) => {
+      (t) => t.setValue(s.showModalTag === true).onChange((v) => {
         s.showModalTag = v;
         this.plugin.store.touch();
         setShowModalTag(v);
