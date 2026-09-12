@@ -36999,7 +36999,7 @@ var EnglishLearnSettingTab = class extends import_obsidian19.PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     const s = this.plugin.db.settings;
-    containerEl.createEl("div", { text: `English Learn v${this.plugin.manifest.version}`, cls: "el-muted" });
+    containerEl.createEl("div", { text: `English Learn v${"0.3.21"}`, cls: "el-muted" });
     new import_obsidian19.Setting(containerEl).setName("\u8BCD\u5E93").setHeading();
     new import_obsidian19.Setting(containerEl).setName("\u8BCD\u5E93\u6839\u76EE\u5F55").setDesc("\u8BCD\u7B14\u8BB0\u5B58\u653E\u7684 vault \u76EE\u5F55\uFF1B\u4FEE\u6539\u540E\u6574\u5E93\u642C\u8FC1\uFF08words/backup/export\uFF09\uFF0C\u53E6\u4E00\u7AEF\u542F\u52A8\u540E\u81EA\u52A8\u8DDF\u968F").addText((t) => {
       t.setValue(s.root);
