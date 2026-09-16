@@ -91,7 +91,7 @@ body:not(.is-mobile) .el-status:hover {
   flex-wrap: wrap;
 }
 
-/* 主页全局静音：无边框图标按钮（§3 标配），volume-x 静音中 / volume-2 发音中（Lucide，setIcon 渲染） */
+/* 主页全局静音钮：无边框图标按钮（§3 标配），volume-x 静音中 / volume-2 发音中（Lucide，setIcon 渲染） */
 .el-mute {
   height: auto; /* Obsidian 默认按钮高 30px（--input-height），图标按钮须还原 */
   background: none;
@@ -117,6 +117,14 @@ body:not(.is-mobile) .el-mute:hover {
 .el-header .el-mute {
   height: var(--input-height);
   padding: 0 var(--el-space-3);
+}
+
+/* 自动发音开关：开=喇叭（auto-speak），关=划掉的喇叭（auto-speak-off，官方配对，见 src/ui/icon.ts）。
+   只要全局静音开着就压暗（**含它自身是「关」的时候**）——压暗表达的是「当前不生效」，不是重复表达「关」，
+   这样任何时候扫一眼都知道现在这个开关管不管用。压暗要压到位：只压半档跟「开」几乎看不出差别 */
+.el-auto-speak.is-suppressed {
+  opacity: 0.35;
+  color: var(--text-faint);
 }
 
 /* 头部「⋯」收纳菜单按钮：与同排文字按钮等高（同 clickable-icon 规格），悬停底色 Obsidian 自带 */

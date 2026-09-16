@@ -4095,13 +4095,34 @@ var CUSTOM_ICONS = {
   "sentence-wave": {
     viewBox: "0 0 256 256",
     path: '<path d="M56 96v64a8 8 0 0 1-16 0V96a8 8 0 0 1 16 0m32-72a8 8 0 0 0-8 8v192a8 8 0 0 0 16 0V32a8 8 0 0 0-8-8m40 32a8 8 0 0 0-8 8v128a8 8 0 0 0 16 0V64a8 8 0 0 0-8-8m40 32a8 8 0 0 0-8 8v64a8 8 0 0 0 16 0V96a8 8 0 0 0-8-8m40-16a8 8 0 0 0-8 8v96a8 8 0 0 0 16 0V80a8 8 0 0 0-8-8"/>'
+  },
+  /** 喇叭播报 = 自动发音开关（lucide megaphone）。选它是因为它与全局静音钮的圆形音量图标
+   *  轮廓完全不同（并排两个圆图标远看像同一个），语义也直指「播报给你听」。
+   *  描边同比放宽到 2.5：24 网格描边图标在 18px 下比邻档 Remix/Phosphor 填充图标轻一档。
+   *  内嵌而非透传 setIcon——图标表由 Obsidian 全局共享，内嵌才能保证任何环境都画得出来 */
+  /** 喇叭播报 = 自动发音开关「开」（lucide megaphone）。选它是因为它与全局静音钮的圆形音量图标
+   *  轮廓完全不同（并排两个圆图标远看像同一个），语义也直指「播报给你听」。
+   *  描边同比放宽到 2.5：24 网格描边图标在 18px 下比邻档 Remix/Phosphor 填充图标轻一档。
+   *  内嵌而非透传 setIcon——图标表由 Obsidian 全局共享，内嵌才能保证任何环境都画得出来 */
+  "auto-speak": {
+    viewBox: "0 0 24 24",
+    stroke: 2.5,
+    path: '<path d="M11 6a13 13 0 0 0 8.4-2.8A1 1 0 0 1 21 4v12a1 1 0 0 1-1.6.8A13 13 0 0 0 11 14H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z"/><path d="M6 14a12 12 0 0 0 2.4 7.2 2 2 0 0 0 3.2-2.4A8 8 0 0 1 10 14"/><path d="M8 6v8"/>'
+  },
+  /** 划掉的喇叭 = 自动发音开关「关」（lucide megaphone-off，volume-2/volume-x 那样的官方配对）。
+   *  不用「megaphone + CSS 斜杠」：斜杠与喇叭自身的斜向轮廓打架，官方变体是断口的，干净得多 */
+  "auto-speak-off": {
+    viewBox: "0 0 24 24",
+    stroke: 2.5,
+    path: '<path d="M11.636 6A13 13 0 0 0 19.4 3.2 1 1 0 0 1 21 4v11.344"/><path d="M14.378 14.357A13 13 0 0 0 11 14H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h1"/><path d="m2 2 20 20"/><path d="M6 14a12 12 0 0 0 2.4 7.2 2 2 0 0 0 3.2-2.4A8 8 0 0 1 10 14"/><path d="M8 8v6"/>'
   }
 };
 function renderIcon(node, name) {
   node.empty();
   const custom = CUSTOM_ICONS[name];
   if (custom) {
-    node.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="${custom.viewBox}" fill="currentColor">${custom.path}</svg>`;
+    const paint = custom.stroke ? `fill="none" stroke="currentColor" stroke-width="${custom.stroke}" stroke-linecap="round" stroke-linejoin="round"` : 'fill="currentColor"';
+    node.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="${custom.viewBox}" ${paint}>${custom.path}</svg>`;
     return;
   }
   (0, import_obsidian.setIcon)(node, name);
@@ -4869,7 +4890,7 @@ function vocabHover(plugin) {
           dom.className = "el-vocab-tip";
           const head = dom.createEl("button", { cls: "el-tts" });
           void plugin.audio.badge(head, doc.word);
-          head.onclick = () => plugin.speakWord(doc.word);
+          head.onclick = () => plugin.speakWord(doc.word, void 0, void 0, true);
           const w = dom.createEl("strong", { text: doc.word });
           w.style.marginLeft = "6px";
           w.style.fontSize = "14px";
@@ -4900,7 +4921,7 @@ function vocabHover(plugin) {
 function wordNotice(plugin, token) {
   const doc = plugin.words.resolveWord(token);
   if (!doc) return;
-  plugin.speakWord(doc.word);
+  plugin.speakWord(doc.word, void 0, void 0, true);
   const head = `${doc.word}${doc.phonetic ? `  ${doc.phonetic}` : ""}${doc.level ? `  [${levelLabel(doc.level)}]` : ""}`;
   const frag = new DocumentFragment();
   const l12 = document.createElement("div");
@@ -9467,7 +9488,7 @@ function instance2($$self, $$props, $$invalidate) {
     each_value[c_index].checked = this.checked;
     $$invalidate(2, cands);
   }
-  const click_handler_7 = (c) => plugin.speakWord(c.word);
+  const click_handler_7 = (c) => plugin.speakWord(c.word, void 0, void 0, true);
   $$self.$$set = ($$props2) => {
     if ("plugin" in $$props2) $$invalidate(0, plugin = $$props2.plugin);
     if ("theme" in $$props2) $$invalidate(1, theme = $$props2.theme);
@@ -9884,7 +9905,7 @@ var AddWordModal = class _AddWordModal extends import_obsidian11.Modal {
     new import_obsidian11.Setting(this.toolsRow).addButton((b) => {
       b.setButtonText("\u53D1\u97F3").onClick(() => {
         if (!this.word) return;
-        this.plugin.speakWord(this.word);
+        this.plugin.speakWord(this.word, void 0, void 0, true);
         window.setTimeout(() => void this.plugin.audio.badge(b.buttonEl, this.word, " \u53D1\u97F3"), 1200);
       });
       void this.plugin.audio.badge(b.buttonEl, this.word, " \u53D1\u97F3");
@@ -10152,7 +10173,7 @@ var AddWordModal = class _AddWordModal extends import_obsidian11.Modal {
       if (owned) {
         const doc = this.plugin.words.get(word);
         if (doc) {
-          this.plugin.openWordCard(doc);
+          this.plugin.openWordCard(doc, "user");
           return;
         }
       }
@@ -10185,7 +10206,7 @@ var AddWordModal = class _AddWordModal extends import_obsidian11.Modal {
       this.flushPreview(lines);
       const cardBtn = this.previewEl.createEl("button", { text: "\u67E5\u770B\u8BCD\u5361" });
       cardBtn.style.cssText = "display:block;margin:8px auto 0;";
-      cardBtn.onClickEvent(() => this.plugin.openWordCard(owned));
+      cardBtn.onClickEvent(() => this.plugin.openWordCard(owned, "user"));
       if (owned.themes.length) {
         const row = this.previewEl.createDiv();
         row.style.cssText = "margin-top:6px;";
@@ -10794,7 +10815,7 @@ var WordListModal = class extends import_obsidian11.Modal {
       const st = wordStatus(w.word, this.plugin.db.progress, this.plugin.db.ignored);
       const tr2 = tbody.createEl("tr", { cls: `el-wordlist-row st-${st}` });
       tr2.addEventListener("click", () => {
-        this.plugin.openWordCard(w);
+        this.plugin.openWordCard(w, "user");
       });
       const tdSt = tr2.createEl("td", { cls: "el-wordlist-st" });
       const ico = STATUS_ICON[st];
@@ -10812,7 +10833,7 @@ var WordListModal = class extends import_obsidian11.Modal {
       void this.plugin.audio.badge(ttsBtn, w.word);
       ttsBtn.addEventListener("click", (e) => {
         e.stopPropagation();
-        this.plugin.speakWord(w.word);
+        this.plugin.speakWord(w.word, void 0, void 0, true);
         window.setTimeout(() => void this.plugin.audio.badge(ttsBtn, w.word), 1200);
       });
       tr2.createEl("td", { cls: "el-wordlist-gloss", text: w.translation.replace(/\n/g, "\uFF1B") });
@@ -25233,7 +25254,7 @@ function instance4($$self, $$props, $$invalidate) {
     void plugin.app.workspace.openLinkText(doc.path, "", true);
   }
   function readExample(text2) {
-    plugin.speakSentence(text2);
+    plugin.speakSentence(text2, void 0, true);
   }
   let exNeural = {};
   let exSeq = 0;
@@ -25322,12 +25343,17 @@ function instance4($$self, $$props, $$invalidate) {
       return;
     }
     if (seg.kind === "self") {
-      plugin.speakWord(seg.t);
+      plugin.speakWord(seg.t, void 0, void 0, true);
       return;
     }
     const d = plugin.words.resolveWord(seg.t);
-    if (d) plugin.openWordCard(d);
-    else plugin.speakWord(seg.t);
+    if (d) plugin.openWordCard(d, "user");
+    else plugin.speakWord(
+      seg.t,
+      void 0,
+      void 0,
+      true
+    );
   }
   let lpTimer;
   let lpFrom = null;
@@ -25379,7 +25405,7 @@ function instance4($$self, $$props, $$invalidate) {
     if (!word) return;
     const d = plugin.words.resolveWord(word);
     if (d) {
-      plugin.openWordCard(d);
+      plugin.openWordCard(d, "user");
       return;
     }
     if (/['’](?:s|t|re|ve|ll|d|m)$/.test(word.toLowerCase())) return;
@@ -25387,8 +25413,18 @@ function instance4($$self, $$props, $$invalidate) {
   }
   function relClick(w, t) {
     const d = plugin.words.get(w);
-    if (d) plugin.openWordCard(d);
-    else new AddWordModal(plugin.app, plugin, w, () => $$invalidate(38, libVer += 1), doc.themes[0], t).open();
+    if (d) plugin.openWordCard(d, "user");
+    else new AddWordModal(
+      plugin.app,
+      plugin,
+      w,
+      () => $$invalidate(
+        38,
+        libVer += 1
+      ),
+      doc.themes[0],
+      t
+    ).open();
   }
   function relTitle(w, t) {
     const state = libHits.has(w) ? "\u5DF2\u6536\u5F55\uFF0C\u70B9\u51FB\u67E5\u770B\u8BCD\u5361" : "\u672A\u6536\u5F55\uFF0C\u70B9\u51FB\u67E5\u8BCD";
@@ -25423,7 +25459,7 @@ function instance4($$self, $$props, $$invalidate) {
   const keydown_handler = (ev) => ev.key === "Enter" && openWordNote();
   const click_handler = () => void aiExamples();
   const click_handler_1 = () => void aiSenses();
-  const click_handler_2 = () => plugin.speakWord(doc.word);
+  const click_handler_2 = () => plugin.speakWord(doc.word, void 0, void 0, true);
   const keydown_handler_1 = (ev) => ev.key === "Enter" && editThemes();
   const keydown_handler_2 = (ev) => ev.key === "Enter" && editMemo();
   const keydown_handler_3 = (ev) => ev.key === "Enter" && editMemo();
@@ -32398,8 +32434,8 @@ function instance6($$self, $$props, $$invalidate) {
   const click_handler_2 = () => {
     void plugin.startSession(themeName || null, true);
   };
-  const click_handler_3 = (w) => plugin.speakWord(w);
-  const click_handler_4 = (w) => plugin.speakWord(w);
+  const click_handler_3 = (w) => plugin.speakWord(w, void 0, void 0, true);
+  const click_handler_4 = (w) => plugin.speakWord(w, void 0, void 0, true);
   const click_handler_5 = () => void extraRound();
   const click_handler_6 = () => void extraRound(dailyLimit);
   const click_handler_7 = () => {
@@ -32409,13 +32445,13 @@ function instance6($$self, $$props, $$invalidate) {
   const click_handler_9 = () => grade(1);
   const click_handler_10 = () => grade(2);
   const click_handler_11 = () => grade(3);
-  const click_handler_12 = (word) => plugin.speakWord(word);
+  const click_handler_12 = (word) => plugin.speakWord(word, void 0, void 0, true);
   const click_handler_13 = () => $$invalidate(39, spellShowQ = true);
   function input_input_handler() {
     spellInput = this.value;
     $$invalidate(37, spellInput);
   }
-  const click_handler_14 = (word) => plugin.speakWord(word);
+  const click_handler_14 = (word) => plugin.speakWord(word, void 0, void 0, true);
   const click_handler_15 = () => $$invalidate(38, spellHinted = true);
   $$self.$$set = ($$props2) => {
     if ("plugin" in $$props2) $$invalidate(0, plugin = $$props2.plugin);
@@ -32427,7 +32463,7 @@ function instance6($$self, $$props, $$invalidate) {
     }
     if ($$self.$$.dirty[0] & /*audioMuted*/
     1024) {
-      $: $$invalidate(46, muteTip = audioMuted ? "\u5DF2\u9759\u97F3\uFF1A\u70B9\u51FB\u5F00\u542F\u5168\u5C40\u53D1\u97F3" : "\u53D1\u97F3\u5F00\u542F\u4E2D\uFF1A\u70B9\u51FB\u5168\u5C40\u9759\u97F3");
+      $: $$invalidate(46, muteTip = audioMuted ? "\u5168\u5C40\u9759\u97F3\u4E2D\uFF1A\u70B9\u51FB\u53D6\u6D88\uFF08\u70B9\u51FB\u53D1\u97F3\u4E5F\u4E0D\u51FA\u58F0\uFF09" : "\u5168\u5C40\u9759\u97F3\uFF1A\u70B9\u51FB\u540E\u4E00\u5207\u53D1\u97F3\u90FD\u4E0D\u51FA\u58F0");
     }
     if ($$self.$$.dirty[0] & /*cards*/
     4) {
@@ -32625,35 +32661,35 @@ var import_obsidian17 = require("obsidian");
 var import_obsidian16 = require("obsidian");
 function get_each_context6(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[55] = list[i];
+  child_ctx[57] = list[i];
   return child_ctx;
 }
 function get_each_context_14(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[58] = list[i];
-  child_ctx[60] = i;
+  child_ctx[60] = list[i];
+  child_ctx[62] = i;
   return child_ctx;
 }
 function get_each_context_22(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[61] = list[i];
+  child_ctx[63] = list[i];
   return child_ctx;
 }
 function get_each_context_32(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[64] = list[i];
+  child_ctx[66] = list[i];
   return child_ctx;
 }
 function get_each_context_42(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[60] = list[i];
-  child_ctx[68] = i;
+  child_ctx[62] = list[i];
+  child_ctx[70] = i;
   return child_ctx;
 }
 function get_each_context_52(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[60] = list[i];
-  child_ctx[68] = i;
+  child_ctx[62] = list[i];
+  child_ctx[70] = i;
   return child_ctx;
 }
 function create_if_block_154(ctx) {
@@ -32661,8 +32697,8 @@ function create_if_block_154(ctx) {
   let t0;
   let t1_value = (
     /*todayPending*/
-    ctx[5] > 0 ? `\uFF08${/*todayPending*/
-    ctx[5]}\uFF09` : ""
+    ctx[6] > 0 ? `\uFF08${/*todayPending*/
+    ctx[6]}\uFF09` : ""
   );
   let t12;
   let mounted;
@@ -32683,16 +32719,16 @@ function create_if_block_154(ctx) {
           button,
           "click",
           /*click_handler*/
-          ctx[33]
+          ctx[35]
         );
         mounted = true;
       }
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*todayPending*/
-      32 && t1_value !== (t1_value = /*todayPending*/
-      ctx2[5] > 0 ? `\uFF08${/*todayPending*/
-      ctx2[5]}\uFF09` : "")) set_data(t12, t1_value);
+      64 && t1_value !== (t1_value = /*todayPending*/
+      ctx2[6] > 0 ? `\uFF08${/*todayPending*/
+      ctx2[6]}\uFF09` : "")) set_data(t12, t1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -32742,13 +32778,13 @@ function create_if_block_144(ctx) {
             button0,
             "click",
             /*openGuide*/
-            ctx[21]
+            ctx[23]
           ),
           listen(
             button1,
             "click",
             /*dismissGuide*/
-            ctx[22]
+            ctx[24]
           )
         ];
         mounted = true;
@@ -32770,7 +32806,7 @@ function create_if_block_134(ctx) {
   let t12;
   let t2_value = (
     /*totals*/
-    ctx[4].hard + ""
+    ctx[5].hard + ""
   );
   let t22;
   return {
@@ -32789,8 +32825,8 @@ function create_if_block_134(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*totals*/
-      16 && t2_value !== (t2_value = /*totals*/
-      ctx2[4].hard + "")) set_data(t22, t2_value);
+      32 && t2_value !== (t2_value = /*totals*/
+      ctx2[5].hard + "")) set_data(t22, t2_value);
     },
     d(detaching) {
       if (detaching) {
@@ -32820,7 +32856,7 @@ function create_if_block_84(ctx) {
   let dispose;
   let each_value_5 = ensure_array_like(
     /*days*/
-    ctx[2]
+    ctx[3]
   );
   let each_blocks_1 = [];
   for (let i = 0; i < each_value_5.length; i += 1) {
@@ -32828,7 +32864,7 @@ function create_if_block_84(ctx) {
   }
   let each_value_4 = ensure_array_like(
     /*days*/
-    ctx[2]
+    ctx[3]
   );
   let each_blocks = [];
   for (let i = 0; i < each_value_4.length; i += 1) {
@@ -32836,10 +32872,10 @@ function create_if_block_84(ctx) {
   }
   let if_block = (
     /*tipDay*/
-    ctx[9] >= 0 && /*days*/
-    ctx[2][
+    ctx[10] >= 0 && /*days*/
+    ctx[3][
       /*tipDay*/
-      ctx[9]
+      ctx[10]
     ] && create_if_block_94(ctx)
   );
   return {
@@ -32856,7 +32892,7 @@ function create_if_block_84(ctx) {
       t4 = text("\u8FD1 14 \u5929\u5171 ");
       t5 = text(
         /*chartSum*/
-        ctx[13]
+        ctx[14]
       );
       t6 = text(" \u6B21");
       t7 = space();
@@ -32910,23 +32946,23 @@ function create_if_block_84(ctx) {
           div3,
           "mouseleave",
           /*mouseleave_handler*/
-          ctx[37]
+          ctx[39]
         );
         mounted = true;
       }
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*chartSum*/
-      8192) set_data(
+      16384) set_data(
         t5,
         /*chartSum*/
-        ctx2[13]
+        ctx2[14]
       );
       if (dirty[0] & /*days, tipDay, barH*/
-      131588) {
+      525320) {
         each_value_5 = ensure_array_like(
           /*days*/
-          ctx2[2]
+          ctx2[3]
         );
         let i;
         for (i = 0; i < each_value_5.length; i += 1) {
@@ -32945,10 +32981,10 @@ function create_if_block_84(ctx) {
         each_blocks_1.length = each_value_5.length;
       }
       if (dirty[0] & /*days*/
-      4) {
+      8) {
         each_value_4 = ensure_array_like(
           /*days*/
-          ctx2[2]
+          ctx2[3]
         );
         let i;
         for (i = 0; i < each_value_4.length; i += 1) {
@@ -32968,10 +33004,10 @@ function create_if_block_84(ctx) {
       }
       if (
         /*tipDay*/
-        ctx2[9] >= 0 && /*days*/
-        ctx2[2][
+        ctx2[10] >= 0 && /*days*/
+        ctx2[3][
           /*tipDay*/
-          ctx2[9]
+          ctx2[10]
         ]
       ) {
         if (if_block) {
@@ -33021,11 +33057,11 @@ function create_if_block_104(ctx) {
   let if_block1_anchor;
   let if_block0 = (
     /*d*/
-    ctx[60].new > 0 && create_if_block_124(ctx)
+    ctx[62].new > 0 && create_if_block_124(ctx)
   );
   let if_block1 = (
     /*d*/
-    ctx[60].rev > 0 && create_if_block_114(ctx)
+    ctx[62].rev > 0 && create_if_block_114(ctx)
   );
   return {
     c() {
@@ -33043,7 +33079,7 @@ function create_if_block_104(ctx) {
     p(ctx2, dirty) {
       if (
         /*d*/
-        ctx2[60].new > 0
+        ctx2[62].new > 0
       ) {
         if (if_block0) {
           if_block0.p(ctx2, dirty);
@@ -33058,7 +33094,7 @@ function create_if_block_104(ctx) {
       }
       if (
         /*d*/
-        ctx2[60].rev > 0
+        ctx2[62].rev > 0
       ) {
         if (if_block1) {
           if_block1.p(ctx2, dirty);
@@ -33092,16 +33128,16 @@ function create_if_block_124(ctx) {
         div,
         "height",
         /*barH*/
-        ctx[17](
+        ctx[19](
           /*d*/
-          ctx[60].new
+          ctx[62].new
         ) + "px"
       );
       toggle_class(
         div,
         "seg-top",
         /*d*/
-        ctx[60].rev === 0
+        ctx[62].rev === 0
       );
     },
     m(target, anchor) {
@@ -33109,24 +33145,24 @@ function create_if_block_124(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*days*/
-      4) {
+      8) {
         set_style(
           div,
           "height",
           /*barH*/
-          ctx2[17](
+          ctx2[19](
             /*d*/
-            ctx2[60].new
+            ctx2[62].new
           ) + "px"
         );
       }
       if (dirty[0] & /*days*/
-      4) {
+      8) {
         toggle_class(
           div,
           "seg-top",
           /*d*/
-          ctx2[60].rev === 0
+          ctx2[62].rev === 0
         );
       }
     },
@@ -33147,9 +33183,9 @@ function create_if_block_114(ctx) {
         div,
         "height",
         /*barH*/
-        ctx[17](
+        ctx[19](
           /*d*/
-          ctx[60].rev
+          ctx[62].rev
         ) + "px"
       );
     },
@@ -33158,14 +33194,14 @@ function create_if_block_114(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*days*/
-      4) {
+      8) {
         set_style(
           div,
           "height",
           /*barH*/
-          ctx2[17](
+          ctx2[19](
             /*d*/
-            ctx2[60].rev
+            ctx2[62].rev
           ) + "px"
         );
       }
@@ -33187,8 +33223,8 @@ function create_each_block_52(ctx) {
   function select_block_type(ctx2, dirty) {
     if (
       /*d*/
-      ctx2[60].rev + /*d*/
-      ctx2[60].new > 0
+      ctx2[62].rev + /*d*/
+      ctx2[62].new > 0
     ) return create_if_block_104;
     return create_else_block_23;
   }
@@ -33197,27 +33233,27 @@ function create_each_block_52(ctx) {
   function mouseenter_handler() {
     return (
       /*mouseenter_handler*/
-      ctx[34](
+      ctx[36](
         /*i*/
-        ctx[68]
+        ctx[70]
       )
     );
   }
   function click_handler_1() {
     return (
       /*click_handler_1*/
-      ctx[35](
+      ctx[37](
         /*i*/
-        ctx[68]
+        ctx[70]
       )
     );
   }
   function keydown_handler(...args) {
     return (
       /*keydown_handler*/
-      ctx[36](
+      ctx[38](
         /*i*/
-        ctx[68],
+        ctx[70],
         ...args
       )
     );
@@ -33230,13 +33266,13 @@ function create_each_block_52(ctx) {
       attr(div, "class", "el-chart-col");
       attr(div, "role", "img");
       attr(div, "aria-label", div_aria_label_value = /*d*/
-      ctx[60].date + "\uFF1A\u65B0\u5B66 " + /*d*/
-      ctx[60].new + "\uFF0C\u590D\u4E60 " + /*d*/
-      ctx[60].rev);
+      ctx[62].date + "\uFF1A\u65B0\u5B66 " + /*d*/
+      ctx[62].new + "\uFF0C\u590D\u4E60 " + /*d*/
+      ctx[62].rev);
       attr(div, "title", div_title_value = /*d*/
-      ctx[60].date + "\uFF1A\u65B0\u5B66 " + /*d*/
-      ctx[60].new + " \xB7 \u590D\u4E60 " + /*d*/
-      ctx[60].rev);
+      ctx[62].date + "\uFF1A\u65B0\u5B66 " + /*d*/
+      ctx[62].new + " \xB7 \u590D\u4E60 " + /*d*/
+      ctx[62].rev);
       attr(div, "tabindex", "-1");
     },
     m(target, anchor) {
@@ -33265,17 +33301,17 @@ function create_each_block_52(ctx) {
         }
       }
       if (dirty[0] & /*days*/
-      4 && div_aria_label_value !== (div_aria_label_value = /*d*/
-      ctx[60].date + "\uFF1A\u65B0\u5B66 " + /*d*/
-      ctx[60].new + "\uFF0C\u590D\u4E60 " + /*d*/
-      ctx[60].rev)) {
+      8 && div_aria_label_value !== (div_aria_label_value = /*d*/
+      ctx[62].date + "\uFF1A\u65B0\u5B66 " + /*d*/
+      ctx[62].new + "\uFF0C\u590D\u4E60 " + /*d*/
+      ctx[62].rev)) {
         attr(div, "aria-label", div_aria_label_value);
       }
       if (dirty[0] & /*days*/
-      4 && div_title_value !== (div_title_value = /*d*/
-      ctx[60].date + "\uFF1A\u65B0\u5B66 " + /*d*/
-      ctx[60].new + " \xB7 \u590D\u4E60 " + /*d*/
-      ctx[60].rev)) {
+      8 && div_title_value !== (div_title_value = /*d*/
+      ctx[62].date + "\uFF1A\u65B0\u5B66 " + /*d*/
+      ctx[62].new + " \xB7 \u590D\u4E60 " + /*d*/
+      ctx[62].rev)) {
         attr(div, "title", div_title_value);
       }
     },
@@ -33293,11 +33329,11 @@ function create_each_block_42(ctx) {
   let span;
   let t_1_value = (
     /*i*/
-    (ctx[68] === 0 || /*i*/
-    ctx[68] === 7 || /*i*/
-    ctx[68] === 13 ? (
+    (ctx[70] === 0 || /*i*/
+    ctx[70] === 7 || /*i*/
+    ctx[70] === 13 ? (
       /*d*/
-      ctx[60].label
+      ctx[62].label
     ) : "") + ""
   );
   let t_1;
@@ -33313,12 +33349,12 @@ function create_each_block_42(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*days*/
-      4 && t_1_value !== (t_1_value = /*i*/
-      (ctx2[68] === 0 || /*i*/
-      ctx2[68] === 7 || /*i*/
-      ctx2[68] === 13 ? (
+      8 && t_1_value !== (t_1_value = /*i*/
+      (ctx2[70] === 0 || /*i*/
+      ctx2[70] === 7 || /*i*/
+      ctx2[70] === 13 ? (
         /*d*/
-        ctx2[60].label
+        ctx2[62].label
       ) : "") + "")) set_data(t_1, t_1_value);
     },
     d(detaching) {
@@ -33332,27 +33368,27 @@ function create_if_block_94(ctx) {
   let div;
   let t0_value = (
     /*days*/
-    ctx[2][
+    ctx[3][
       /*tipDay*/
-      ctx[9]
+      ctx[10]
     ].date + ""
   );
   let t0;
   let t12;
   let t2_value = (
     /*days*/
-    ctx[2][
+    ctx[3][
       /*tipDay*/
-      ctx[9]
+      ctx[10]
     ].new + ""
   );
   let t22;
   let t3;
   let t4_value = (
     /*days*/
-    ctx[2][
+    ctx[3][
       /*tipDay*/
-      ctx[9]
+      ctx[10]
     ].rev + ""
   );
   let t4;
@@ -33366,7 +33402,7 @@ function create_if_block_94(ctx) {
       t4 = text(t4_value);
       attr(div, "class", "el-chart-tip");
       set_style(div, "left", "min(max(" + /*tipDay*/
-      (ctx[9] + 0.5) * (100 / 14) + "%, 42px), calc(100% - 42px))");
+      (ctx[10] + 0.5) * (100 / 14) + "%, 42px), calc(100% - 42px))");
     },
     m(target, anchor) {
       insert(target, div, anchor);
@@ -33378,27 +33414,27 @@ function create_if_block_94(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*days, tipDay*/
-      516 && t0_value !== (t0_value = /*days*/
-      ctx2[2][
+      1032 && t0_value !== (t0_value = /*days*/
+      ctx2[3][
         /*tipDay*/
-        ctx2[9]
+        ctx2[10]
       ].date + "")) set_data(t0, t0_value);
       if (dirty[0] & /*days, tipDay*/
-      516 && t2_value !== (t2_value = /*days*/
-      ctx2[2][
+      1032 && t2_value !== (t2_value = /*days*/
+      ctx2[3][
         /*tipDay*/
-        ctx2[9]
+        ctx2[10]
       ].new + "")) set_data(t22, t2_value);
       if (dirty[0] & /*days, tipDay*/
-      516 && t4_value !== (t4_value = /*days*/
-      ctx2[2][
+      1032 && t4_value !== (t4_value = /*days*/
+      ctx2[3][
         /*tipDay*/
-        ctx2[9]
+        ctx2[10]
       ].rev + "")) set_data(t4, t4_value);
       if (dirty[0] & /*tipDay*/
-      512) {
+      1024) {
         set_style(div, "left", "min(max(" + /*tipDay*/
-        (ctx2[9] + 0.5) * (100 / 14) + "%, 42px), calc(100% - 42px))");
+        (ctx2[10] + 0.5) * (100 / 14) + "%, 42px), calc(100% - 42px))");
       }
     },
     d(detaching) {
@@ -33414,11 +33450,11 @@ function create_else_block_14(ctx) {
   let each_1_lookup = /* @__PURE__ */ new Map();
   let each_value_2 = ensure_array_like(
     /*rows*/
-    ctx[3]
+    ctx[4]
   );
   const get_key = (ctx2) => (
     /*t*/
-    ctx2[61].name
+    ctx2[63].name
   );
   for (let i = 0; i < each_value_2.length; i += 1) {
     let child_ctx = get_each_context_22(ctx, each_value_2, i);
@@ -33443,10 +33479,10 @@ function create_else_block_14(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*openEdit, rows, openExpand, start, openWords, togglePin, disableTheme*/
-      495976456) {
+      1983905808) {
         each_value_2 = ensure_array_like(
           /*rows*/
-          ctx2[3]
+          ctx2[4]
         );
         each_blocks = update_keyed_each(each_blocks, dirty, get_key, 1, ctx2, each_value_2, each_1_lookup, div, destroy_block, create_each_block_22, null, get_each_context_22);
       }
@@ -33512,20 +33548,20 @@ function create_if_block_74(ctx) {
   let t22;
   let t3_value = (
     /*t*/
-    ctx[61].count - /*t*/
-    ctx[61].fresh + ""
+    ctx[63].count - /*t*/
+    ctx[63].fresh + ""
   );
   let t3;
   let t4;
   let t5_value = (
     /*t*/
-    ctx[61].count + ""
+    ctx[63].count + ""
   );
   let t5;
   let t6;
   let t7_value = (
     /*t*/
-    ctx[61].mastered + ""
+    ctx[63].mastered + ""
   );
   let t7;
   return {
@@ -33548,27 +33584,27 @@ function create_if_block_74(ctx) {
         span0,
         "width",
         /*t*/
-        ctx[61].mastered / /*t*/
-        ctx[61].count * 100 + "%"
+        ctx[63].mastered / /*t*/
+        ctx[63].count * 100 + "%"
       );
       attr(span1, "class", "el-theme-bar-seg is-learning");
       set_style(
         span1,
         "width",
         /*t*/
-        (ctx[61].count - /*t*/
-        ctx[61].fresh - /*t*/
-        ctx[61].mastered) / /*t*/
-        ctx[61].count * 100 + "%"
+        (ctx[63].count - /*t*/
+        ctx[63].fresh - /*t*/
+        ctx[63].mastered) / /*t*/
+        ctx[63].count * 100 + "%"
       );
       attr(div0, "class", "el-theme-bar");
       attr(div0, "role", "img");
       attr(div0, "aria-label", div0_aria_label_value = "\u5DF2\u5B66 " + /*t*/
-      (ctx[61].count - /*t*/
-      ctx[61].fresh) + "/" + /*t*/
-      ctx[61].count + "\uFF0C\u5DF2\u638C\u63E1 " + /*t*/
-      ctx[61].mastered + "\uFF0C\u672A\u5B66 " + /*t*/
-      ctx[61].fresh);
+      (ctx[63].count - /*t*/
+      ctx[63].fresh) + "/" + /*t*/
+      ctx[63].count + "\uFF0C\u5DF2\u638C\u63E1 " + /*t*/
+      ctx[63].mastered + "\uFF0C\u672A\u5B66 " + /*t*/
+      ctx[63].fresh);
       attr(span2, "class", "el-theme-bar-label");
       attr(div1, "class", "el-theme-bar-row");
     },
@@ -33589,46 +33625,46 @@ function create_if_block_74(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*rows*/
-      8) {
+      16) {
         set_style(
           span0,
           "width",
           /*t*/
-          ctx2[61].mastered / /*t*/
-          ctx2[61].count * 100 + "%"
+          ctx2[63].mastered / /*t*/
+          ctx2[63].count * 100 + "%"
         );
       }
       if (dirty[0] & /*rows*/
-      8) {
+      16) {
         set_style(
           span1,
           "width",
           /*t*/
-          (ctx2[61].count - /*t*/
-          ctx2[61].fresh - /*t*/
-          ctx2[61].mastered) / /*t*/
-          ctx2[61].count * 100 + "%"
+          (ctx2[63].count - /*t*/
+          ctx2[63].fresh - /*t*/
+          ctx2[63].mastered) / /*t*/
+          ctx2[63].count * 100 + "%"
         );
       }
       if (dirty[0] & /*rows*/
-      8 && div0_aria_label_value !== (div0_aria_label_value = "\u5DF2\u5B66 " + /*t*/
-      (ctx2[61].count - /*t*/
-      ctx2[61].fresh) + "/" + /*t*/
-      ctx2[61].count + "\uFF0C\u5DF2\u638C\u63E1 " + /*t*/
-      ctx2[61].mastered + "\uFF0C\u672A\u5B66 " + /*t*/
-      ctx2[61].fresh)) {
+      16 && div0_aria_label_value !== (div0_aria_label_value = "\u5DF2\u5B66 " + /*t*/
+      (ctx2[63].count - /*t*/
+      ctx2[63].fresh) + "/" + /*t*/
+      ctx2[63].count + "\uFF0C\u5DF2\u638C\u63E1 " + /*t*/
+      ctx2[63].mastered + "\uFF0C\u672A\u5B66 " + /*t*/
+      ctx2[63].fresh)) {
         attr(div0, "aria-label", div0_aria_label_value);
       }
       if (dirty[0] & /*rows*/
-      8 && t3_value !== (t3_value = /*t*/
-      ctx2[61].count - /*t*/
-      ctx2[61].fresh + "")) set_data(t3, t3_value);
+      16 && t3_value !== (t3_value = /*t*/
+      ctx2[63].count - /*t*/
+      ctx2[63].fresh + "")) set_data(t3, t3_value);
       if (dirty[0] & /*rows*/
-      8 && t5_value !== (t5_value = /*t*/
-      ctx2[61].count + "")) set_data(t5, t5_value);
+      16 && t5_value !== (t5_value = /*t*/
+      ctx2[63].count + "")) set_data(t5, t5_value);
       if (dirty[0] & /*rows*/
-      8 && t7_value !== (t7_value = /*t*/
-      ctx2[61].mastered + "")) set_data(t7, t7_value);
+      16 && t7_value !== (t7_value = /*t*/
+      ctx2[63].mastered + "")) set_data(t7, t7_value);
     },
     d(detaching) {
       if (detaching) {
@@ -33641,7 +33677,7 @@ function create_if_block_66(ctx) {
   let t0;
   let t1_value = (
     /*t*/
-    ctx[61].learn + ""
+    ctx[63].learn + ""
   );
   let t12;
   return {
@@ -33655,8 +33691,8 @@ function create_if_block_66(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*rows*/
-      8 && t1_value !== (t1_value = /*t*/
-      ctx2[61].learn + "")) set_data(t12, t1_value);
+      16 && t1_value !== (t1_value = /*t*/
+      ctx2[63].learn + "")) set_data(t12, t1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -33671,7 +33707,7 @@ function create_if_block_511(ctx) {
   let t0;
   let t1_value = (
     /*t*/
-    ctx[61].hard + ""
+    ctx[63].hard + ""
   );
   let t12;
   let span_title_value;
@@ -33680,18 +33716,18 @@ function create_if_block_511(ctx) {
   function click_handler_4() {
     return (
       /*click_handler_4*/
-      ctx[40](
+      ctx[42](
         /*t*/
-        ctx[61]
+        ctx[63]
       )
     );
   }
   function keydown_handler_1(...args) {
     return (
       /*keydown_handler_1*/
-      ctx[41](
+      ctx[43](
         /*t*/
-        ctx[61],
+        ctx[63],
         ...args
       )
     );
@@ -33704,7 +33740,7 @@ function create_if_block_511(ctx) {
       set_style(span, "color", "var(--text-error)");
       set_style(span, "cursor", "pointer");
       attr(span, "title", span_title_value = "\u70B9\u51FB\u5F00\u59CB\u300C" + /*t*/
-      ctx[61].name + "\u300D\u96BE\u8BCD\u4E13\u9879");
+      ctx[63].name + "\u300D\u96BE\u8BCD\u4E13\u9879");
       attr(span, "role", "button");
       attr(span, "tabindex", "-1");
     },
@@ -33723,11 +33759,11 @@ function create_if_block_511(ctx) {
     p(new_ctx, dirty) {
       ctx = new_ctx;
       if (dirty[0] & /*rows*/
-      8 && t1_value !== (t1_value = /*t*/
-      ctx[61].hard + "")) set_data(t12, t1_value);
+      16 && t1_value !== (t1_value = /*t*/
+      ctx[63].hard + "")) set_data(t12, t1_value);
       if (dirty[0] & /*rows*/
-      8 && span_title_value !== (span_title_value = "\u70B9\u51FB\u5F00\u59CB\u300C" + /*t*/
-      ctx[61].name + "\u300D\u96BE\u8BCD\u4E13\u9879")) {
+      16 && span_title_value !== (span_title_value = "\u70B9\u51FB\u5F00\u59CB\u300C" + /*t*/
+      ctx[63].name + "\u300D\u96BE\u8BCD\u4E13\u9879")) {
         attr(span, "title", span_title_value);
       }
     },
@@ -33746,11 +33782,11 @@ function create_if_block_410(ctx) {
   let each_1_lookup = /* @__PURE__ */ new Map();
   let each_value_3 = ensure_array_like(
     /*t*/
-    ctx[61].keywords
+    ctx[63].keywords
   );
   const get_key = (ctx2) => (
     /*k*/
-    ctx2[64]
+    ctx2[66]
   );
   for (let i = 0; i < each_value_3.length; i += 1) {
     let child_ctx = get_each_context_32(ctx, each_value_3, i);
@@ -33775,10 +33811,10 @@ function create_if_block_410(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*rows*/
-      8) {
+      16) {
         each_value_3 = ensure_array_like(
           /*t*/
-          ctx2[61].keywords
+          ctx2[63].keywords
         );
         each_blocks = update_keyed_each(each_blocks, dirty, get_key, 1, ctx2, each_value_3, each_1_lookup, div, destroy_block, create_each_block_32, null, get_each_context_32);
       }
@@ -33797,7 +33833,7 @@ function create_each_block_32(key_1, ctx) {
   let span;
   let t_1_value = (
     /*k*/
-    ctx[64] + ""
+    ctx[66] + ""
   );
   let t_1;
   return {
@@ -33816,8 +33852,8 @@ function create_each_block_32(key_1, ctx) {
     p(new_ctx, dirty) {
       ctx = new_ctx;
       if (dirty[0] & /*rows*/
-      8 && t_1_value !== (t_1_value = /*k*/
-      ctx[64] + "")) set_data(t_1, t_1_value);
+      16 && t_1_value !== (t_1_value = /*k*/
+      ctx[66] + "")) set_data(t_1, t_1_value);
     },
     d(detaching) {
       if (detaching) {
@@ -33839,7 +33875,7 @@ function create_each_block_22(key_1, ctx) {
   let div1;
   let t4_value = (
     /*t*/
-    ctx[61].name + ""
+    ctx[63].name + ""
   );
   let t4;
   let t5;
@@ -33848,20 +33884,20 @@ function create_each_block_22(key_1, ctx) {
   let t7;
   let t8_value = (
     /*t*/
-    ctx[61].todayNew + ""
+    ctx[63].todayNew + ""
   );
   let t8;
   let t9;
   let t10_value = (
     /*t*/
-    ctx[61].due + ""
+    ctx[63].due + ""
   );
   let t10;
   let t11;
   let t122;
   let t13_value = (
     /*t*/
-    ctx[61].fresh + ""
+    ctx[63].fresh + ""
   );
   let t13;
   let t14;
@@ -33879,52 +33915,52 @@ function create_each_block_22(key_1, ctx) {
   function click_handler_2() {
     return (
       /*click_handler_2*/
-      ctx[38](
+      ctx[40](
         /*t*/
-        ctx[61]
+        ctx[63]
       )
     );
   }
   function click_handler_3() {
     return (
       /*click_handler_3*/
-      ctx[39](
+      ctx[41](
         /*t*/
-        ctx[61]
+        ctx[63]
       )
     );
   }
   let if_block0 = (
     /*t*/
-    ctx[61].count > 0 && create_if_block_74(ctx)
+    ctx[63].count > 0 && create_if_block_74(ctx)
   );
   let if_block1 = (
     /*t*/
-    ctx[61].learn > 0 && create_if_block_66(ctx)
+    ctx[63].learn > 0 && create_if_block_66(ctx)
   );
   let if_block2 = (
     /*t*/
-    ctx[61].hard > 0 && create_if_block_511(ctx)
+    ctx[63].hard > 0 && create_if_block_511(ctx)
   );
   let if_block3 = (
     /*t*/
-    ctx[61].keywords.length && create_if_block_410(ctx)
+    ctx[63].keywords.length && create_if_block_410(ctx)
   );
   function click_handler_5() {
     return (
       /*click_handler_5*/
-      ctx[42](
+      ctx[44](
         /*t*/
-        ctx[61]
+        ctx[63]
       )
     );
   }
   function keydown_handler_2(...args) {
     return (
       /*keydown_handler_2*/
-      ctx[43](
+      ctx[45](
         /*t*/
-        ctx[61],
+        ctx[63],
         ...args
       )
     );
@@ -33932,27 +33968,27 @@ function create_each_block_22(key_1, ctx) {
   function click_handler_6() {
     return (
       /*click_handler_6*/
-      ctx[44](
+      ctx[46](
         /*t*/
-        ctx[61]
+        ctx[63]
       )
     );
   }
   function click_handler_7() {
     return (
       /*click_handler_7*/
-      ctx[45](
+      ctx[47](
         /*t*/
-        ctx[61]
+        ctx[63]
       )
     );
   }
   function click_handler_8() {
     return (
       /*click_handler_8*/
-      ctx[46](
+      ctx[48](
         /*t*/
-        ctx[61]
+        ctx[63]
       )
     );
   }
@@ -34004,12 +34040,12 @@ function create_each_block_22(key_1, ctx) {
       attr(button1, "type", "button");
       attr(button1, "class", "el-theme-pin");
       attr(button1, "title", button1_title_value = /*t*/
-      ctx[61].pinned ? "\u53D6\u6D88\u7F6E\u9876" : "\u7F6E\u9876\uFF08\u6392\u5728\u5217\u8868\u6700\u524D\uFF09");
+      ctx[63].pinned ? "\u53D6\u6D88\u7F6E\u9876" : "\u7F6E\u9876\uFF08\u6392\u5728\u5217\u8868\u6700\u524D\uFF09");
       toggle_class(
         button1,
         "is-pinned",
         /*t*/
-        ctx[61].pinned
+        ctx[63].pinned
       );
       attr(div0, "class", "el-theme-corner");
       attr(div1, "class", "el-theme-name");
@@ -34074,25 +34110,25 @@ function create_each_block_22(key_1, ctx) {
     p(new_ctx, dirty) {
       ctx = new_ctx;
       if (dirty[0] & /*rows*/
-      8 && button1_title_value !== (button1_title_value = /*t*/
-      ctx[61].pinned ? "\u53D6\u6D88\u7F6E\u9876" : "\u7F6E\u9876\uFF08\u6392\u5728\u5217\u8868\u6700\u524D\uFF09")) {
+      16 && button1_title_value !== (button1_title_value = /*t*/
+      ctx[63].pinned ? "\u53D6\u6D88\u7F6E\u9876" : "\u7F6E\u9876\uFF08\u6392\u5728\u5217\u8868\u6700\u524D\uFF09")) {
         attr(button1, "title", button1_title_value);
       }
       if (dirty[0] & /*rows*/
-      8) {
+      16) {
         toggle_class(
           button1,
           "is-pinned",
           /*t*/
-          ctx[61].pinned
+          ctx[63].pinned
         );
       }
       if (dirty[0] & /*rows*/
-      8 && t4_value !== (t4_value = /*t*/
-      ctx[61].name + "")) set_data(t4, t4_value);
+      16 && t4_value !== (t4_value = /*t*/
+      ctx[63].name + "")) set_data(t4, t4_value);
       if (
         /*t*/
-        ctx[61].count > 0
+        ctx[63].count > 0
       ) {
         if (if_block0) {
           if_block0.p(ctx, dirty);
@@ -34106,14 +34142,14 @@ function create_each_block_22(key_1, ctx) {
         if_block0 = null;
       }
       if (dirty[0] & /*rows*/
-      8 && t8_value !== (t8_value = /*t*/
-      ctx[61].todayNew + "")) set_data(t8, t8_value);
+      16 && t8_value !== (t8_value = /*t*/
+      ctx[63].todayNew + "")) set_data(t8, t8_value);
       if (dirty[0] & /*rows*/
-      8 && t10_value !== (t10_value = /*t*/
-      ctx[61].due + "")) set_data(t10, t10_value);
+      16 && t10_value !== (t10_value = /*t*/
+      ctx[63].due + "")) set_data(t10, t10_value);
       if (
         /*t*/
-        ctx[61].learn > 0
+        ctx[63].learn > 0
       ) {
         if (if_block1) {
           if_block1.p(ctx, dirty);
@@ -34127,11 +34163,11 @@ function create_each_block_22(key_1, ctx) {
         if_block1 = null;
       }
       if (dirty[0] & /*rows*/
-      8 && t13_value !== (t13_value = /*t*/
-      ctx[61].fresh + "")) set_data(t13, t13_value);
+      16 && t13_value !== (t13_value = /*t*/
+      ctx[63].fresh + "")) set_data(t13, t13_value);
       if (
         /*t*/
-        ctx[61].hard > 0
+        ctx[63].hard > 0
       ) {
         if (if_block2) {
           if_block2.p(ctx, dirty);
@@ -34146,7 +34182,7 @@ function create_each_block_22(key_1, ctx) {
       }
       if (
         /*t*/
-        ctx[61].keywords.length
+        ctx[63].keywords.length
       ) {
         if (if_block3) {
           if_block3.p(ctx, dirty);
@@ -34189,11 +34225,11 @@ function create_if_block6(ctx) {
   let div2_aria_label_value;
   let each_value = ensure_array_like(
     /*heat*/
-    ctx[10]
+    ctx[11]
   );
   const get_key = (ctx2) => (
     /*w*/
-    ctx2[55].cells[0]?.date
+    ctx2[57].cells[0]?.date
   );
   for (let i = 0; i < each_value.length; i += 1) {
     let child_ctx = get_each_context6(ctx, each_value, i);
@@ -34208,7 +34244,7 @@ function create_if_block6(ctx) {
       t0 = text("\u8FD1 12 \u5468\u5171 ");
       t12 = text(
         /*heatSum*/
-        ctx[11]
+        ctx[12]
       );
       t22 = text(" \u6B21");
       t3 = space();
@@ -34226,7 +34262,7 @@ function create_if_block6(ctx) {
       attr(div2, "class", "el-heat");
       attr(div2, "role", "img");
       attr(div2, "aria-label", div2_aria_label_value = "\u8FD1 12 \u5468\u6253\u5361\u65E5\u5386\uFF0C\u5171 " + /*heatSum*/
-      ctx[11] + " \u6B21\u5B66\u4E60\u6D3B\u52A8");
+      ctx[12] + " \u6B21\u5B66\u4E60\u6D3B\u52A8");
     },
     m(target, anchor) {
       insert(target, div2, anchor);
@@ -34247,22 +34283,22 @@ function create_if_block6(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*heatSum*/
-      2048) set_data(
+      4096) set_data(
         t12,
         /*heatSum*/
-        ctx2[11]
+        ctx2[12]
       );
       if (dirty[0] & /*heat, heatLevel, cellTip*/
-      787456) {
+      3147776) {
         each_value = ensure_array_like(
           /*heat*/
-          ctx2[10]
+          ctx2[11]
         );
         each_blocks = update_keyed_each(each_blocks, dirty, get_key, 1, ctx2, each_value, each_1_lookup, div1, destroy_block, create_each_block6, null, get_each_context6);
       }
       if (dirty[0] & /*heatSum*/
-      2048 && div2_aria_label_value !== (div2_aria_label_value = "\u8FD1 12 \u5468\u6253\u5361\u65E5\u5386\uFF0C\u5171 " + /*heatSum*/
-      ctx2[11] + " \u6B21\u5B66\u4E60\u6D3B\u52A8")) {
+      4096 && div2_aria_label_value !== (div2_aria_label_value = "\u8FD1 12 \u5468\u6253\u5361\u65E5\u5386\uFF0C\u5171 " + /*heatSum*/
+      ctx2[12] + " \u6B21\u5B66\u4E60\u6D3B\u52A8")) {
         attr(div2, "aria-label", div2_aria_label_value);
       }
     },
@@ -34304,18 +34340,18 @@ function create_if_block_115(ctx) {
   function click_handler_9() {
     return (
       /*click_handler_9*/
-      ctx[47](
+      ctx[49](
         /*c*/
-        ctx[58]
+        ctx[60]
       )
     );
   }
   function keydown_handler_3(...args) {
     return (
       /*keydown_handler_3*/
-      ctx[48](
+      ctx[50](
         /*c*/
-        ctx[58],
+        ctx[60],
         ...args
       )
     );
@@ -34324,19 +34360,19 @@ function create_if_block_115(ctx) {
     c() {
       i = element("i");
       attr(i, "class", i_class_value = "el-heat-cell h" + /*heatLevel*/
-      ctx[18](
+      ctx[20](
         /*c*/
-        ctx[58].n
+        ctx[60].n
       ));
       attr(i, "title", i_title_value = /*cellTip*/
-      ctx[19](
+      ctx[21](
         /*c*/
-        ctx[58]
+        ctx[60]
       ));
       attr(i, "aria-label", i_aria_label_value = /*cellTip*/
-      ctx[19](
+      ctx[21](
         /*c*/
-        ctx[58]
+        ctx[60]
       ));
       attr(i, "role", "button");
       attr(i, "tabindex", "-1");
@@ -34344,7 +34380,7 @@ function create_if_block_115(ctx) {
         i,
         "is-today",
         /*c*/
-        ctx[58].isNew
+        ctx[60].isNew
       );
     },
     m(target, anchor) {
@@ -34360,36 +34396,36 @@ function create_if_block_115(ctx) {
     p(new_ctx, dirty) {
       ctx = new_ctx;
       if (dirty[0] & /*heat*/
-      1024 && i_class_value !== (i_class_value = "el-heat-cell h" + /*heatLevel*/
-      ctx[18](
+      2048 && i_class_value !== (i_class_value = "el-heat-cell h" + /*heatLevel*/
+      ctx[20](
         /*c*/
-        ctx[58].n
+        ctx[60].n
       ))) {
         attr(i, "class", i_class_value);
       }
       if (dirty[0] & /*heat*/
-      1024 && i_title_value !== (i_title_value = /*cellTip*/
-      ctx[19](
+      2048 && i_title_value !== (i_title_value = /*cellTip*/
+      ctx[21](
         /*c*/
-        ctx[58]
+        ctx[60]
       ))) {
         attr(i, "title", i_title_value);
       }
       if (dirty[0] & /*heat*/
-      1024 && i_aria_label_value !== (i_aria_label_value = /*cellTip*/
-      ctx[19](
+      2048 && i_aria_label_value !== (i_aria_label_value = /*cellTip*/
+      ctx[21](
         /*c*/
-        ctx[58]
+        ctx[60]
       ))) {
         attr(i, "aria-label", i_aria_label_value);
       }
       if (dirty[0] & /*heat, heat*/
-      1024) {
+      2048) {
         toggle_class(
           i,
           "is-today",
           /*c*/
-          ctx[58].isNew
+          ctx[60].isNew
         );
       }
     },
@@ -34408,7 +34444,7 @@ function create_each_block_14(key_1, ctx) {
   function select_block_type_2(ctx2, dirty) {
     if (
       /*c*/
-      ctx2[58]
+      ctx2[60]
     ) return create_if_block_115;
     return create_else_block5;
   }
@@ -34455,7 +34491,7 @@ function create_each_block6(key_1, ctx) {
   let div0;
   let t0_value = (
     /*w*/
-    ctx[55].month + ""
+    ctx[57].month + ""
   );
   let t0;
   let t12;
@@ -34464,11 +34500,11 @@ function create_each_block6(key_1, ctx) {
   let t22;
   let each_value_1 = ensure_array_like(
     /*w*/
-    ctx[55].cells
+    ctx[57].cells
   );
   const get_key = (ctx2) => (
     /*d*/
-    ctx2[60]
+    ctx2[62]
   );
   for (let i = 0; i < each_value_1.length; i += 1) {
     let child_ctx = get_each_context_14(ctx, each_value_1, i);
@@ -34506,13 +34542,13 @@ function create_each_block6(key_1, ctx) {
     p(new_ctx, dirty) {
       ctx = new_ctx;
       if (dirty[0] & /*heat*/
-      1024 && t0_value !== (t0_value = /*w*/
-      ctx[55].month + "")) set_data(t0, t0_value);
+      2048 && t0_value !== (t0_value = /*w*/
+      ctx[57].month + "")) set_data(t0, t0_value);
       if (dirty[0] & /*heatLevel, heat, cellTip*/
-      787456) {
+      3147776) {
         each_value_1 = ensure_array_like(
           /*w*/
-          ctx[55].cells
+          ctx[57].cells
         );
         each_blocks = update_keyed_each(each_blocks, dirty, get_key, 1, ctx, each_value_1, each_1_lookup, div1, destroy_block, create_each_block_14, t22, get_each_context_14);
       }
@@ -34537,91 +34573,94 @@ function create_fragment7(ctx) {
   let icon_action;
   let t22;
   let button1;
-  let t4;
-  let button2;
-  let t6;
-  let button3;
-  let t8;
-  let t9;
-  let button4;
   let icon_action_1;
+  let t3;
+  let button2;
+  let t5;
+  let button3;
+  let t7;
+  let button4;
+  let t9;
   let t10;
+  let button5;
+  let icon_action_2;
   let t11;
-  let div2;
   let t122;
+  let div2;
   let t13;
   let t14;
   let t15;
   let t16;
   let t17;
   let t18;
-  let t19_value = (
-    /*totals*/
-    ctx[4].due + ""
-  );
   let t19;
+  let t20_value = (
+    /*totals*/
+    ctx[5].due + ""
+  );
   let t20;
-  let t21_value = (
-    /*totals*/
-    ctx[4].learn + ""
-  );
   let t21;
+  let t22_value = (
+    /*totals*/
+    ctx[5].learn + ""
+  );
   let t222;
-  let t23_value = (
-    /*totals*/
-    ctx[4].mastered + ""
-  );
   let t23;
-  let t24;
-  let t25_value = (
+  let t24_value = (
     /*totals*/
-    ctx[4].words + ""
+    ctx[5].mastered + ""
   );
+  let t24;
   let t25;
+  let t26_value = (
+    /*totals*/
+    ctx[5].words + ""
+  );
   let t26;
   let t27;
-  let t28_value = (
+  let t28;
+  let t29_value = (
     /*plugin*/
     ctx[0].db.stats.streak + ""
   );
-  let t28;
   let t29;
   let t30;
   let t31;
   let t32;
+  let t33;
   let mounted;
   let dispose;
   let if_block0 = (
     /*totals*/
-    ctx[4].words > 0 && create_if_block_154(ctx)
+    ctx[5].words > 0 && create_if_block_154(ctx)
   );
   let if_block1 = (
     /*guideVisible*/
-    ctx[12] && create_if_block_144(ctx)
+    ctx[13] && create_if_block_144(ctx)
   );
   let if_block2 = (
     /*totals*/
-    ctx[4].hard > 0 && create_if_block_134(ctx)
+    ctx[5].hard > 0 && create_if_block_134(ctx)
   );
   let if_block3 = !/*loading*/
-  ctx[8] && /*chartSum*/
-  ctx[13] > 0 && create_if_block_84(ctx);
+  ctx[9] && /*chartSum*/
+  ctx[14] > 0 && create_if_block_84(ctx);
   function select_block_type_1(ctx2, dirty) {
     if (
       /*loading*/
-      ctx2[8]
+      ctx2[9]
     ) return create_if_block_210;
     if (
       /*rows*/
-      ctx2[3].length === 0
+      ctx2[4].length === 0
     ) return create_if_block_310;
     return create_else_block_14;
   }
   let current_block_type = select_block_type_1(ctx, [-1, -1, -1]);
   let if_block4 = current_block_type(ctx);
   let if_block5 = !/*loading*/
-  ctx[8] && /*heatSum*/
-  ctx[11] > 0 && create_if_block6(ctx);
+  ctx[9] && /*heatSum*/
+  ctx[12] > 0 && create_if_block6(ctx);
   return {
     c() {
       div3 = element("div");
@@ -34633,71 +34672,92 @@ function create_fragment7(ctx) {
       button0 = element("button");
       t22 = space();
       button1 = element("button");
-      button1.textContent = "\u67E5\u8BCD";
-      t4 = space();
+      t3 = space();
       button2 = element("button");
-      button2.textContent = "\u7FFB\u8BD1";
-      t6 = space();
+      button2.textContent = "\u67E5\u8BCD";
+      t5 = space();
       button3 = element("button");
-      button3.textContent = "\u65B0\u5EFA";
-      t8 = space();
-      if (if_block0) if_block0.c();
-      t9 = space();
+      button3.textContent = "\u7FFB\u8BD1";
+      t7 = space();
       button4 = element("button");
+      button4.textContent = "\u65B0\u5EFA";
+      t9 = space();
+      if (if_block0) if_block0.c();
       t10 = space();
-      if (if_block1) if_block1.c();
+      button5 = element("button");
       t11 = space();
+      if (if_block1) if_block1.c();
+      t122 = space();
       div2 = element("div");
-      t122 = text("\u4ECA\u65E5 \u65B0\u5B66 ");
-      t13 = text(
+      t13 = text("\u4ECA\u65E5 \u65B0\u5B66 ");
+      t14 = text(
         /*todayCount*/
-        ctx[6]
-      );
-      t14 = text(" \xB7 \u590D\u4E60 ");
-      t15 = text(
-        /*todayRev*/
         ctx[7]
       );
-      t16 = text(" \xB7 \u5F85\u5B66 ");
-      t17 = text(
-        /*todayPending*/
-        ctx[5]
+      t15 = text(" \xB7 \u590D\u4E60 ");
+      t16 = text(
+        /*todayRev*/
+        ctx[8]
       );
-      t18 = text(" \xB7 \u5F85\u590D\u4E60 ");
-      t19 = text(t19_value);
-      t20 = text(" \xB7 \u5B66\u4E60\u4E2D ");
-      t21 = text(t21_value);
-      t222 = text(" \xB7 \u638C\u63E1\n    ");
-      t23 = text(t23_value);
-      t24 = text("/");
-      t25 = text(t25_value);
-      t26 = space();
+      t17 = text(" \xB7 \u5F85\u5B66 ");
+      t18 = text(
+        /*todayPending*/
+        ctx[6]
+      );
+      t19 = text(" \xB7 \u5F85\u590D\u4E60 ");
+      t20 = text(t20_value);
+      t21 = text(" \xB7 \u5B66\u4E60\u4E2D ");
+      t222 = text(t22_value);
+      t23 = text(" \xB7 \u638C\u63E1\n    ");
+      t24 = text(t24_value);
+      t25 = text("/");
+      t26 = text(t26_value);
+      t27 = space();
       if (if_block2) if_block2.c();
-      t27 = text("\n    \xB7 \u8FDE\u7EED\u6253\u5361 ");
-      t28 = text(t28_value);
-      t29 = text(" \u5929");
-      t30 = space();
-      if (if_block3) if_block3.c();
+      t28 = text("\n    \xB7 \u8FDE\u7EED\u6253\u5361 ");
+      t29 = text(t29_value);
+      t30 = text(" \u5929");
       t31 = space();
-      if_block4.c();
+      if (if_block3) if_block3.c();
       t32 = space();
+      if_block4.c();
+      t33 = space();
       if (if_block5) if_block5.c();
       attr(button0, "class", "el-mute clickable-icon");
       attr(
         button0,
         "title",
         /*muteTip*/
-        ctx[14]
+        ctx[16]
       );
       attr(
         button0,
         "aria-label",
         /*muteTip*/
-        ctx[14]
+        ctx[16]
       );
-      attr(button4, "class", "el-more clickable-icon");
-      attr(button4, "title", "\u66F4\u591A\u64CD\u4F5C\uFF1A\u96BE\u8BCD\u4E13\u9879 / \u6570\u636E\u8865\u5168");
-      attr(button4, "aria-label", "\u66F4\u591A\u64CD\u4F5C");
+      attr(button1, "class", "el-mute el-auto-speak clickable-icon");
+      attr(
+        button1,
+        "title",
+        /*autoTip*/
+        ctx[15]
+      );
+      attr(
+        button1,
+        "aria-label",
+        /*autoTip*/
+        ctx[15]
+      );
+      toggle_class(
+        button1,
+        "is-suppressed",
+        /*audioMuted*/
+        ctx[1]
+      );
+      attr(button5, "class", "el-more clickable-icon");
+      attr(button5, "title", "\u66F4\u591A\u64CD\u4F5C\uFF1A\u96BE\u8BCD\u4E13\u9879 / \u6570\u636E\u8865\u5168");
+      attr(button5, "aria-label", "\u66F4\u591A\u64CD\u4F5C");
       attr(div0, "class", "el-actions");
       attr(div1, "class", "el-header");
       attr(div2, "class", "el-totals");
@@ -34712,19 +34772,20 @@ function create_fragment7(ctx) {
       append(div0, button0);
       append(div0, t22);
       append(div0, button1);
-      append(div0, t4);
+      append(div0, t3);
       append(div0, button2);
-      append(div0, t6);
+      append(div0, t5);
       append(div0, button3);
-      append(div0, t8);
-      if (if_block0) if_block0.m(div0, null);
-      append(div0, t9);
+      append(div0, t7);
       append(div0, button4);
-      append(div3, t10);
-      if (if_block1) if_block1.m(div3, null);
+      append(div0, t9);
+      if (if_block0) if_block0.m(div0, null);
+      append(div0, t10);
+      append(div0, button5);
       append(div3, t11);
+      if (if_block1) if_block1.m(div3, null);
+      append(div3, t122);
       append(div3, div2);
-      append(div2, t122);
       append(div2, t13);
       append(div2, t14);
       append(div2, t15);
@@ -34739,20 +34800,20 @@ function create_fragment7(ctx) {
       append(div2, t24);
       append(div2, t25);
       append(div2, t26);
-      if (if_block2) if_block2.m(div2, null);
       append(div2, t27);
+      if (if_block2) if_block2.m(div2, null);
       append(div2, t28);
       append(div2, t29);
-      append(div3, t30);
-      if (if_block3) if_block3.m(div3, null);
+      append(div2, t30);
       append(div3, t31);
-      if_block4.m(div3, null);
+      if (if_block3) if_block3.m(div3, null);
       append(div3, t32);
+      if_block4.m(div3, null);
+      append(div3, t33);
       if (if_block5) if_block5.m(div3, null);
       if (!mounted) {
         dispose = [
-          action_destroyer(icon_action = /*icon*/
-          ctx[15].call(
+          action_destroyer(icon_action = icon.call(
             null,
             button0,
             /*audioMuted*/
@@ -34762,33 +34823,44 @@ function create_fragment7(ctx) {
             button0,
             "click",
             /*toggleMute*/
-            ctx[16]
+            ctx[17]
           ),
+          action_destroyer(icon_action_1 = icon.call(
+            null,
+            button1,
+            /*autoOn*/
+            ctx[2] ? "auto-speak" : "auto-speak-off"
+          )),
           listen(
             button1,
             "click",
-            /*openLookup*/
-            ctx[29]
+            /*toggleAuto*/
+            ctx[18]
           ),
           listen(
             button2,
             "click",
-            /*openTranslate*/
-            ctx[30]
+            /*openLookup*/
+            ctx[31]
           ),
           listen(
             button3,
             "click",
-            /*openCreate*/
-            ctx[25]
+            /*openTranslate*/
+            ctx[32]
           ),
-          action_destroyer(icon_action_1 = /*icon*/
-          ctx[15].call(null, button4, "ellipsis")),
           listen(
             button4,
             "click",
+            /*openCreate*/
+            ctx[27]
+          ),
+          action_destroyer(icon_action_2 = icon.call(null, button5, "ellipsis")),
+          listen(
+            button5,
+            "click",
             /*openMore*/
-            ctx[31]
+            ctx[33]
           )
         ];
         mounted = true;
@@ -34796,21 +34868,21 @@ function create_fragment7(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*muteTip*/
-      16384) {
+      65536) {
         attr(
           button0,
           "title",
           /*muteTip*/
-          ctx2[14]
+          ctx2[16]
         );
       }
       if (dirty[0] & /*muteTip*/
-      16384) {
+      65536) {
         attr(
           button0,
           "aria-label",
           /*muteTip*/
-          ctx2[14]
+          ctx2[16]
         );
       }
       if (icon_action && is_function(icon_action.update) && dirty[0] & /*audioMuted*/
@@ -34819,16 +34891,49 @@ function create_fragment7(ctx) {
         /*audioMuted*/
         ctx2[1] ? "volume-x" : "volume-2"
       );
+      if (dirty[0] & /*autoTip*/
+      32768) {
+        attr(
+          button1,
+          "title",
+          /*autoTip*/
+          ctx2[15]
+        );
+      }
+      if (dirty[0] & /*autoTip*/
+      32768) {
+        attr(
+          button1,
+          "aria-label",
+          /*autoTip*/
+          ctx2[15]
+        );
+      }
+      if (icon_action_1 && is_function(icon_action_1.update) && dirty[0] & /*autoOn*/
+      4) icon_action_1.update.call(
+        null,
+        /*autoOn*/
+        ctx2[2] ? "auto-speak" : "auto-speak-off"
+      );
+      if (dirty[0] & /*audioMuted*/
+      2) {
+        toggle_class(
+          button1,
+          "is-suppressed",
+          /*audioMuted*/
+          ctx2[1]
+        );
+      }
       if (
         /*totals*/
-        ctx2[4].words > 0
+        ctx2[5].words > 0
       ) {
         if (if_block0) {
           if_block0.p(ctx2, dirty);
         } else {
           if_block0 = create_if_block_154(ctx2);
           if_block0.c();
-          if_block0.m(div0, t9);
+          if_block0.m(div0, t10);
         }
       } else if (if_block0) {
         if_block0.d(1);
@@ -34836,76 +34941,76 @@ function create_fragment7(ctx) {
       }
       if (
         /*guideVisible*/
-        ctx2[12]
+        ctx2[13]
       ) {
         if (if_block1) {
           if_block1.p(ctx2, dirty);
         } else {
           if_block1 = create_if_block_144(ctx2);
           if_block1.c();
-          if_block1.m(div3, t11);
+          if_block1.m(div3, t122);
         }
       } else if (if_block1) {
         if_block1.d(1);
         if_block1 = null;
       }
       if (dirty[0] & /*todayCount*/
-      64) set_data(
-        t13,
-        /*todayCount*/
-        ctx2[6]
-      );
-      if (dirty[0] & /*todayRev*/
       128) set_data(
-        t15,
-        /*todayRev*/
+        t14,
+        /*todayCount*/
         ctx2[7]
       );
+      if (dirty[0] & /*todayRev*/
+      256) set_data(
+        t16,
+        /*todayRev*/
+        ctx2[8]
+      );
       if (dirty[0] & /*todayPending*/
-      32) set_data(
-        t17,
+      64) set_data(
+        t18,
         /*todayPending*/
-        ctx2[5]
+        ctx2[6]
       );
       if (dirty[0] & /*totals*/
-      16 && t19_value !== (t19_value = /*totals*/
-      ctx2[4].due + "")) set_data(t19, t19_value);
+      32 && t20_value !== (t20_value = /*totals*/
+      ctx2[5].due + "")) set_data(t20, t20_value);
       if (dirty[0] & /*totals*/
-      16 && t21_value !== (t21_value = /*totals*/
-      ctx2[4].learn + "")) set_data(t21, t21_value);
+      32 && t22_value !== (t22_value = /*totals*/
+      ctx2[5].learn + "")) set_data(t222, t22_value);
       if (dirty[0] & /*totals*/
-      16 && t23_value !== (t23_value = /*totals*/
-      ctx2[4].mastered + "")) set_data(t23, t23_value);
+      32 && t24_value !== (t24_value = /*totals*/
+      ctx2[5].mastered + "")) set_data(t24, t24_value);
       if (dirty[0] & /*totals*/
-      16 && t25_value !== (t25_value = /*totals*/
-      ctx2[4].words + "")) set_data(t25, t25_value);
+      32 && t26_value !== (t26_value = /*totals*/
+      ctx2[5].words + "")) set_data(t26, t26_value);
       if (
         /*totals*/
-        ctx2[4].hard > 0
+        ctx2[5].hard > 0
       ) {
         if (if_block2) {
           if_block2.p(ctx2, dirty);
         } else {
           if_block2 = create_if_block_134(ctx2);
           if_block2.c();
-          if_block2.m(div2, t27);
+          if_block2.m(div2, t28);
         }
       } else if (if_block2) {
         if_block2.d(1);
         if_block2 = null;
       }
       if (dirty[0] & /*plugin*/
-      1 && t28_value !== (t28_value = /*plugin*/
-      ctx2[0].db.stats.streak + "")) set_data(t28, t28_value);
+      1 && t29_value !== (t29_value = /*plugin*/
+      ctx2[0].db.stats.streak + "")) set_data(t29, t29_value);
       if (!/*loading*/
-      ctx2[8] && /*chartSum*/
-      ctx2[13] > 0) {
+      ctx2[9] && /*chartSum*/
+      ctx2[14] > 0) {
         if (if_block3) {
           if_block3.p(ctx2, dirty);
         } else {
           if_block3 = create_if_block_84(ctx2);
           if_block3.c();
-          if_block3.m(div3, t31);
+          if_block3.m(div3, t32);
         }
       } else if (if_block3) {
         if_block3.d(1);
@@ -34918,12 +35023,12 @@ function create_fragment7(ctx) {
         if_block4 = current_block_type(ctx2);
         if (if_block4) {
           if_block4.c();
-          if_block4.m(div3, t32);
+          if_block4.m(div3, t33);
         }
       }
       if (!/*loading*/
-      ctx2[8] && /*heatSum*/
-      ctx2[11] > 0) {
+      ctx2[9] && /*heatSum*/
+      ctx2[12] > 0) {
         if (if_block5) {
           if_block5.p(ctx2, dirty);
         } else {
@@ -34960,6 +35065,7 @@ function sortRows(list) {
 }
 function instance7($$self, $$props, $$invalidate) {
   let muteTip;
+  let autoTip;
   let chartSum;
   let { plugin } = $$props;
   let rows = [];
@@ -34976,15 +35082,18 @@ function instance7($$self, $$props, $$invalidate) {
   let todayRev = 0;
   let loading = true;
   let audioMuted = plugin.muted;
-  function icon2(node, name) {
-    (0, import_obsidian16.setIcon)(node, name);
-    return { update: (n) => (0, import_obsidian16.setIcon)(node, n) };
-  }
+  let autoOn = plugin.db.settings.autoSpeak !== false;
   function toggleMute() {
     plugin.toggleMute();
   }
+  function toggleAuto() {
+    plugin.toggleAutoSpeak();
+  }
   onMount(() => {
-    const syncMute = () => $$invalidate(1, audioMuted = plugin.muted);
+    const syncMute = () => {
+      $$invalidate(1, audioMuted = plugin.muted);
+      $$invalidate(2, autoOn = plugin.db.settings.autoSpeak !== false);
+    };
     window.addEventListener("el-mute-changed", syncMute);
     return () => window.removeEventListener("el-mute-changed", syncMute);
   });
@@ -34996,7 +35105,7 @@ function instance7($$self, $$props, $$invalidate) {
   }
   function buildDays() {
     var _a2, _b;
-    $$invalidate(2, days = []);
+    $$invalidate(3, days = []);
     for (let i = 13; i >= 0; i--) {
       const d = /* @__PURE__ */ new Date();
       d.setDate(d.getDate() - i);
@@ -35053,8 +35162,8 @@ function instance7($$self, $$props, $$invalidate) {
       }
       weeks.push({ cells, month });
     }
-    $$invalidate(10, heat = weeks);
-    $$invalidate(11, heatSum = sum);
+    $$invalidate(11, heat = weeks);
+    $$invalidate(12, heatSum = sum);
   }
   function openWords(name) {
     new WordListModal(plugin.app, plugin, name).open();
@@ -35064,12 +35173,12 @@ function instance7($$self, $$props, $$invalidate) {
   }
   let guideVisible = aiGuideNeeded();
   function openGuide() {
-    new AiSetupModal(plugin.app, plugin, () => $$invalidate(12, guideVisible = false)).open();
+    new AiSetupModal(plugin.app, plugin, () => $$invalidate(13, guideVisible = false)).open();
   }
   function dismissGuide() {
     $$invalidate(0, plugin.db.settings.aiGuideDone = true, plugin);
     plugin.store.touch();
-    $$invalidate(12, guideVisible = false);
+    $$invalidate(13, guideVisible = false);
   }
   onMount(() => void refresh());
   function buildRows() {
@@ -35115,11 +35224,11 @@ function instance7($$self, $$props, $$invalidate) {
   }
   async function refresh(silent = false) {
     var _a2;
-    if (!silent) $$invalidate(8, loading = true);
+    if (!silent) $$invalidate(9, loading = true);
     await plugin.words.scan();
     const now2 = Date.now();
     const progress = plugin.db.progress;
-    $$invalidate(3, rows = sortRows(buildRows()));
+    $$invalidate(4, rows = sortRows(buildRows()));
     let words = 0;
     let due = 0;
     let fresh = 0;
@@ -35137,16 +35246,16 @@ function instance7($$self, $$props, $$invalidate) {
         else if (p.next > now2) learn++;
       }
     }
-    $$invalidate(4, totals = { words, due, fresh, mastered, hard, learn });
+    $$invalidate(5, totals = { words, due, fresh, mastered, hard, learn });
     const day = (_a2 = plugin.db.stats.days[fmtDate(now2)]) !== null && _a2 !== void 0 ? _a2 : { new: 0, rev: 0 };
-    $$invalidate(6, todayCount = day.new);
-    $$invalidate(7, todayRev = day.rev);
+    $$invalidate(7, todayCount = day.new);
+    $$invalidate(8, todayRev = day.rev);
     const quota = Math.max(0, plugin.db.settings.dailyNew - todayCount);
-    $$invalidate(5, todayPending = totals.due + Math.min(quota, totals.fresh));
+    $$invalidate(6, todayPending = totals.due + Math.min(quota, totals.fresh));
     buildDays();
     buildHeat();
-    $$invalidate(12, guideVisible = aiGuideNeeded());
-    if (!silent) $$invalidate(8, loading = false);
+    $$invalidate(13, guideVisible = aiGuideNeeded());
+    if (!silent) $$invalidate(9, loading = false);
   }
   function togglePin(name) {
     const t = plugin.db.themes[name];
@@ -35154,7 +35263,7 @@ function instance7($$self, $$props, $$invalidate) {
     t.pinned = !t.pinned;
     t.pinnedAt = Date.now();
     plugin.store.touch();
-    $$invalidate(3, rows = sortRows(buildRows()));
+    $$invalidate(4, rows = sortRows(buildRows()));
   }
   function disableTheme(name) {
     const t = plugin.db.themes[name];
@@ -35206,10 +35315,10 @@ function instance7($$self, $$props, $$invalidate) {
     menu.showAtMouseEvent(ev);
   }
   const click_handler = () => start(null);
-  const mouseenter_handler = (i) => $$invalidate(9, tipDay = i);
-  const click_handler_1 = (i) => $$invalidate(9, tipDay = i);
-  const keydown_handler = (i, e) => e.key === "Enter" && $$invalidate(9, tipDay = i);
-  const mouseleave_handler = () => $$invalidate(9, tipDay = -1);
+  const mouseenter_handler = (i) => $$invalidate(10, tipDay = i);
+  const click_handler_1 = (i) => $$invalidate(10, tipDay = i);
+  const keydown_handler = (i, e) => e.key === "Enter" && $$invalidate(10, tipDay = i);
+  const mouseleave_handler = () => $$invalidate(10, tipDay = -1);
   const click_handler_2 = (t) => disableTheme(t.name);
   const click_handler_3 = (t) => togglePin(t.name);
   const click_handler_4 = (t) => start(t.name, true);
@@ -35227,16 +35336,21 @@ function instance7($$self, $$props, $$invalidate) {
   $$self.$$.update = () => {
     if ($$self.$$.dirty[0] & /*audioMuted*/
     2) {
-      $: $$invalidate(14, muteTip = audioMuted ? "\u5DF2\u9759\u97F3\uFF1A\u70B9\u51FB\u5F00\u542F\u5168\u5C40\u53D1\u97F3" : "\u53D1\u97F3\u5F00\u542F\u4E2D\uFF1A\u70B9\u51FB\u5168\u5C40\u9759\u97F3");
+      $: $$invalidate(16, muteTip = audioMuted ? "\u5168\u5C40\u9759\u97F3\u4E2D\uFF1A\u70B9\u51FB\u53D6\u6D88\uFF08\u70B9\u51FB\u53D1\u97F3\u4E5F\u4E0D\u51FA\u58F0\uFF09" : "\u5168\u5C40\u9759\u97F3\uFF1A\u70B9\u51FB\u540E\u4E00\u5207\u53D1\u97F3\u90FD\u4E0D\u51FA\u58F0");
+    }
+    if ($$self.$$.dirty[0] & /*autoOn, audioMuted*/
+    6) {
+      $: $$invalidate(15, autoTip = !autoOn ? "\u81EA\u52A8\u53D1\u97F3\u5DF2\u5173\uFF1A\u70B9\u51FB\u5F00\u542F\uFF08\u7FFB\u5361/\u7B54\u9898\u540E\u81EA\u52A8\u8BFB\uFF09" : audioMuted ? "\u81EA\u52A8\u53D1\u97F3\u5F00\u542F\u4E2D\uFF08\u5F53\u524D\u88AB\u5168\u5C40\u9759\u97F3\u538B\u4F4F\uFF09\uFF1A\u70B9\u51FB\u5173\u95ED" : "\u81EA\u52A8\u53D1\u97F3\u5F00\u542F\u4E2D\uFF1A\u70B9\u51FB\u5173\u95ED");
     }
     if ($$self.$$.dirty[0] & /*days*/
-    4) {
-      $: $$invalidate(13, chartSum = days.reduce((s, d) => s + d.new + d.rev, 0));
+    8) {
+      $: $$invalidate(14, chartSum = days.reduce((s, d) => s + d.new + d.rev, 0));
     }
   };
   return [
     plugin,
     audioMuted,
+    autoOn,
     days,
     rows,
     totals,
@@ -35249,9 +35363,10 @@ function instance7($$self, $$props, $$invalidate) {
     heatSum,
     guideVisible,
     chartSum,
+    autoTip,
     muteTip,
-    icon2,
     toggleMute,
+    toggleAuto,
     barH,
     heatLevel,
     cellTip,
@@ -35289,10 +35404,10 @@ function instance7($$self, $$props, $$invalidate) {
 var ThemePanel = class extends SvelteComponent {
   constructor(options) {
     super();
-    init(this, options, instance7, create_fragment7, safe_not_equal, { plugin: 0, refresh: 32 }, null, [-1, -1, -1]);
+    init(this, options, instance7, create_fragment7, safe_not_equal, { plugin: 0, refresh: 34 }, null, [-1, -1, -1]);
   }
   get refresh() {
-    return this.$$.ctx[32];
+    return this.$$.ctx[34];
   }
 };
 var ThemePanel_default = ThemePanel;
@@ -35329,17 +35444,18 @@ var ThemeView = class extends import_obsidian17.ItemView {
 // src/word-card-modal.ts
 var import_obsidian18 = require("obsidian");
 var WordCardModal = class _WordCardModal extends import_obsidian18.Modal {
-  constructor(app, plugin, wdoc) {
+  constructor(app, plugin, wdoc, cause = "auto") {
     super(app);
     this.plugin = plugin;
     this.wdoc = wdoc;
+    this.cause = cause;
   }
   async onOpen() {
     tagModal(this.modalEl, "Card", false);
     _WordCardModal.current?.close();
     _WordCardModal.current = this;
     this.modalEl.addClass("el-wordcard-modal");
-    this.plugin.speakWord(this.wdoc.word, void 0, firstExample(this.wdoc));
+    this.plugin.speakWord(this.wdoc.word, void 0, firstExample(this.wdoc), this.cause === "user");
     this.plugin.prefetchWordSentences(this.wdoc);
     this.comp = new WordFullCard_default({
       target: this.contentEl,
@@ -35430,6 +35546,8 @@ var DEFAULT_DATA = {
     spellChance: 0.3,
     audioChance: 0.4,
     ttsRate: 1,
+    autoSpeak: true,
+    // 自动发音默认开：新装用户进卡即有声（全局静音默认开，一键可全静）
     ttsSentenceRate: 0.85,
     sentenceNeural: true,
     sentenceNeuralAll: false,
@@ -35461,8 +35579,6 @@ var EnglishLearnPlugin = class extends import_obsidian19.Plugin {
     this.sessionActive = false;
     /** 上次收词用的主题：连续收录时弹窗默认选中（会话级，重启清零） */
     this.lastAddTheme = null;
-    /** 全局静音（会话级，每次启动重置为静音）：true 时所有发音不出声，主页 🔇 按钮统一开关 */
-    this.muted = true;
     this.statusEl = null;
     /** 编辑态注入的词笔记顶栏（挂在宿主 markdown 视图上，不要求它一直是活动视图） */
     this.editBar = null;
@@ -35472,6 +35588,10 @@ var EnglishLearnPlugin = class extends import_obsidian19.Plugin {
     /** 后台补全串行队列：连续几批入库不并发打同一批词，前一批跑完自动接下一批 */
     this.enrichQueue = Promise.resolve();
     this.enrichTurnScheduled = false;
+    /** 全局静音（会话级，每次启动重置为静音）：true 时**一切发音都不出声**（含用户手动点读），
+     *  主题页 🔇 按钮统一开关。它管的是「这一刻别吵」的情景，与设置页「自动发音」偏好互补：
+     *  自动发音关 = 永不自动读；全局静音开 = 连点击也不响，优先级更高 */
+    this.muted = true;
     /** 接读链代际：每次发音/手动例句朗读/停止都自增，旧链的接读回调对不上号即作废（切走即停） */
     this.speakChain = 0;
   }
@@ -35479,7 +35599,7 @@ var EnglishLearnPlugin = class extends import_obsidian19.Plugin {
   renderWordBar(bar, word, fm) {
     const ttsBtn = bar.createEl("button", { cls: "el-tts" });
     ttsBtn.onClickEvent(() => {
-      this.speakWord(word);
+      this.speakWord(word, void 0, void 0, true);
       window.setTimeout(() => void this.audio.badge(ttsBtn, word), 1200);
     });
     void this.audio.badge(ttsBtn, word);
@@ -35664,8 +35784,13 @@ var EnglishLearnPlugin = class extends import_obsidian19.Plugin {
     });
     this.addCommand({
       id: "toggle-mute",
-      name: "\u5207\u6362\u5168\u5C40\u9759\u97F3",
+      name: "\u5207\u6362\u5168\u5C40\u9759\u97F3\uFF08\u70B9\u51FB\u53D1\u97F3\u4E5F\u4E0D\u51FA\u58F0\uFF09",
       callback: () => this.toggleMute()
+    });
+    this.addCommand({
+      id: "toggle-auto-speak",
+      name: "\u5207\u6362\u81EA\u52A8\u53D1\u97F3\uFF08\u7FFB\u5361/\u7B54\u9898\u540E\u81EA\u52A8\u8BFB\uFF09",
+      callback: () => this.toggleAutoSpeak()
     });
     this.registerEvent(
       this.app.workspace.on("editor-menu", (menu, editor) => {
@@ -36763,24 +36888,35 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
       return 0;
     }
   }
-  /** 切换全局静音（命令/快捷键入口）：与主页 🔇 按钮同一开关；广播事件让已挂载组件同步按钮态 */
+  /** 自动翻卡/答题后读音：自动发音开关与全局静音任一关闭即闭麦；用户手动点读传 ignoreMute 绕过 */
+  autoSpeechOn(ignoreMute) {
+    return ignoreMute || !this.muted && this.db.settings.autoSpeak !== false;
+  }
+  /** 切换全局静音（命令入口）：与主题页 🔇 按钮同一开关；广播事件让已挂载组件同步按钮态 */
   toggleMute() {
     this.muted = !this.muted;
-    new import_obsidian19.Notice(this.muted ? "\u5DF2\u5168\u5C40\u9759\u97F3" : "\u53D1\u97F3\u5DF2\u5F00\u542F");
+    new import_obsidian19.Notice(this.muted ? "\u5DF2\u5168\u5C40\u9759\u97F3\uFF08\u70B9\u51FB\u53D1\u97F3\u4E5F\u4E0D\u51FA\u58F0\uFF09" : "\u5DF2\u53D6\u6D88\u5168\u5C40\u9759\u97F3");
     window.dispatchEvent(new CustomEvent("el-mute-changed"));
   }
-  /** 词级发音统一入口：全局静音直接短路；标准发音缓存优先，未命中先等预下载落地（通常
+  /** 切换自动发音（命令入口，与设置页开关同一项；落盘持久化）：关掉后只有手动点读才出声 */
+  toggleAutoSpeak() {
+    const on = this.db.settings.autoSpeak === false;
+    this.db.settings.autoSpeak = on;
+    this.store.touch();
+    new import_obsidian19.Notice(on ? "\u81EA\u52A8\u53D1\u97F3\u5DF2\u5F00\u542F\uFF08\u7FFB\u5361/\u7B54\u9898\u540E\u81EA\u52A8\u8BFB\uFF09" : "\u81EA\u52A8\u53D1\u97F3\u5DF2\u5173\u95ED\uFF08\u624B\u52A8\u70B9\u8BFB\u4E0D\u53D7\u5F71\u54CD\uFF09");
+    window.dispatchEvent(new CustomEvent("el-mute-changed"));
+  }
+  /** 词级发音统一入口。**自动发音开关只管自动读**：用户主动点击（传 ignoreMute）只要有声就该响，
+   *  点了刻意不响只会像坏了（全局静音另说——它是「这一刻别吵」，优先级最高）。
+   *  标准发音缓存优先，未命中先等预下载落地（通常
    *  ~0.4s，超时 1.5s）拿到真人音，真拿不到才 TTS 兜底（下载继续在后台，下次起该词标准音）。
    *  then 传例句文本：词音播完无缝接读（进词卡绑定语境）；任何新发音/停止都会作废接读链 */
-  speakWord(word, rate, then) {
-    if (this.muted) {
-      this.hintMutedOnce();
-      return;
-    }
+  speakWord(word, rate, then, ignoreMute = false) {
+    if (!this.autoSpeechOn(ignoreMute)) return;
     const gen = ++this.speakChain;
     const w = word.trim().toLowerCase();
     const stale = () => gen !== this.speakChain;
-    const playStd = () => this.audio.play(w, () => this.speakThen(gen, then), stale);
+    const playStd = () => this.audio.play(w, () => this.speakThen(gen, then, ignoreMute), stale);
     void (async () => {
       if (stale()) return;
       if (await playStd()) return;
@@ -36789,13 +36925,14 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
       if (stale()) return;
       if (ready && await playStd()) return;
       if (stale()) return;
-      speak(w, rate ?? this.db.settings.ttsRate, () => this.speakThen(gen, then));
+      speak(w, rate ?? this.db.settings.ttsRate, () => this.speakThen(gen, then, ignoreMute));
     })();
   }
-  /** 词音播完接读例句：代际不符（已被新发音/停止作废）不再接 */
-  speakThen(gen, then) {
+  /** 词音播完接读例句：代际不符（已被新发音/停止作废）不再接；接读跟随触发方的静音意图
+   *  （手动点读的接读照样出声，自动读的接读照静） */
+  speakThen(gen, then, ignoreMute = false) {
     if (!then || gen !== this.speakChain) return;
-    this.speakSentence(then);
+    this.speakSentence(then, void 0, ignoreMute);
   }
   /** 停掉当前全部朗读（词音/例句/在途接读链）：切走词卡、关闭词卡弹窗、退出会话时调 */
   stopSpeaking() {
@@ -36804,25 +36941,14 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
     this.sentenceTts.stop();
     stopSpeak();
   }
-  /** 全局静音下点发音：首次提示点不响的原因（静音是每次启动的默认态，新用户第一次点发音
-   *  听不到声音易以为坏了），提示过即永久置位不再打扰（settings 落盘） */
-  hintMutedOnce() {
-    if (this.db.settings.muteHintShown) return;
-    this.db.settings.muteHintShown = true;
-    this.store.touch();
-    new import_obsidian19.Notice("\u5F53\u524D\u5904\u4E8E\u5168\u5C40\u9759\u97F3\uFF0C\u70B9\u4E3B\u9875 \u{1F507} \u6309\u94AE\u6216\u547D\u4EE4\u300C\u5207\u6362\u5168\u5C40\u9759\u97F3\u300D\u53EF\u5F00\u542F\u53D1\u97F3", 8e3);
-  }
-  /** 例句朗读统一入口：与 speakWord 同一静音策略（静音短路 + 首次提示），默认走例句语速。
+  /** 例句朗读统一入口，静音策略与 speakWord 一致（自动发音/全局静音只管自动读，手动点读传 ignoreMute）。
    *  手动点读即接管播放：作废在途接读链，别让刚读完的词又抢读首条例句。
    *  神经声（Edge）优先：桌面未缓存现合成；移动端播桌面预取经 iCloud 同步来的句缓存，
    *  未缓存即回落本地 speechSynthesis（能合/有缓存的判定收口在 SentenceNeural.speak）。
    *  neural=false 强制走本地声（「TTS 声音」试听用——试听的就是所选系统声，别被神经声截胡） */
-  /** ignoreMute：设置页试听用——试听是明确用户意图，全局静音不该把它按哑（静音本为学习场景防吵设计） */
+  /** ignoreMute：用户主动点读（含设置页试听）——自动发音开关与全局静音都只管自动读，点了就该出声 */
   speakSentence(text2, rate, ignoreMute = false, neural = true, bypassCache = false) {
-    if (this.muted && !ignoreMute) {
-      this.hintMutedOnce();
-      return;
-    }
+    if (!this.autoSpeechOn(ignoreMute)) return;
     const gen = ++this.speakChain;
     const r = rate ?? this.db.settings.ttsSentenceRate ?? this.db.settings.ttsRate;
     if (neural && this.db.settings.sentenceNeural !== false) {
@@ -36849,7 +36975,8 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
    *  故合成一失败就 Notice 出「哪个源失败 + 服务端原文 + 回落系统 TTS」，鉴权类失败补一句权限推断。
    *  试听句用句尾 `from <源>` 区分来源（`sentenceNeuralPreviewText`）：探测时还不知道会落到哪个源，
    *  用占位句探（命中缓存即秒播），探到后再按**实际出声的源**合成播放句；回落系统声时就用系统声那句。
-   *  onSynthDone：设置页试听的「合成中…」按钮态复位钩子（探测可能跑满 20s 超时，不表态就像点了没反应） */
+   *  onSynthDone：设置页试听的「合成中…」按钮态复位钩子（探测可能跑满 20s 超时，不表态就像点了没反应）。
+   *  试听全程直调底层出声、不过 speakWord/speakSentence——试听是明确用户意图，不该被两个静音开关按哑 */
   async previewSentenceNeural(onSynthDone) {
     const r = this.db.settings.ttsSentenceRate ?? this.db.settings.ttsRate;
     this.stopSpeaking();
@@ -36870,9 +36997,10 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
       onSynthDone?.();
     }
   }
-  /** 词卡弹窗统一入口：例句点已收录词时弹出对应词卡（弹窗类独立文件，避免与词卡组件循环 import） */
-  openWordCard(doc) {
-    new WordCardModal(this.app, this, doc).open();
+  /** 词卡弹窗统一入口：例句点已收录词时弹出对应词卡（弹窗类独立文件，避免与词卡组件循环 import）。
+   *  cause 决定弹卡读音是否绕过静音：用户点击打开的算主动发音（默认 auto，流程自带） */
+  openWordCard(doc, cause = "auto") {
+    new WordCardModal(this.app, this, doc, cause).open();
   }
   /** 主题选择弹窗统一入口：所有词卡/词笔记顶栏共用。ThemePickModal 与词卡组件同文件，
    *  经此中转 WordFullCard 就不必直接 import（避免循环 import） */
@@ -36999,7 +37127,7 @@ var EnglishLearnSettingTab = class extends import_obsidian19.PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     const s = this.plugin.db.settings;
-    containerEl.createEl("div", { text: `English Learn v${"0.3.21"}`, cls: "el-muted" });
+    containerEl.createEl("div", { text: `English Learn v${"0.3.22"}`, cls: "el-muted" });
     new import_obsidian19.Setting(containerEl).setName("\u8BCD\u5E93").setHeading();
     new import_obsidian19.Setting(containerEl).setName("\u8BCD\u5E93\u6839\u76EE\u5F55").setDesc("\u8BCD\u7B14\u8BB0\u5B58\u653E\u7684 vault \u76EE\u5F55\uFF1B\u4FEE\u6539\u540E\u6574\u5E93\u642C\u8FC1\uFF08words/backup/export\uFF09\uFF0C\u53E6\u4E00\u7AEF\u542F\u52A8\u540E\u81EA\u52A8\u8DDF\u968F").addText((t) => {
       t.setValue(s.root);
@@ -37080,6 +37208,16 @@ var EnglishLearnSettingTab = class extends import_obsidian19.PluginSettingTab {
       "\u62FC\u8BCD\u9898\u4E2D\u6309\u6B64\u6BD4\u4F8B\u53EA\u64AD\u53D1\u97F3\u3001\u4E0D\u663E\u793A\u91CA\u4E49\uFF08\u542C\u5199\uFF0C\u542C\u529B+\u62FC\u5199\u53CC\u7EC3\uFF09\uFF0C\u5176\u4F59\u770B\u91CA\u4E49\u62FC\u8BCD\u30020 = \u5168\u90E8\u770B\u4E49\u62FC\u5199"
     );
     new import_obsidian19.Setting(containerEl).setName("\u53D1\u97F3").setHeading();
+    addHelpTip(
+      new import_obsidian19.Setting(containerEl).setName("\u81EA\u52A8\u53D1\u97F3").addToggle(
+        (t) => t.setValue(s.autoSpeak !== false).onChange((v) => {
+          s.autoSpeak = v;
+          this.plugin.store.touch();
+          window.dispatchEvent(new CustomEvent("el-mute-changed"));
+        })
+      ),
+      "\u7FFB\u5361\u3001\u7B54\u9898\u540E\u81EA\u52A8\u6717\u8BFB\u5355\u8BCD\uFF08\u53CA\u5B8C\u6574\u8BCD\u5361\u7684\u63A5\u8BFB\u4F8B\u53E5\uFF09\u3002\u5173\u6389\u540E\u53EA\u6709\u624B\u52A8\u70B9\u53D1\u97F3\u624D\u51FA\u58F0\uFF1B\u4E3B\u9898\u9875 \u{1F507} \u5168\u5C40\u9759\u97F3\u4F18\u5148\u7EA7\u66F4\u9AD8\uFF0C\u5F00\u7740\u65F6\u8FDE\u624B\u52A8\u70B9\u8BFB\u4E5F\u4E0D\u51FA\u58F0"
+    );
     new import_obsidian19.Setting(containerEl).setName("TTS \u8BED\u901F").addSlider(
       (sl) => sl.setLimits(0.5, 1.5, 0.05).setValue(s.ttsRate).setDynamicTooltip().onChange((v) => {
         s.ttsRate = v;
