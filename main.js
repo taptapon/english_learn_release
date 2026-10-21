@@ -35560,7 +35560,9 @@ var DEFAULT_DATA = {
     enrichOnLearn: true,
     freshByFreq: true,
     viewportDebug: false,
-    showModalTag: false
+    showModalTag: false,
+    startupRemind: false
+    // 启动打卡提醒默认关：启动 Notice 易扰，想要的可到设置页打开
   },
   themes: {},
   progress: {},
@@ -36186,9 +36188,10 @@ cap ${capLine || "\u65E0\u4E8B\u4EF6"}
       return null;
     }
   }
-  /** 打卡召回：今天还没学且有待学内容时，每天最多提醒一次 */
+  /** 打卡召回：今天还没学且有待学内容时，每天最多提醒一次；设置页开关默认关 */
   remindOnce(pending) {
     if (!pending) return;
+    if (this.db.settings.startupRemind !== true) return;
     const today = fmtDate(Date.now());
     if (this.db.lastRemind === today) return;
     const day = this.db.stats.days[today];
@@ -37127,7 +37130,7 @@ var EnglishLearnSettingTab = class extends import_obsidian19.PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     const s = this.plugin.db.settings;
-    containerEl.createEl("div", { text: `English Learn v${"0.3.22"}`, cls: "el-muted" });
+    containerEl.createEl("div", { text: `English Learn v${"0.3.23"}`, cls: "el-muted" });
     new import_obsidian19.Setting(containerEl).setName("\u8BCD\u5E93").setHeading();
     new import_obsidian19.Setting(containerEl).setName("\u8BCD\u5E93\u6839\u76EE\u5F55").setDesc("\u8BCD\u7B14\u8BB0\u5B58\u653E\u7684 vault \u76EE\u5F55\uFF1B\u4FEE\u6539\u540E\u6574\u5E93\u642C\u8FC1\uFF08words/backup/export\uFF09\uFF0C\u53E6\u4E00\u7AEF\u542F\u52A8\u540E\u81EA\u52A8\u8DDF\u968F").addText((t) => {
       t.setValue(s.root);
@@ -37206,6 +37209,15 @@ var EnglishLearnSettingTab = class extends import_obsidian19.PluginSettingTab {
         })
       ),
       "\u62FC\u8BCD\u9898\u4E2D\u6309\u6B64\u6BD4\u4F8B\u53EA\u64AD\u53D1\u97F3\u3001\u4E0D\u663E\u793A\u91CA\u4E49\uFF08\u542C\u5199\uFF0C\u542C\u529B+\u62FC\u5199\u53CC\u7EC3\uFF09\uFF0C\u5176\u4F59\u770B\u91CA\u4E49\u62FC\u8BCD\u30020 = \u5168\u90E8\u770B\u4E49\u62FC\u5199"
+    );
+    addHelpTip(
+      new import_obsidian19.Setting(containerEl).setName("\u542F\u52A8\u6253\u5361\u63D0\u9192").addToggle(
+        (t) => t.setValue(s.startupRemind === true).onChange((v) => {
+          s.startupRemind = v;
+          this.plugin.store.touch();
+        })
+      ),
+      "Obsidian \u542F\u52A8\u65F6\u5F53\u5929\u8FD8\u6CA1\u5B66\u4E14\u6709\u5F85\u5B66\u5185\u5BB9\u7684\u8BDD\uFF0C\u5F39\u4E00\u6B21\u300C\u4ECA\u65E5\u5F85\u5B66 N \u8BCD\u300D\u63D0\u9192\uFF08\u6BCF\u5929\u6700\u591A\u4E00\u6B21\uFF09"
     );
     new import_obsidian19.Setting(containerEl).setName("\u53D1\u97F3").setHeading();
     addHelpTip(
